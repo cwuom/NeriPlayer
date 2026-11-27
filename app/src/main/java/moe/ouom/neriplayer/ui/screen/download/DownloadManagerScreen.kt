@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -73,6 +74,8 @@ import moe.ouom.neriplayer.data.local.media.isMediaStoreCoverReference
 import moe.ouom.neriplayer.ui.component.download.DownloadedSongDeleteProgressCard
 import moe.ouom.neriplayer.ui.component.download.isDownloadedSongDeletionRunning
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.viewmodel.DownloadManagerViewModel
@@ -349,7 +352,8 @@ internal fun DownloadManagerContent(
             onExitSelection = selection::exitSelectionMode,
             onOpenDownloadProgress = onOpenDownloadProgress,
             onRefresh = onRefresh,
-            onEnterSelection = selection::enterSelectionMode
+            onEnterSelection = selection::enterSelectionMode,
+            onTitleBarTap = { listState.scrollToTopForReselect() }
         )
 
         DownloadedSongDeleteProgressCard(
@@ -437,7 +441,8 @@ private fun DownloadManagerTopBar(
     onExitSelection: () -> Unit,
     onOpenDownloadProgress: () -> Unit,
     onRefresh: () -> Unit,
-    onEnterSelection: () -> Unit
+    onEnterSelection: () -> Unit,
+    onTitleBarTap: suspend () -> Unit
 ) {
     val context = LocalContext.current
     TopAppBar(
@@ -459,6 +464,7 @@ private fun DownloadManagerTopBar(
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
             }
         },
+        modifier = if (selectionMode) Modifier else Modifier.scrollToTopOnTitleBarTap(onTitleBarTap),
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent,
             scrolledContainerColor = Color.Transparent
@@ -645,7 +651,7 @@ private fun DownloadSingleDeleteDialog(
         title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
         text = { Text(stringResource(CoreCommonR.string.download_delete_confirm, songName)) },
         confirmButton = {
-            TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
+            DialogActionTextButton(enabled = !deletionInProgress, onClick = onConfirm) {
                 Text(stringResource(CoreCommonR.string.action_delete))
             }
         },
@@ -677,7 +683,7 @@ private fun DownloadMultiDeleteDialog(
             )
         },
         confirmButton = {
-            TextButton(enabled = !deletionInProgress, onClick = onConfirm) {
+            DialogActionTextButton(enabled = !deletionInProgress, onClick = onConfirm) {
                 Text(stringResource(CoreCommonR.string.action_delete))
             }
         },

@@ -26,3 +26,18 @@ internal fun localPlaylistReorderScrollFraction(
         else -> 0f
     }
 }
+
+internal fun <T> reorderVisiblePlaylistSlots(
+    fullOrder: List<T>,
+    orderedVisibleKeys: List<String>,
+    keyOf: (T) -> String
+): List<T>? {
+    val visibleKeys = orderedVisibleKeys.toHashSet()
+    if (visibleKeys.size != orderedVisibleKeys.size) return null
+    val visibleSlots = fullOrder.indices.filter { keyOf(fullOrder[it]) in visibleKeys }
+    val songsByKey = visibleSlots.associate { keyOf(fullOrder[it]) to fullOrder[it] }
+    if (visibleSlots.size != visibleKeys.size || songsByKey.size != visibleKeys.size) return null
+    return fullOrder.toMutableList().apply {
+        visibleSlots.forEachIndexed { index, slot -> this[slot] = songsByKey.getValue(orderedVisibleKeys[index]) }
+    }
+}

@@ -3,6 +3,7 @@
 package moe.ouom.neriplayer.core.player.engine.datasource
 
 import android.net.Uri
+import androidx.media3.datasource.DataSpec
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
@@ -63,6 +64,35 @@ class ConditionalHttpRequestHeaderInjectionTest {
     }
 
     @Test
+    fun `bilibili overseas cos starts an unbounded get with an explicit range`() {
+        val uri = mockHttpUri("https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/audio.m4s")
+        val sourceFactory = factory()
+
+        assertEquals("bytes=0-", headersSentFor(uri, emptyMap(), sourceFactory)["Range"])
+        assertEquals(
+            mapOf("rAnGe" to "bytes=0-3"),
+            headersSentFor(uri, mapOf("rAnGe" to "bytes=0-3"), sourceFactory)
+                .filterKeys { it.equals("Range", ignoreCase = true) }
+        )
+        for (spec in listOf(
+            httpGet(uri, position = 4L),
+            httpGet(uri, length = 4L),
+            httpGet(uri).buildUpon().setHttpMethod(DataSpec.HTTP_METHOD_HEAD).build(),
+            httpGet(mockHttpUri("https://upos-sz-mirrorcos.bilivideo.com/upgcxcode/audio.m4s"))
+        )) {
+            val source = sourceFactory.createDataSource()
+            try {
+                source.open(spec)
+                assertFalse(server.requests.last().httpRequestHeaders.keys.any {
+                    it.equals("Range", ignoreCase = true)
+                })
+            } finally {
+                source.close()
+            }
+        }
+    }
+
+    @Test
     fun `trusted http streams get public headers and drop caller cookies`() {
         for (url in listOf(
             "http://cdn.bilivideo.com/audio.m4s",
@@ -116,9 +146,17 @@ class ConditionalHttpRequestHeaderInjectionTest {
             assertEquals(url, "https://www.bilibili.com", sent["Referer"])
             assertEquals(url, BILI_WEB_USER_AGENT, sent["User-Agent"])
         }
+        val akamai = mockHttpUri("https://upos-hz-mirrorakam.akamaized.net/upgcxcode/audio.m4s")
+        assertEquals(
+            mapOf("Referer" to "https://www.bilibili.com", "User-Agent" to BILI_WEB_USER_AGENT),
+            headersSentFor(akamai, mapOf("cOoKiE" to "SESSDATA=caller-session"), sourceFactory)
+        )
         for (url in listOf(
             "https://bilivideo.com.attacker.example/audio.m4s",
             "http://notbilivideo.com/audio.m4s",
+            "https://other.akamaized.net/audio.m4s",
+            "https://upos-hz-mirrorakam.akamaized.net.attacker.example/audio.m4s",
+            "https://other.upos-hz-mirrorakam.akamaized.net/audio.m4s",
             "https://library.example/audio.m4s",
             "ftp://cdn.bilivideo.com/audio.m4s",
             "custom://cdn.bilivideo.com/audio.m4s"

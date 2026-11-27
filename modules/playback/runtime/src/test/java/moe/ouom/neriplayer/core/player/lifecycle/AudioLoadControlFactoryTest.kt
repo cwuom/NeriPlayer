@@ -13,40 +13,95 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class AudioLoadControlFactoryTest {
     private val playerId = PlayerId("audio-load-control-test")
     private val mediaPeriodId = MediaPeriodId("audio-load-control-period")
+    private val stream = MediaItem.fromUri("https://example.invalid/song.flac")
+    private val local = MediaItem.fromUri("content://media/external/audio/media/1")
+    private val lan = MediaItem.fromUri("http://127.0.0.1/media/song")
+
+    @Test
+    fun `lan resumes loading below thirty seconds after filling its fifty second window`() {
+        val loadControl = buildLanAudioLoadControl()
+        loadControl.onPrepared(playerId)
+
+        assertTrue(loadControl.shouldContinueLoading(parameters(600, item = lan)))
+        assertTrue(loadControl.shouldContinueLoading(parameters(49_999, item = lan)))
+        assertFalse(loadControl.shouldContinueLoading(parameters(50_000, item = lan)))
+        assertFalse(loadControl.shouldContinueLoading(parameters(30_000, item = lan)))
+        assertTrue(loadControl.shouldContinueLoading(parameters(29_999, item = lan)))
+        assertEquals(0L, loadControl.getBackBufferDurationUs(playerId))
+
+        loadControl.onReleased(playerId)
+    }
+
+    @Test
+    fun `lan requires enough playable time even when high bitrate audio fills the byte budget`() {
+        val loadControl = buildLanAudioLoadControl()
+        loadControl.onPrepared(playerId)
+        val allocator = loadControl.getAllocator(playerId)
+        val allocations = List(DefaultLoadControl.DEFAULT_AUDIO_BUFFER_SIZE / allocator.individualAllocationLength) {
+            allocator.allocate()
+        }
+        try {
+            assertTrue(loadControl.shouldContinueLoading(parameters(10_000, item = lan)))
+            assertFalse(loadControl.shouldContinueLoading(parameters(30_000, item = lan)))
+            assertFalse(loadControl.shouldStart(599, item = lan))
+            assertTrue(loadControl.shouldStart(600, item = lan))
+            assertFalse(loadControl.shouldStart(4_999, rebuffering = true, item = lan))
+            assertTrue(loadControl.shouldStart(5_000, rebuffering = true, item = lan))
+        } finally {
+            allocations.forEach(allocator::release)
+            loadControl.onReleased(playerId)
+        }
+    }
 
     @Test
     fun `audio playback starts after one second`() {
         val loadControl = buildAudioLoadControl()
 
-        assertFalse(loadControl.shouldStart(bufferedDurationMs = 999))
-        assertTrue(loadControl.shouldStart(bufferedDurationMs = 1_000))
+        for (item in listOf(stream, local)) {
+            assertFalse(loadControl.shouldStart(999, item = item))
+            assertTrue(loadControl.shouldStart(1_000, item = item))
+        }
     }
 
     @Test
-    fun `audio playback resumes after three seconds`() {
+    fun `local playback resumes after three seconds`() {
         val loadControl = buildAudioLoadControl()
 
-        assertFalse(loadControl.shouldStart(bufferedDurationMs = 2_999, rebuffering = true))
-        assertTrue(loadControl.shouldStart(bufferedDurationMs = 3_000, rebuffering = true))
+        assertFalse(loadControl.shouldStart(2_999, rebuffering = true, item = local))
+        assertTrue(loadControl.shouldStart(3_000, rebuffering = true, item = local))
     }
 
     @Test
-    fun `audio loads in bursts between 15 seconds and 5 minutes`() {
+    fun `streaming playback resumes after five seconds`() {
         val loadControl = buildAudioLoadControl()
-        loadControl.onPrepared(playerId)
 
-        assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 14_999)))
-        assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 200_000)))
-        assertFalse(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 300_000)))
-        // 停止后要等缓冲回落到下限才再次联网
-        assertFalse(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 60_000)))
-        assertTrue(loadControl.shouldContinueLoading(parameters(bufferedDurationMs = 14_999)))
+        assertFalse(loadControl.shouldStart(4_999, rebuffering = true, item = stream))
+        assertTrue(loadControl.shouldStart(5_000, rebuffering = true, item = stream))
+    }
 
-        loadControl.onReleased(playerId)
+    @Test
+    fun `streaming refills earlier than local playback after reaching five minutes`() {
+        for ((item, lowWatermarkMs) in listOf(stream to 30_000L, local to 15_000L)) {
+            val loadControl = buildAudioLoadControl()
+            loadControl.onPrepared(playerId)
+
+            assertTrue(loadControl.shouldContinueLoading(parameters(lowWatermarkMs - 1, item = item)))
+            assertTrue(loadControl.shouldContinueLoading(parameters(200_000, item = item)))
+            assertFalse(loadControl.shouldContinueLoading(parameters(300_000, item = item)))
+            assertFalse(loadControl.shouldContinueLoading(parameters(lowWatermarkMs, item = item)))
+            assertTrue(loadControl.shouldContinueLoading(parameters(lowWatermarkMs - 1, item = item)))
+
+            loadControl.onReleased(playerId)
+        }
     }
 
     @Test
@@ -72,10 +127,10 @@ class AudioLoadControlFactoryTest {
     fun `invalid policy falls back to media3 defaults`() {
         val loadControl = buildAudioLoadControl(
             AudioLoadControlPolicy(
-                minBufferMs = 500,
+                localMinBufferMs = 500,
                 maxBufferMs = 400,
                 bufferForPlaybackMs = 800,
-                bufferForPlaybackAfterRebufferMs = 1_500
+                localBufferForPlaybackAfterRebufferMs = 1_500
             )
         )
         val defaultStartBufferMs = DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS.toLong()
@@ -89,18 +144,20 @@ class AudioLoadControlFactoryTest {
 
     private fun LoadControl.shouldStart(
         bufferedDurationMs: Long,
-        rebuffering: Boolean = false
+        rebuffering: Boolean = false,
+        item: MediaItem = stream
     ): Boolean {
-        return shouldStartPlayback(parameters(bufferedDurationMs, rebuffering))
+        return shouldStartPlayback(parameters(bufferedDurationMs, rebuffering, item))
     }
 
     private fun parameters(
         bufferedDurationMs: Long,
-        rebuffering: Boolean = false
+        rebuffering: Boolean = false,
+        item: MediaItem = stream
     ): LoadControl.Parameters {
         return LoadControl.Parameters(
             playerId,
-            timelineFor(mediaPeriodId),
+            timelineFor(mediaPeriodId, item),
             mediaPeriodId,
             0L,
             bufferedDurationMs * 1_000,
@@ -112,7 +169,7 @@ class AudioLoadControlFactoryTest {
         )
     }
 
-    private fun timelineFor(mediaPeriodId: MediaPeriodId): Timeline {
+    private fun timelineFor(mediaPeriodId: MediaPeriodId, item: MediaItem): Timeline {
         return object : Timeline() {
             override fun getWindowCount(): Int = 1
 
@@ -124,7 +181,7 @@ class AudioLoadControlFactoryTest {
                 check(windowIndex == 0)
                 return window.set(
                     WINDOW_UID,
-                    MediaItem.EMPTY,
+                    item,
                     null,
                     C.TIME_UNSET,
                     C.TIME_UNSET,

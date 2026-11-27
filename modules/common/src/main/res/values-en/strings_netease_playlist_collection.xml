@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nowplaying_netease_playlist_collect">Add to NetEase playlist</string>
+    <string name="nowplaying_netease_playlist_adding">Adding to “%1$s”</string>
+    <string name="nowplaying_netease_playlist_added">Added to “%1$s”</string>
+    <string name="nowplaying_netease_playlist_existing">Song is already in “%1$s”</string>
+    <string name="nowplaying_netease_playlist_failed">Could not add to “%1$s”. Please try again later.</string>
+    <string name="nowplaying_netease_playlist_login_required">Please log in to NetEase Music to add songs to a playlist</string>
+    <string name="nowplaying_netease_playlist_offline">Adding to a NetEase playlist requires a connection. Turn off offline mode and connect to the internet.</string>
+</resources>

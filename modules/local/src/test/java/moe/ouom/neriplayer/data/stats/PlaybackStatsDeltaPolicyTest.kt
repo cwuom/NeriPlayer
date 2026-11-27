@@ -11,6 +11,23 @@ import org.junit.Test
 
 class PlaybackStatsDeltaPolicyTest {
     @Test
+    fun `journal retains the recording civil date on the bucket and its device counter`() {
+        val playedAt = java.time.Instant.parse("2026-11-22T17:00:00Z").toEpochMilli()
+        val delta = PlaybackStatsPendingDeltaEntity("event", 1, "{}", 30_000, 1, playedAt, 0, "phone", "Asia/Singapore")
+        val empty = PlaybackStatsDeltaRows(null, null, null, null)
+        val rows = PlaybackStatsDeltaPolicy.apply(delta, track(), empty)
+        assertEquals("2026-11-23", rows.bucket?.recordedLocalDate)
+        assertEquals("2026-11-23", rows.dailyCounter?.recordedLocalDate)
+        val old = PlaybackStatsDeltaPolicy.apply(delta.copy(playedZone = null), track(), empty)
+        assertEquals(null, old.bucket?.recordedLocalDate)
+        assertEquals(null, old.dailyCounter?.recordedLocalDate)
+        val previousDay = checkNotNull(rows.bucket).copy(recordedLocalDate = null)
+        val later = PlaybackStatsDeltaPolicy.apply(delta.copy(deviceId = "another"), track(), empty.copy(bucket = previousDay))
+        assertEquals(null, later.bucket?.recordedLocalDate)
+        assertEquals("2026-11-23", later.dailyCounter?.recordedLocalDate)
+    }
+
+    @Test
     fun `one delta updates the track day and owned shards without losing metadata`() {
         val metadata = track().copy(localFilePath = "/audio.flac", customName = "my title")
         val delta = PlaybackStatsPendingDeltaEntity("event", 1, "{}", 30_000, 1, 100, 50, "device")

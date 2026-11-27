@@ -32,8 +32,8 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -98,7 +98,8 @@ import moe.ouom.neriplayer.R as AppR
 internal fun CommentSheet(
     source: CommentSource?,
     offlineMode: Boolean,
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    onTimestampClick: (Long) -> Unit = {}
 ) {
     val viewModel: CommentViewModel = viewModel()
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
@@ -142,7 +143,8 @@ internal fun CommentSheet(
             onReply = viewModel::replyTo,
             onSend = viewModel::sendComment,
             onToggleReplies = viewModel::toggleReplies,
-            onLoadReplies = viewModel::loadReplies
+            onLoadReplies = viewModel::loadReplies,
+            onTimestampClick = onTimestampClick
         )
     }
 }
@@ -215,6 +217,7 @@ internal fun CommentSheetContent(
     onSend: () -> Unit = {},
     onToggleReplies: (String) -> Unit = {},
     onLoadReplies: (String) -> Unit = {},
+    onTimestampClick: (Long) -> Unit = {},
     onDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -347,7 +350,7 @@ internal fun CommentSheetContent(
                         // 下拉会继续上传给 sheet → 直接关闭面板; 传 lambda 保证拦截一定装上
                         .bottomSheetScrollGuard { true },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(if (NeriDesign.isClean) 0.dp else 10.dp)
                 ) {
                     ui.comments.forEachIndexed { index, comment ->
                         val thread = ui.replyThreads[comment.id]
@@ -368,7 +371,9 @@ internal fun CommentSheetContent(
                                 hasReplyThread = thread != null,
                                 replyEnabled = replyEnabled,
                                 likingIds = ui.likingIds,
-                                onLikeReply = onLike
+                                onLikeReply = onLike,
+                                onTimestampClick = onTimestampClick,
+                                modifier = Modifier.animateItem()
                             )
                         }
                         if (thread?.expanded == true) {
@@ -378,14 +383,19 @@ internal fun CommentSheetContent(
                                     rootId = comment.id,
                                     replyEnabled = replyEnabled,
                                     onReply = requestReply,
-                                    modifier = Modifier.padding(start = 24.dp),
+                                    // 楼中楼展开时逐条淡入并把下方内容平滑推开
+                                    modifier = Modifier
+                                        .animateItem()
+                                        .padding(start = 24.dp, bottom = if (NeriDesign.isClean) 8.dp else 0.dp),
                                     offlineMode = offlineMode,
                                     isLiking = reply.id in ui.likingIds,
                                     likeEnabled = likeEnabled,
-                                    onLike = { onLike(reply.id) }
+                                    onLike = { onLike(reply.id) },
+                                    onTimestampClick = onTimestampClick
                                 )
                             }
                             item(key = "reply-footer:${comment.id}", contentType = "reply-footer") {
+                                Box(Modifier.animateItem()) {
                                 when {
                                     thread.loading -> CommentLoadingMoreRow()
                                     thread.error != null -> CommentLoadMoreErrorRow(thread.error) { onLoadReplies(comment.id) }
@@ -397,6 +407,7 @@ internal fun CommentSheetContent(
                                         stringResource(AppR.string.comment_empty_replies), Modifier.padding(16.dp),
                                         style = MaterialTheme.typography.bodySmall
                                     )
+                                }
                                 }
                             }
                         }

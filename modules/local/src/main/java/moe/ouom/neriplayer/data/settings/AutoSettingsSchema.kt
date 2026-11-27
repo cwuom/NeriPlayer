@@ -226,6 +226,21 @@ object AutoSettingsSchema {
             iconRes = CoreCommonR.drawable.ic_youtube
         )
 
+        @AutoSetting(key = "youtube_content_language", type = SettingValueType.String, order = 101, access = SettingAccessMode.KeyOnly)
+        val youtubeContentLanguage = Unit
+
+        @AutoSetting(key = "youtube_content_country", type = SettingValueType.String, order = 102, access = SettingAccessMode.KeyOnly)
+        val youtubeContentCountry = Unit
+
+        @AutoSetting(key = "youtube_playlist_suggestion_source", type = SettingValueType.String, defaultString = "Both", order = 103, access = SettingAccessMode.KeyOnly)
+        val youtubePlaylistSuggestionSource = Unit
+
+        @AutoSetting(key = "youtube_hide_explicit", order = 104, access = SettingAccessMode.KeyOnly)
+        val youtubeHideExplicit = Unit
+
+        @AutoSetting(key = "youtube_hide_music_videos", order = 105, access = SettingAccessMode.KeyOnly)
+        val youtubeHideMusicVideos = Unit
+
         @AutoSetting(order = 110)
         val biliSkipSegmentPromptEnabled = autoSwitchSetting(
             key = "bili_skip_segment_prompt_enabled",
@@ -538,9 +553,113 @@ object AutoSettingsSchema {
             ui = SettingUiType.Custom
         )
         val homeCardBilibili = autoSetting(
-            titleRes = CoreCommonR.string.settings_home_card_bilibili,
-            descriptionRes = CoreCommonR.string.settings_home_card_bilibili_desc
+            titleRes = CoreCommonR.string.settings_home_card_bilibili
         )
+
+        @AutoSetting(
+            key = "home_major_order",
+            type = SettingValueType.String,
+            defaultString = "continue,radar,trending,recommended,bilibili",
+            order = 71,
+            ui = SettingUiType.Custom
+        )
+        val homeMajorOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_major_order,
+            descriptionRes = CoreCommonR.string.settings_home_major_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_trending_order",
+            type = SettingValueType.String,
+            defaultString = "top_soaring,personalized_new_songs,top_hot,top_new",
+            order = 72,
+            ui = SettingUiType.Custom
+        )
+        val homeTrendingOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_trending_order,
+            descriptionRes = CoreCommonR.string.settings_home_trending_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_trending_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 73,
+            ui = SettingUiType.Custom
+        )
+        val homeTrendingHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_trending_visible
+        )
+
+        @AutoSetting(
+            key = "home_radar_order",
+            type = SettingValueType.String,
+            defaultString = "personal_radar,radar_playlists,daily_recommend,private_fm",
+            order = 74,
+            ui = SettingUiType.Custom
+        )
+        val homeRadarOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_radar_order,
+            descriptionRes = CoreCommonR.string.settings_home_radar_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_radar_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 75,
+            ui = SettingUiType.Custom
+        )
+        val homeRadarHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_radar_visible
+        )
+
+        @AutoSetting(
+            key = "home_recommended_order",
+            type = SettingValueType.String,
+            defaultString = "personalized,daily_resource,high_quality,hot_playlists,acg_playlists",
+            order = 76,
+            ui = SettingUiType.Custom
+        )
+        val homeRecommendedOrder = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_recommended_order,
+            descriptionRes = CoreCommonR.string.settings_home_recommended_order_desc
+        )
+
+        @AutoSetting(
+            key = "home_recommended_hidden",
+            type = SettingValueType.String,
+            defaultString = "",
+            order = 77,
+            ui = SettingUiType.Custom
+        )
+        val homeRecommendedHidden = autoSetting(
+            titleRes = CoreCommonR.string.settings_home_recommended_visible
+        )
+
+        @AutoSetting(
+            key = "international_home_order",
+            type = SettingValueType.String,
+            order = 78,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeOrder = autoSetting(titleRes = CoreCommonR.string.settings_home_major_order)
+
+        @AutoSetting(
+            key = "international_home_hidden",
+            type = SettingValueType.String,
+            order = 79,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeHidden = autoSetting(titleRes = CoreCommonR.string.settings_personalization_home_section)
+
+        @AutoSetting(
+            key = "international_home_feed_hidden",
+            type = SettingValueType.String,
+            order = 80,
+            access = SettingAccessMode.KeyOnly
+        )
+        val internationalHomeFeedHidden = autoSetting(titleRes = CoreCommonR.string.international_home_feed)
     }
 
     /*
@@ -864,6 +983,19 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "enhanced_visual_effects_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 18,
+            ui = SettingUiType.Custom
+        )
+        val enhancedVisualEffectsEnabled = autoSetting(
+            titleRes = CoreCommonR.string.settings_enhanced_visual_effects,
+            descriptionRes = CoreCommonR.string.settings_enhanced_visual_effects_desc,
+            icon = AutoSettingIcon.AutoAwesome
+        )
+
+        @AutoSetting(
             key = "advanced_blur_enabled",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
@@ -1147,9 +1279,11 @@ object AutoSettingsSchema {
             type = SettingValueType.Boolean,
             defaultBoolean = false,
             order = 12,
-            ui = SettingUiType.Switch
+            ui = SettingUiType.Custom
         )
-        val liveUpdateLyricEnabled = autoSetting(
+        val liveUpdateLyricEnabled = autoSwitchSetting(
+            key = "live_update_lyric_enabled",
+            defaultValue = false,
             titleRes = CoreCommonR.string.settings_live_update_lyric_enabled,
             descriptionRes = CoreCommonR.string.settings_live_update_lyric_enabled_desc,
             icon = AutoSettingIcon.Subtitles
@@ -1585,6 +1719,22 @@ object AutoSettingsSchema {
             titleRes = CoreCommonR.string.settings_bypass_proxy,
             descriptionRes = CoreCommonR.string.settings_bypass_proxy_desc
         )
+
+        @AutoSetting(key = "network_proxy_endpoint", type = SettingValueType.String, order = 20, ui = SettingUiType.Custom)
+        val proxyEndpoint = autoStringSetting(
+            key = "network_proxy_endpoint",
+            titleRes = CoreCommonR.string.settings_custom_proxy,
+            descriptionRes = CoreCommonR.string.settings_custom_proxy_desc,
+            icon = AutoSettingIcon.Router
+        )
+
+        @AutoSetting(key = "network_doh_endpoint", type = SettingValueType.String, order = 30, ui = SettingUiType.Custom)
+        val dohEndpoint = autoStringSetting(
+            key = "network_doh_endpoint",
+            titleRes = CoreCommonR.string.settings_dns_over_https,
+            descriptionRes = CoreCommonR.string.settings_dns_over_https_desc,
+            icon = AutoSettingIcon.Cloud
+        )
     }
 
     /*
@@ -1823,6 +1973,18 @@ object AutoSettingsSchema {
         order = 110
     )
     object playback : PlaybackSettingsSection() {
+        @AutoSetting(order = 991, ui = SettingUiType.Custom)
+        val lanHostPermissions = autoIntSetting(
+            key = "lan_listen_host_permissions", defaultValue = 7,
+            titleRes = CoreCommonR.string.lan_permissions, icon = AutoSettingIcon.Bolt
+        )
+
+        @AutoSetting(order = 990, ui = SettingUiType.Custom)
+        val lanNudgeMs = autoIntSetting(
+            key = "lan_listen_nudge_ms", defaultValue = 0,
+            titleRes = CoreCommonR.string.lan_nudge, icon = AutoSettingIcon.Bolt
+        )
+
         val metadata = autoSettingsSection(
             titleRes = CoreCommonR.string.settings_playback,
             descriptionRes = CoreCommonR.string.settings_playback_expand,

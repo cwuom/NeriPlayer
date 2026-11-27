@@ -49,6 +49,13 @@ internal data class PlaybackServiceMetadataInputs(
     val album: String? = null,
     val colorOsLyricsEnabled: Boolean = false,
     val colorOsLyricInfo: String? = null,
+    /**
+     * 「蓝牙外接设备翻译歌词」开关。
+     *
+     * payload 的翻译由多个歌词展示功能共用, 其他功能开着时也会带翻译,
+     * 车机这边是否显示翻译由这个开关决定。
+     */
+    val bluetoothTranslationEnabled: Boolean = false,
 )
 
 internal data class PlaybackServiceTimerInputs(
@@ -104,6 +111,7 @@ internal class AndroidPlaybackServicePresentationSource(
         album = metadataAlbum(),
         colorOsLyricsEnabled = PlayerManager.colorOsLockscreenLyricsEnabled,
         colorOsLyricInfo = currentColorOsLyricInfo(),
+        bluetoothTranslationEnabled = PlayerManager.externalBluetoothTranslationEnabled,
     )
 
     private fun currentColorOsLyricInfo(): String? {

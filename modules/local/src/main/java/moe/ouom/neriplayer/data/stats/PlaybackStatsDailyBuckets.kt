@@ -51,7 +51,7 @@ internal fun recordPlaybackStatBucket(
         playCount = existing.playCount + playCountIncrement,
         firstPlayedAt = minPositiveTimestamp(existing.firstPlayedAt, playedAt),
         lastPlayedAt = maxOf(existing.lastPlayedAt, playedAt)
-    )
+    ).copy(recordedLocalDate = existing.recordedLocalDate, hourlyTotals = existing.hourlyTotals)
     return current.toMutableList().apply {
         this[existingIndex] = updatedBucket
     }

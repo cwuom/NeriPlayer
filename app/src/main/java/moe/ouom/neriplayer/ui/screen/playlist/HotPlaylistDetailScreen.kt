@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -36,6 +37,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
@@ -46,6 +49,8 @@ import moe.ouom.neriplayer.ui.screen.history.stats.StatsPageNavigation
 import moe.ouom.neriplayer.ui.screen.history.stats.rememberStatsPage
 import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.history.stats.StatTrackRow
 import moe.ouom.neriplayer.util.format.formatPlayCount
@@ -69,6 +74,12 @@ fun HotPlaylistDetailScreen(
     val songs = remember(tracks) { tracks.map { it.toPlaybackStatsSongItem() } }
     val context = LocalContext.current
     val title = stringResource(period.hotPlaylistTitleResId())
+    // 提升到顶栏可达处；列表在加载或失败时会卸载，原先重新出现时从顶部开始，这里保持一致
+    val listState = rememberLazyListState()
+    val listShown = !state.loading && !state.failed
+    LaunchedEffect(listShown) {
+        if (!listShown) listState.requestScrollToItem(0)
+    }
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -76,6 +87,9 @@ fun HotPlaylistDetailScreen(
         topBar = {
             TopAppBar(
                 title = { Text(title) },
+                modifier = Modifier.scrollToTopOnTitleBarTap {
+                    listState.scrollToTopForReselect()
+                },
                 navigationIcon = {
                     HapticIconButton(onClick = onBack) {
                         Icon(
@@ -117,6 +131,7 @@ fun HotPlaylistDetailScreen(
             }
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),

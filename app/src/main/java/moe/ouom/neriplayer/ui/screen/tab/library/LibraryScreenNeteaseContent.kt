@@ -29,8 +29,10 @@ import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import androidx.compose.ui.graphics.Shape
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +46,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -58,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -84,6 +88,8 @@ internal fun NeteaseLibraryList(
     onCategoryChange: (Int) -> Unit,
     onPlaylistClick: (PlaylistSummary) -> Unit,
     onAlbumClick: (AlbumSummary) -> Unit,
+    onCloudClick: () -> Unit,
+    showCloudEntry: Boolean,
     offlineMode: Boolean
 ) {
     var playlistSearchQuery by rememberSaveable { mutableStateOf("") }
@@ -136,6 +142,15 @@ internal fun NeteaseLibraryList(
                 },
                 placeholderResId = CoreCommonR.string.library_netease_search_hint
             )
+        }
+
+        if (!isAlbumCategory && showCloudEntry && playlistSearchQuery.isBlank()) {
+            item(key = "netease_cloud_entry") {
+                NeteaseCloudEntryRow(
+                    cardShape = cardShape,
+                    onClick = onCloudClick
+                )
+            }
         }
 
         if (isAlbumCategory) {
@@ -273,6 +288,51 @@ internal fun NeteaseLibraryEmptyCard(
     }
 }
 
+/** 媒体库里的云盘入口行，仅登录后展示。 */
+@Composable
+internal fun NeteaseCloudEntryRow(
+    cardShape: Shape,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = cardShape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(cardShape)
+            .clickable(onClick = onClick)
+    ) {
+        ListItem(
+            headlineContent = {
+                Text(stringResource(CoreCommonR.string.library_netease_cloud_entry))
+            },
+            supportingContent = {
+                Text(
+                    text = stringResource(CoreCommonR.string.library_netease_cloud_entry_hint),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            leadingContent = {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(neriRoundedShape(8.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Cloud,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        )
+    }
+}
+
 @Composable
 internal fun NeteasePlaylistRow(
     playlist: PlaylistSummary,
@@ -304,14 +364,17 @@ internal fun NeteasePlaylistRow(
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
+                val coverRequest = remember(context, playlist.picUrl, offlineMode) {
+                    offlineCachedImageRequest(
                         context = context,
                         data = playlist.picUrl,
                         sizePx = 192,
-                        allowHardware = false,
+                        allowHardware = true,
                         offlineMode = offlineMode
-                    ),
+                    )
+                }
+                AsyncImage(
+                    model = coverRequest,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -354,14 +417,17 @@ internal fun NeteaseAlbumRow(
             },
             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
             leadingContent = {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
+                val coverRequest = remember(context, album.picUrl, offlineMode) {
+                    offlineCachedImageRequest(
                         context = context,
                         data = album.picUrl,
                         sizePx = 192,
-                        allowHardware = false,
+                        allowHardware = true,
                         offlineMode = offlineMode
-                    ),
+                    )
+                }
+                AsyncImage(
+                    model = coverRequest,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -407,7 +473,7 @@ internal fun NeteaseAlbumList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                shape = neriSearchFieldShape(LibrarySearchFieldShape)
+                shape = neriSearchFieldShape()
             ) {
             OutlinedTextField(
                 value = searchQuery,
@@ -415,7 +481,7 @@ internal fun NeteaseAlbumList(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(CoreCommonR.string.library_netease_search_hint)) },
                 singleLine = true,
-                shape = neriSearchFieldShape(LibrarySearchFieldShape),
+                shape = neriSearchFieldShape(),
 
                 colors = neriSearchFieldColors()
             )
@@ -492,9 +558,7 @@ internal fun NeteaseAlbumList(
         ) { pl ->
             Card(
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -514,14 +578,17 @@ internal fun NeteaseAlbumList(
                         containerColor = Color.Transparent
                     ),
                     leadingContent = {
-                        AsyncImage(
-                            model = offlineCachedImageRequest(
+                        val coverRequest = remember(context, pl.picUrl, offlineMode) {
+                            offlineCachedImageRequest(
                                 context = context,
                                 data = pl.picUrl,
                                 sizePx = 192,
-                                allowHardware = false,
+                                allowHardware = true,
                                 offlineMode = offlineMode
-                            ),
+                            )
+                        }
+                        AsyncImage(
+                            model = coverRequest,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier

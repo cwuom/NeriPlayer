@@ -1,13 +1,22 @@
 package moe.ouom.neriplayer.testutil
 
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.graphics.Rect
+import android.os.Build
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
 
@@ -72,5 +81,43 @@ internal fun sendNativeSoftKeyboardText(text: String) {
         instrumentation.sendKeySync(KeyEvent.changeFlags(
             timed, timed.flags or KeyEvent.FLAG_SOFT_KEYBOARD or KeyEvent.FLAG_KEEP_TOUCH_MODE
         ))
+    }
+}
+
+internal fun ComposeTestRule.awaitAboveKeyboard(action: SemanticsNodeInteraction) {
+    val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+    val originalFlags = automation.serviceInfo.flags
+    var previous: Rect? = null
+    var stableSince = 0L
+    var lastGeometry = "尚未取得窗口坐标"
+    try {
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
+        waitUntil(conditionDescription = "Touch target above the visible keyboard", timeoutMillis = 5_000) {
+            val node = action.fetchSemanticsNode()
+            val view = (node.root as ViewRootForTest).view
+            val x = node.positionOnScreen.x.toInt()
+            val y = node.positionOnScreen.y.toInt()
+            val button = Rect(x, y, x + node.size.width, y + node.size.height)
+            val keyboard = automation.windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            val imeBounds = Rect().also { keyboard?.getBoundsInScreen(it) }
+            lastGeometry = "screen=$button clipped=${node.boundsInRoot} size=${node.size} ime=$imeBounds"
+            // Android 10 及以下按窗口遮挡推算 IME，浮窗避开键盘后需读取实际输入法窗口
+            val imeVisible = !imeBounds.isEmpty && (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
+            val ready = imeVisible && !button.isEmpty && button.bottom <= imeBounds.top &&
+                node.boundsInRoot.height >= with(density) { 32.dp.toPx() } &&
+                node.boundsInRoot.height + 1f >= node.size.height
+            // 输入法出现时浮窗还会移动，待按钮的屏幕坐标稳定后再注入触摸
+            val now = SystemClock.uptimeMillis()
+            if (!ready || previous != button) stableSince = now
+            previous = button
+            ready && now - stableSince >= 150
+        }
+    } catch (e: ComposeTimeoutException) {
+        throw AssertionError("键盘上方的触控区域未就绪 ($lastGeometry)", e)
+    } finally {
+        automation.serviceInfo = automation.serviceInfo.apply { flags = originalFlags }
     }
 }

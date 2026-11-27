@@ -544,6 +544,7 @@ internal fun GlobalDownloadManager.buildSongFromDurableMetadata(
         channelId = metadata.channelId,
         audioId = metadata.audioId,
         subAudioId = metadata.subAudioId,
+        youtubeContentLabel = metadata.youtubeContentLabel,
         playlistContextId = metadata.playlistContextId,
         sourceStableKey = stableKey,
         localFileName = audio.name,
@@ -586,6 +587,7 @@ internal fun GlobalDownloadManager.hasExpectedDownloadedSongMetadata(
         downloadedSong.customName == song.customName &&
         downloadedSong.customArtist == song.customArtist &&
         downloadedSong.originalCoverUrl == song.originalCoverUrl &&
+        (song.youtubeContentLabel == null || downloadedSong.youtubeContentLabel == song.youtubeContentLabel) &&
         (
             song.sourceStableKey.isNullOrBlank() ||
                 downloadedSong.remoteSourceStableKeyOrNull() == song.sourceStableKey

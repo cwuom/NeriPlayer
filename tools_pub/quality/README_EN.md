@@ -3,15 +3,17 @@
 # Quality checks
 
 These tools check method complexity, source ownership, and dependency boundaries.
-Gradle tasks require JDK 17, an Android build environment, and Python 3. The Python
-scripts use only the standard library. Gates running `:playback:runtime` JVM tests
-also need a Gradle-discoverable JDK 21; production compilation still targets 17.
+
+- Requires JDK 17, an Android build environment, and Python 3
+- The Python scripts use only the standard library
+- Gates that run `:playback:runtime` JVM tests also need a Gradle-discoverable JDK 21
+- Production compilation still targets 17
 
 | Check | Purpose |
 | --- | --- |
-| `verifyCrap` | Combine method complexity with JVM test coverage to check risk scores within a defined scope |
-| `verifyModuleBoundaries` | Check module registrations, source ownership, declared dependency direction, package paths, and source limits |
-| `verifyDomainDependencies` | Check direct JVM class dependencies and host bridge member references in protected packages |
+| `verifyCrap` | Combines method complexity and JVM test coverage to check risk scores in scope |
+| `verifyModuleBoundaries` | Checks module registration, source ownership, dependency direction, package paths, and size limits |
+| `verifyDomainDependencies` | Checks direct JVM class dependencies and host bridge member calls in protected packages |
 
 ## Commands
 
@@ -23,18 +25,33 @@ Run from the repository root:
 ./gradlew :app:crapReport
 ```
 
-| Task | Scope and Behavior |
+| Task | Scope and behavior |
 | --- | --- |
-| `verifyModularization` | Runs structural checks, `app` and owned JVM-library Debug tests, combined CRAP reporting, domain dependency checks, lint, and build-logic tests |
+| `verifyModularization` | Aggregates all checks; see the list below |
 | `:app:check` | Includes CRAP and domain dependency checks |
-| `:app:crapReport` | Validates inputs and generates the report without failing on over-threshold scores |
-| `:sync:verifyCrap` | Combines coverage from `:sync` and its sync models in `:model` |
-| `:local:verifySyncIntegrationCrap` | Runs JVM tests for Android sync adapters and checks `:local`'s entire `data/sync` directory; does not replace the full `:local` gate |
+| `:app:crapReport` | Validates inputs and generates the report; over-threshold scores do not fail |
+| `:sync:verifyCrap` | Combines coverage of `:sync` and the sync models in `:model` |
+| `:local:verifySyncIntegrationCrap` | Checks the entire `data/sync` directory under `:local` |
 
-The 14 owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt). See the [implementation notes](../../docs/implementation_EN.md#module-layout) for module responsibilities:
+`verifyModularization` includes:
 
-- **Kotlin/Java modules**: Retain full coverage collection. Independent CRAP tasks enforce the same threshold across their respective source scopes.
-- **`:native` module**: Pure-native Android library included in registration, structural checks, and lint only; creates no JaCoCo data, CRAP tasks, or JVM test tasks. Independent CI checks the three native USB host profiles and four Android ABI builds. The standalone `tests/dsp/` CMake/CTest suite is separate from those USB profiles. These checks run outside the JVM gates (see [Native module README](../../modules/native/README.md)).
+- Structural checks
+- Debug JVM tests of `app` and the owned JVM libraries
+- The combined CRAP report
+- Domain dependency checks
+- Lint
+- Build-logic tests
+
+`:local:verifySyncIntegrationCrap` runs JVM tests for the Android sync adapters and supplements the full `:local` gate.
+
+The 14 owned libraries are registered in [gradle/owned-modules.txt](../../gradle/owned-modules.txt). See the [implementation notes](../../docs/implementation_EN.md#module-layout) for module responsibilities.
+
+- **Kotlin/Java modules**: full coverage collection; independent CRAP tasks use the same threshold over their own source scopes
+- **`:native` module**: pure-native Android library, included only in registration, structural checks, and lint
+- `:native` creates no JaCoCo data, CRAP tasks, or JVM test tasks
+- Independent CI checks the three native USB host profiles and four ABI builds
+- `tests/dsp/` is a standalone CMake/CTest suite
+- These checks run outside the JVM gates; see the [Native module README](../../modules/native/README.md) for commands
 
 Run focused checks for affected modules:
 
@@ -51,45 +68,65 @@ Run focused checks for affected modules:
 
 ## CRAP
 
-`crap_report.py` calculates method risk using `C² × (1 − cov)³ + C`:
+`crap_report.py` calculates method risk as `C² × (1 − cov)³ + C`:
 
-| Metric / Rule | Definition |
+| Metric | Definition |
 | --- | --- |
-| `C` | JaCoCo `COMPLEXITY` `missed + covered` (method cyclomatic complexity) |
-| `cov` | `covered / C` (complexity coverage), used as a path-coverage proxy rather than line coverage or strict independent-path measurement |
-| Pass / Fail | Fails when a scoped method's unrounded score is `> 9`; `<= 9` passes. No average-score gate or historical baseline exemption |
-| Full-Coverage Floor | At `100%` coverage, `CRAP = C` |
+| `C` | JaCoCo `COMPLEXITY` `missed + covered`, the method cyclomatic complexity |
+| `cov` | `covered / C`, the complexity coverage |
+| Full coverage | At `cov = 100%`, `CRAP = C` |
 
-The threshold of `9` is a risk gate for complexity and coverage. Refactoring must make entry points, business steps, state ownership, and failure handling easier to trace; never split methods, add forwarding layers, or weaken thresholds, scope, or valid tests just to lower a score. The gate does not run automated mutation testing. Review CRAP results alongside dependency checks, behavior and boundary tests, lint, and relevant integration or device checks to assess responsibilities and assertion quality.
+- `cov` approximates path coverage; it is neither line coverage nor a strict independent-path measure
+- Pass condition: a scoped method's unrounded raw score is `<= 9`; `> 9` fails
+- There is no average-score gate and no historical baseline exemption
+
+### Threshold and refactoring
+
+The threshold `9` gates complexity and coverage risk.
+
+- Refactoring should make entry points, business steps, state ownership, and failure handling easier to trace
+- Do not split methods or add forwarding layers just to lower a score
+- Do not loosen the threshold, shrink the scope, or weaken valid tests
+- The gate does not run automated mutation testing
+- Review combines dependency checks, behavior and boundary tests, lint, and relevant integration or device checks
+- This assesses responsibility split and assertion quality
 
 References: [CRAP author](https://www.artima.com/weblogs/viewpost.jsp?thread=215899), [JaCoCo counters](https://www.jacoco.org/jacoco/trunk/doc/counters.html).
 
 ### Scope
 
-[config/quality/crap-scope.json](../../config/quality/crap-scope.json) uses
-`source_patterns` for whole files and `method_scopes` for classes and JVM method
-names, including constructors and Kotlin default-argument methods. Recursive
-patterns include new files and subdirectories. Methods outside the gate scope
-still appear in reports but do not determine whether the gate passes.
+[config/quality/crap-scope.json](../../config/quality/crap-scope.json):
 
-`:app:verifyCrap` obtains each module's own Kotlin/Java bytecode through AGP
-`ScopedArtifact.CLASSES` and combines real test execution data into JaCoCo XML.
-Sources from each JVM module's `src/main/java` and `src/main/kotlin` are merged into
-`app/build/reports/crap/sources`. Duplicate paths and missing or empty execution
-data cause failure.
+- `source_patterns` selects whole files
+- `method_scopes` selects classes and JVM method names, including constructors and Kotlin default-argument methods
+- Recursive patterns include new files and subdirectories
+- Methods outside the gate scope still appear in reports but do not decide the gate result
 
-The reporter returns 2 for invalid XML or counters, empty configuration, unmatched
-rules, or missing scoped sources/methods; scores above the threshold return 1.
-Pure interfaces are validated through class records. Executable default
-implementations still receive scores. Coroutine, lambda, and Compose bytecode
-use actual counters after JaCoCo's built-in filtering; source branch counts are
-not the same as reported JVM complexity.
+Data sources of `:app:verifyCrap`:
 
-When moving or splitting code, review the complete diff and actual XML before
-updating scope, preserving previously checked logic. Kotlin `internal` methods
-may have module suffixes, so selectors must match their actual JVM names.
-For delegating Android hosts, distinguish tested components from unexecuted
-entry points. Component coverage does not prove host I/O, Provider, or Compose behavior.
+- Gets app and registered-library Kotlin/Java bytecode through AGP `ScopedArtifact.CLASSES`
+- Merges real test execution data into JaCoCo XML
+- Merges sources from each JVM module's `src/main/java` and `src/main/kotlin` into `app/build/reports/crap/sources`
+- Duplicate paths and missing or empty execution data fail the task
+
+Reporter exit codes:
+
+- 2: invalid XML or counters, empty configuration, unmatched rules, or missing scoped sources or methods
+- 1: a score above the threshold
+
+Counting rules:
+
+- Pure interfaces are validated through class records
+- Executable default implementations are still scored
+- Coroutine, lambda, and Compose bytecode use the actual counters after JaCoCo's built-in filtering
+- Source branch counts differ from the JVM complexity in reports
+
+When moving or splitting code:
+
+- Review the complete diff and actual XML before updating scope, and keep previously checked logic
+- Kotlin `internal` methods may carry module suffixes, so selectors must match the real JVM names
+- For delegating Android hosts, distinguish tested components from unexecuted entry points
+- Component coverage does not prove host I/O, Provider, or Compose behavior
 
 ### Reports
 
@@ -97,29 +134,50 @@ Combined reports are written to `app/build/reports/crap/`:
 
 | File | Contents |
 | --- | --- |
-| `methods.json` | All JVM methods mapped to production sources, with signatures, locations, complexity, coverage, scores, and scope flags |
-| `above-8.md` | Methods with unrounded scores strictly above 8, including methods outside the gate scope |
+| `methods.json` | All JVM methods mapped to production sources |
+| `above-8.md` | Methods with unrounded scores strictly above 8, including out-of-scope methods |
 | `scope.md` | Every method in the gate scope |
 | `coverage.xml`, `coverage/index.html` | Combined JaCoCo coverage |
 
-Independent CRAP reports use each module's `build/reports/crap/`.
-Local sync adapter reports use `modules/local/build/reports/sync-crap/`.
+Each `methods.json` entry has the signature, location, complexity, coverage, score, and scope flag.
+
+- Independent CRAP reports are in each module's `build/reports/crap/`
+- Local sync adapter reports are in `modules/local/build/reports/sync-crap/`
 
 ## Dependencies
 
 Dependency enforcement combines source-level structural checks with bytecode-level direct dependency checks. Rules are defined in [module_boundaries.py](./module_boundaries.py) and [domain-dependencies.json](../../config/quality/domain-dependencies.json); directory names do not imply dependency layers.
 
-| Layer | Entry Point | Tooling and Rules |
-| --- | --- | --- |
-| Source & Module Boundaries | `module_boundaries.py` | Runs without the Android SDK. Reads the module registry, Gradle declarations, and source files to check unregistered build nodes, cycles, forbidden references, production package ownership, and package paths. `:model` cannot depend on project implementations, libraries cannot depend on `app`, and protected production packages cannot move back into `app`. Library production files must stay under 2000 lines, and library production directories plus `APP_FAMILIES` directories allow at most 16 direct Kotlin/Java files. |
-| Bytecode Domain Dependencies | `verifyDomainDependencies` | Uses `jdeps` from the Gradle JDK to inspect direct class dependencies and `javap` to verify full JVM member signatures on host bridges. Platform protocols must not read account repositories, Room, or player state; playback/download rules, sync calculations, lyric parsing, and local storage calculations maintain separate allowlists. |
+### Source and module boundaries
 
-### Domain Configuration and Scope
+Entry point: `module_boundaries.py`, which runs without the Android SDK.
 
-- **Automatic inclusion & least privilege**: New classes, nested classes, lambdas, and Kotlin-generated classes in protected packages are checked automatically. Allowing a single bridge method does not grant access to the rest of its host class.
-- **Exclusions**: `excluded_classes` matches only the named source class and its `$` nested classes (no wildcards). Any excluded subpackage must be covered by another protected domain, and excluding a source class does not relax incoming reference restrictions from other classes.
-- **Fail-closed conditions**: Missing artifacts, duplicate classes, empty domains, tool failures, or omitted protected classes fail the task.
-- **Reports & analysis boundary**: The combined report writes to `app/build/reports/domain-dependencies/report.json`, while `:platform`, `:sync`, and `:listentogether` write independent reports to each module's `build/reports/domain-dependencies/report.json`. Inspection covers direct bytecode dependencies; it does not trace transitive calls or reflection. Review platform dependencies inside shared models and bridge implementations separately.
+- Reads the module registry, Gradle declarations, and source files
+- Checks unregistered build nodes, cycles, forbidden references, production package ownership, and package path consistency
+- `:model` cannot depend on project implementations
+- Libraries cannot depend on `app`, and protected production packages cannot move back into `app`
+- Library production files stay under 2000 lines
+- Library production directories and `APP_FAMILIES` directories allow at most 16 direct Kotlin/Java files
+
+### Bytecode domain dependencies
+
+Entry point: `verifyDomainDependencies`.
+
+- Uses `jdeps` from the Gradle JDK to inspect direct class dependencies
+- Uses `javap` to verify full JVM signatures of host bridge members
+- Platform protocols must not read account repositories, Room, or player state
+- Playback/download rules, sync calculations, lyric parsing, and local storage calculations each keep their own allowlists
+
+### Domain configuration and scope
+
+- **Automatic inclusion and least privilege**: new classes, nested classes, lambdas, and Kotlin-generated classes in protected packages are checked automatically; allowing one bridge method does not open the rest of its host class
+- **Exclusions**: `excluded_classes` matches only the named source class and its `$` nested classes, with no wildcards
+- An excluded subpackage must be covered by another protected domain, and excluding a source class does not relax incoming reference restrictions from other classes
+- **Failure conditions**: missing artifacts, duplicate classes, empty domains, tool failures, or omitted protected classes fail the task
+- **Combined report**: `app/build/reports/domain-dependencies/report.json`
+- **Independent reports**: `build/reports/domain-dependencies/report.json` in each of `:platform`, `:sync`, and `:listentogether`
+- **Analysis scope**: direct bytecode dependencies only, with no transitive calls or reflection
+- Platform dependencies inside shared models and bridge implementations need separate review
 
 ## Tool tests
 
@@ -128,7 +186,4 @@ python3 -B tools_pub/quality/module_boundaries.py
 python3 -B -m unittest discover -s tools_pub/quality -p 'test_*.py'
 ```
 
-Domain dependency tests compile isolated fixtures with `javac --release 17`, then
-run real `jdeps` and `javap` to verify that forbidden class dependencies, bridge
-members, nested classes, and new files are rejected. These validate the gate tools;
-they do not replace business tests.
+Domain dependency tests compile isolated fixtures with `javac --release 17`, then run real `jdeps` and `javap` to verify that forbidden class dependencies, bridge members, nested classes, and new files are rejected. They validate the gate tools and do not replace business tests.

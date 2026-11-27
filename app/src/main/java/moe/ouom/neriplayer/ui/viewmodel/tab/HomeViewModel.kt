@@ -25,13 +25,12 @@ package moe.ouom.neriplayer.ui.viewmodel.tab
 
 import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.ui.viewmodel.feedbackText
-import moe.ouom.neriplayer.platform.youtube.api.auth.hasEffectiveAuth
-import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -39,7 +38,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -54,9 +53,11 @@ import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong
 import moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankType
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeCursor
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.ui.viewmodel.tab.bili.BiliMusicHomeRepository
-import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.netease.neteaseRadarCacheContext
@@ -67,9 +68,11 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val TAG = "NERI-HomeVM"
 private const val HOME_NETEASE_SONG_LIMIT = 30
 private const val HOME_NETEASE_PLAYLIST_LIMIT = 30
+/** 二级页每次进入都重新请求，取比首页更多的条目。 */
+private const val HOME_FULL_SONG_LIMIT = 100
+private const val HOME_FULL_PLAYLIST_LIMIT = 100
 private const val HOME_PRIVATE_FM_MAX_BATCHES = 10
 private const val HOME_MAX_FAILURE_BEFORE_WARNING = 3
-private const val HOME_YT_MUSIC_PLAYLIST_LIMIT = 24
 private const val HOME_INITIAL_LOAD_DEFER_MS = 250L
 private const val HOME_SECTION_LOAD_PARALLELISM = 6
 private const val HOME_SECTION_LOAD_PARALLELISM_PER_GROUP = 2
@@ -100,6 +103,41 @@ internal fun shouldAcceptNeteaseRadarPlaylistLoadResult(
         requestRadarCacheContext == activeRadarCacheContext
 }
 
+internal fun appendYouTubeMusicHomeShelves(
+    current: List<YouTubeMusicHomeShelf>,
+    page: List<YouTubeMusicHomeShelf>
+): List<YouTubeMusicHomeShelf> {
+    val result = current.toMutableList()
+    val keyedPositions = mutableMapOf<String, Int>()
+    current.forEachIndexed { index, shelf ->
+        shelf.continuationKey?.let { keyedPositions[it] = index }
+    }
+    val seenByTitle = mutableMapOf<String, MutableSet<Pair<String, String>>>()
+    for (shelf in page) {
+        val key = shelf.continuationKey
+        if (key == null) {
+            val seenInShelf = seenByTitle.getOrPut(shelf.title) {
+                current.asSequence()
+                    .filter { it.continuationKey == null && it.title == shelf.title }
+                    .flatMap { it.items }
+                    .mapTo(mutableSetOf()) { it.browseId to it.videoId }
+            }
+            val fresh = shelf.items.filter { seenInShelf.add(it.browseId to it.videoId) }
+            if (fresh.isNotEmpty()) result += shelf.copy(items = fresh)
+            continue
+        }
+        val position = keyedPositions.getOrPut(key) { result.size }
+        if (position == result.size) {
+            result += shelf
+        } else {
+            val existing = result[position]
+            val items = (existing.items + shelf.items).distinctBy { it.browseId to it.videoId }
+            result[position] = existing.copy(items = items)
+        }
+    }
+    return result
+}
+
 internal fun shouldAcceptYouTubeMusicHomeLoadResult(
     requestGeneration: Long,
     activeGeneration: Long,
@@ -110,26 +148,6 @@ internal fun shouldAcceptYouTubeMusicHomeLoadResult(
     return requestGeneration == activeGeneration &&
         requestAuthFingerprint == activeAuthFingerprint &&
         internationalizationEnabled
-}
-
-internal fun shouldScheduleYouTubeMusicHomeRefresh(
-    refreshPending: Boolean,
-    offlineMode: Boolean,
-    requestGeneration: Long,
-    activeGeneration: Long,
-    requestAuthFingerprint: String,
-    activeAuthFingerprint: String,
-    internationalizationEnabled: Boolean
-): Boolean {
-    return refreshPending &&
-        !offlineMode &&
-        shouldAcceptYouTubeMusicHomeLoadResult(
-            requestGeneration = requestGeneration,
-            activeGeneration = activeGeneration,
-            requestAuthFingerprint = requestAuthFingerprint,
-            activeAuthFingerprint = activeAuthFingerprint,
-            internationalizationEnabled = internationalizationEnabled
-        )
 }
 
 internal fun shouldHandleInitialNeteaseHomeCookieEmission(
@@ -215,16 +233,32 @@ data class HomeUiState(
     val trendingSongSections: List<HomeNeteaseSongSectionState> = emptyList(),
     val radarSongSections: List<HomeNeteaseSongSectionState> = emptyList(),
     val radarPlaylists: HomeSectionState<PlaylistSummary> = HomeSectionState(),
-    val ytMusicPlaylists: HomeSectionState<YouTubeMusicPlaylist> = HomeSectionState(),
     val ytMusicHomeShelves: HomeSectionState<YouTubeMusicHomeShelf> = HomeSectionState(),
     val biliMusicRank: HomeBiliMusicRankState = HomeBiliMusicRankState(),
     val biliMusicHot: HomeSectionState<BiliMusicHotVideo> = HomeSectionState(),
     val biliMusicHomeEnabled: Boolean = false,
     val hasLogin: Boolean = false,
-    val internationalizationEnabled: Boolean = false
+    val internationalizationEnabled: Boolean = false,
+    val homeSourceReady: Boolean = false,
+    val youtubeHomeEnabled: Boolean = false,
+    val internationalHomeLayout: InternationalHomeLayout = InternationalHomeLayout(),
+    val loadingMoreYouTubeHome: Boolean = false,
+    val youTubeHomeLoadMoreError: UiText? = null,
+    /** 大/小模块的顺序与隐藏设置，来自设置页。 */
+    val layout: HomeLayoutState = HomeLayoutState()
 )
 
-class HomeViewModel(application: Application) : AndroidViewModel(application) {
+private data class HomeFeedSource(
+    val international: Boolean,
+    val youtubeEnabled: Boolean,
+    val catalogKey: String? = null,
+    val authFingerprint: String = ""
+)
+
+class HomeViewModel @JvmOverloads constructor(
+    application: Application,
+    initialOfflineMode: Boolean = false
+) : AndroidViewModel(application) {
 
     private val repo = AppContainer.neteaseCookieRepo
     private val client = AppContainer.neteaseClient
@@ -244,18 +278,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val homeSectionLoadCoordinator = HomeSectionLoadCoordinator()
     private var radarPlaylistsJob: Job? = null
     private var ytMusicHomeJob: Job? = null
-    private var ytMusicHomeRefreshPending = false
+    private var failedYouTubeHomeCursor: YouTubeMusicHomeCursor? = null
+    private var homeFeedSource: HomeFeedSource? = null
     private var ytMusicHomeLoadGeneration: Long = 0L
+    private val firstHomeSource = CompletableDeferred<Unit>()
     private var homeRecommendationsBootstrapped = false
-    private var lastYouTubeAuthFingerprint: String? = null
     private var lastNeteaseRadarCacheContext = neteaseRadarCacheContext(repo.getCookiesOnce())
     private var radarPlaylistLoadGeneration: Long = 0L
     private var biliMusicRankJob: Job? = null
     private var biliMusicHotJob: Job? = null
     private var biliMusicRankGeneration: Long = 0L
     private var biliMusicHotGeneration: Long = 0L
-    private var offlineMode = false
-    private var biliMusicHomeEnabled = false
+    private var offlineMode = initialOfflineMode
+    private val canLoadBiliMusicHome: Boolean
+        get() = _uiState.value.run { homeSourceReady && !internationalizationEnabled && biliMusicHomeEnabled }
 
 
     private fun createHomeUiState(hasLogin: Boolean, loading: Boolean): HomeUiState {
@@ -361,8 +397,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        lastYouTubeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
-
         viewModelScope.launch {
             combine(
                 AppContainer.settingsRepo.homeCardBilibiliFlow,
@@ -370,8 +404,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             ) { savedEnabled, internationalEnabled ->
                 savedEnabled && !internationalEnabled
             }.collect { enabled ->
-                if (biliMusicHomeEnabled == enabled) return@collect
-                biliMusicHomeEnabled = enabled
+                if (_uiState.value.biliMusicHomeEnabled == enabled) return@collect
                 if (enabled) {
                     _uiState.update { state -> state.copy(biliMusicHomeEnabled = true) }
                     if (homeRecommendationsBootstrapped) loadBiliMusicHome()
@@ -392,54 +425,76 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             combine(
                 AppContainer.settingsRepo.internationalizationEnabledFlow,
-                AppContainer.settingsRepo.youtubeEnabledFlow
-            ) { internationalizationEnabled, youtubeEnabled ->
-                internationalizationEnabled to youtubeEnabled
-            }.collect { (internationalizationEnabled, youtubeEnabled) ->
-                val useYouTubeHome = internationalizationEnabled && youtubeEnabled
-                NPLogger.d(
-                    TAG,
-                    "home source updated: international=$internationalizationEnabled, youtube=$youtubeEnabled"
-                )
-                _uiState.value = _uiState.value.copy(
-                    internationalizationEnabled = useYouTubeHome
-                )
-                if (useYouTubeHome) {
-                    refreshYtMusicHome()
-                } else {
-                    cancelYouTubeHomeJobs()
-                    _uiState.value = _uiState.value.copy(
-                        ytMusicPlaylists = HomeSectionState(),
+                AppContainer.settingsRepo.youtubeEnabledFlow,
+                YouTubeContentSettings.catalogKeyFlow,
+                youtubeAuthRepo.authFlow,
+                AppContainer.settingsRepo.internationalHomeLayoutFlow
+            ) { international, enabled, catalogKey, auth, layout ->
+                val useYouTube = international && enabled
+                val showFeed = useYouTube && layout.hasOnlineSections
+                val source = if (showFeed) {
+                    HomeFeedSource(true, true, catalogKey, auth.buildRefreshObserverFingerprint())
+                } else HomeFeedSource(international, useYouTube)
+                source to layout
+            }.distinctUntilChanged().collect { (source, layout) ->
+                if (source == homeFeedSource) {
+                    _uiState.update { it.copy(internationalHomeLayout = layout) }
+                    return@collect
+                }
+                val wasInternational = _uiState.value.internationalizationEnabled
+                homeFeedSource = source
+                cancelYouTubeHomeJobs()
+                _uiState.update { state ->
+                    state.copy(
+                        homeSourceReady = true,
+                        internationalizationEnabled = source.international,
+                        internationalHomeLayout = layout,
+                        youtubeHomeEnabled = source.youtubeEnabled,
+                        loadingMoreYouTubeHome = false,
+                        youTubeHomeLoadMoreError = null,
                         ytMusicHomeShelves = HomeSectionState()
                     )
+                }
+                firstHomeSource.complete(Unit)
+                if (source.international) {
+                    cancelNeteaseHomeJobs()
+                    refreshYtMusicHome()
+                } else if (wasInternational) {
+                    homeRecommendationsBootstrapped = true
+                    refreshNeteaseHome()
                 }
             }
         }
 
+        // 观察首页模块布局设置
         viewModelScope.launch {
-            AppContainer.youtubeAuthRepo.authFlow.drop(1).collect { bundle ->
-                val nextFingerprint = buildYouTubeAuthFingerprint(bundle)
-                if (nextFingerprint == lastYouTubeAuthFingerprint) {
-                    return@collect
-                }
-                lastYouTubeAuthFingerprint = nextFingerprint
-                NPLogger.d(
-                    TAG,
-                    "youtube auth changed: hasEffectiveAuth=${bundle.hasEffectiveAuth()}, hasCookieContext=${bundle.hasYouTubeMusicCookieContext()}, intl=${_uiState.value.internationalizationEnabled}"
+            val settingsRepo = AppContainer.settingsRepo
+            val sectionOrder = combine(
+                settingsRepo.homeMajorOrderFlow,
+                settingsRepo.homeTrendingOrderFlow,
+                settingsRepo.homeTrendingHiddenFlow,
+                settingsRepo.homeRadarOrderFlow,
+                settingsRepo.homeRadarHiddenFlow
+            ) { major, trending, trendingHidden, radar, radarHidden ->
+                HomeLayoutState(
+                    majorOrder = major,
+                    trendingOrder = trending,
+                    trendingHidden = trendingHidden,
+                    radarOrder = radar,
+                    radarHidden = radarHidden
                 )
-                if (!_uiState.value.internationalizationEnabled) {
-                    return@collect
-                }
-                cancelYouTubeHomeJobs()
-                if (!bundle.hasYouTubeMusicCookieContext()) {
-                    NPLogger.d(TAG, "youtube auth cleared, reset home YouTube sections")
-                    _uiState.value = _uiState.value.copy(
-                        ytMusicPlaylists = HomeSectionState(),
-                        ytMusicHomeShelves = HomeSectionState()
-                    )
-                    return@collect
-                }
-                refreshYtMusicHome()
+            }
+            combine(
+                sectionOrder,
+                settingsRepo.homeRecommendedOrderFlow,
+                settingsRepo.homeRecommendedHiddenFlow
+            ) { layout, recommended, hidden ->
+                layout.copy(
+                    recommendedOrder = recommended,
+                    recommendedHidden = hidden
+                )
+            }.collect { layout ->
+                _uiState.update { state -> state.copy(layout = layout) }
             }
         }
 
@@ -476,7 +531,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         state.copy(radarPlaylists = HomeSectionState())
                     }
                 }
-                if (
+                if (firstHomeSource.isCompleted &&
                     shouldRefreshNeteaseHome(
                         loginChanged = loginChanged,
                         recommendationsBootstrapped = homeRecommendationsBootstrapped,
@@ -490,6 +545,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             delay(HOME_INITIAL_LOAD_DEFER_MS.milliseconds)
+            firstHomeSource.await()
             if (!homeRecommendationsBootstrapped) {
                 homeRecommendationsBootstrapped = true
                 refreshNeteaseHome()
@@ -504,7 +560,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         NPLogger.d(TAG, "setOfflineMode: $enabled")
         offlineMode = enabled
-        if (!enabled) return
+        if (!enabled) {
+            if (_uiState.value.internationalizationEnabled) refreshYtMusicHome() else refreshNeteaseHome()
+            return
+        }
 
         cancelHomeNetworkJobs()
         _uiState.update { state ->
@@ -513,8 +572,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 trendingSongSections = clearSongSectionLoading(state.trendingSongSections),
                 radarSongSections = clearSongSectionLoading(state.radarSongSections),
                 radarPlaylists = state.radarPlaylists.copy(loading = false, error = null),
-                ytMusicPlaylists = state.ytMusicPlaylists.copy(loading = false, error = null),
                 ytMusicHomeShelves = state.ytMusicHomeShelves.copy(loading = false, error = null),
+                loadingMoreYouTubeHome = false,
+                youTubeHomeLoadMoreError = null,
                 biliMusicRank = state.biliMusicRank.copy(loading = false, error = null),
                 biliMusicHot = state.biliMusicHot.copy(loading = false, error = null)
             )
@@ -522,19 +582,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun cancelHomeNetworkJobs() {
+        cancelNeteaseHomeJobs()
+        cancelYouTubeHomeJobs()
+        cancelBiliMusicJobs()
+    }
+
+    private fun cancelNeteaseHomeJobs() {
+        radarPlaylistLoadGeneration++
         playlistJob?.cancel()
         hotSongsJob?.cancel()
         radarSongsJob?.cancel()
         radarPlaylistsJob?.cancel()
-        cancelYouTubeHomeJobs()
-        cancelBiliMusicJobs()
     }
 
     private fun cancelYouTubeHomeJobs() {
         ytMusicHomeLoadGeneration += 1L
         ytMusicHomeJob?.cancel()
         ytMusicHomeJob = null
-        ytMusicHomeRefreshPending = false
+        failedYouTubeHomeCursor = null
     }
 
     private fun cancelBiliMusicJobs() {
@@ -564,7 +629,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 切换版权榜类型：先清掉上一个榜的数据，避免串期显示 */
     fun selectBiliMusicRankType(type: BiliMusicRankType) {
-        if (!biliMusicHomeEnabled) return
+        if (!canLoadBiliMusicHome) return
         val current = _uiState.value.biliMusicRank
         if (current.type == type && current.songs.isNotEmpty()) return
 
@@ -586,7 +651,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadBiliMusicRank(force: Boolean = false) {
-        if (!biliMusicHomeEnabled) return
+        if (!canLoadBiliMusicHome) return
         val current = _uiState.value.biliMusicRank
         if (!force && (current.songs.isNotEmpty() || current.loading)) return
 
@@ -659,7 +724,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadBiliMusicHot(force: Boolean = false) {
-        if (!biliMusicHomeEnabled) return
+        if (!canLoadBiliMusicHome) return
         val current = _uiState.value.biliMusicHot
         if (!force && (current.items.isNotEmpty() || current.loading)) return
 
@@ -710,8 +775,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshNeteaseHome() {
-        if (offlineMode) return
-
+        if (!firstHomeSource.isCompleted || offlineMode || _uiState.value.internationalizationEnabled) return
+        homeRecommendationsBootstrapped = true
         refreshRecommend()
         loadHomeRecommendations(force = true)
         refreshRadarPlaylists()
@@ -719,7 +784,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 拉首页推荐歌单 */
-    fun refreshRecommend() {
+    private fun refreshRecommend() {
         if (offlineMode) return
 
         val sources = availableNeteaseHomePlaylistSources(
@@ -756,7 +821,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadHomeRecommendations(force: Boolean = false) {
+    private fun loadHomeRecommendations(force: Boolean = false) {
         if (offlineMode) return
 
         val state = _uiState.value
@@ -906,152 +971,91 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    /** 拉取一次 YouTube Music 首页快照并同时更新歌单和推荐栏 */
     fun refreshYtMusicHome() {
-        requestYtMusicHomeRefresh(queueIfLoading = true)
-        loadBiliMusicHomeCoalesced()
+        if (offlineMode || homeFeedSource?.catalogKey == null) return
+        if (ytMusicHomeJob?.isActive == true && !_uiState.value.loadingMoreYouTubeHome) return
+        ytMusicHomeJob?.cancel()
+        loadYouTubeHomePages(null)
     }
 
-    /** 兼容旧调用，复用正在加载的首页快照 */
-    fun refreshYtMusicPlaylists() {
-        requestYtMusicHomeRefresh(queueIfLoading = false)
+    fun retryYouTubeHomeContinuation() {
+        if (offlineMode || ytMusicHomeJob?.isActive == true) return
+        failedYouTubeHomeCursor?.let(::loadYouTubeHomePages)
     }
 
-    /** 兼容旧调用，复用正在加载的首页快照 */
-    fun refreshYtMusicHomeFeed() {
-        requestYtMusicHomeRefresh(queueIfLoading = false)
-    }
-
-    private fun requestYtMusicHomeRefresh(queueIfLoading: Boolean) {
-        if (offlineMode || !_uiState.value.internationalizationEnabled) return
-
-        if (ytMusicHomeJob?.isActive == true) {
-            if (queueIfLoading) {
-                ytMusicHomeRefreshPending = true
-                NPLogger.d(TAG, "refreshYtMusicHome coalesced while loading")
-            } else {
-                NPLogger.d(TAG, "refreshYtMusicHome reused while loading")
-            }
-            return
-        }
-        ytMusicHomeRefreshPending = false
-        val requestGeneration = ++ytMusicHomeLoadGeneration
-        val requestAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce())
-        NPLogger.d(TAG, "refreshYtMusicHome start")
+    private fun loadYouTubeHomePages(initialCursor: YouTubeMusicHomeCursor?) {
+        val source = homeFeedSource ?: return
+        val generation = ++ytMusicHomeLoadGeneration
+        failedYouTubeHomeCursor = null
         _uiState.update { state ->
             state.copy(
-                ytMusicPlaylists = state.ytMusicPlaylists.copy(loading = true, error = null),
-                ytMusicHomeShelves = state.ytMusicHomeShelves.copy(loading = true, error = null)
+                ytMusicHomeShelves = state.ytMusicHomeShelves.copy(loading = initialCursor == null, error = null),
+                loadingMoreYouTubeHome = initialCursor != null,
+                youTubeHomeLoadMoreError = null
             )
         }
         ytMusicHomeJob = viewModelScope.launch {
+            var cursor = initialCursor
+            val requested = listOfNotNull(cursor?.requestIdentity).toMutableSet()
             try {
-                when (val result = fetchWithRetry("refreshYtMusicHome") {
-                    listOf(
-                        withContext(Dispatchers.IO) {
-                            loadYouTubeMusicHomeSnapshot(
-                                playlistLimit = HOME_YT_MUSIC_PLAYLIST_LIMIT,
-                                loadShelves = {
-                                    AppContainer.youtubeMusicClient.getHomeFeed(
-                                        fillShelfContinuations = false,
-                                        requireLogin = true
-                                    )
-                                }
-                            )
-                        }
-                    )
-                }) {
-                    is RetryLoadResult.Success -> {
-                        if (!isCurrentYouTubeMusicHomeLoad(
-                                requestGeneration = requestGeneration,
-                                requestAuthFingerprint = requestAuthFingerprint
-                            )
-                        ) {
-                            NPLogger.d(TAG, "refreshYtMusicHome discarded stale result")
-                            return@launch
-                        }
-                        val snapshot = result.items.single()
-                        NPLogger.d(
-                            TAG,
-                            "refreshYtMusicHome success: shelves=${snapshot.shelves.size}, playlists=${snapshot.playlists.size}"
+                do {
+                    val page = AppContainer.youtubeMusicClient.getHomeFeedPage(cursor)
+                    if (!isCurrentYouTubeHomePage(generation, source)) return@launch
+                    val shelves = if (cursor == null) {
+                        page.shelves
+                    } else {
+                        appendYouTubeMusicHomeShelves(_uiState.value.ytMusicHomeShelves.items, page.shelves)
+                    }
+                    cursor = page.next?.takeIf { it.token.isNotBlank() && requested.add(it.requestIdentity) }
+                    _uiState.update { state ->
+                        state.copy(
+                            ytMusicHomeShelves = HomeSectionState(items = shelves),
+                            loadingMoreYouTubeHome = cursor != null
                         )
-                        _uiState.update { state ->
-                            state.copy(
-                                ytMusicPlaylists = HomeSectionState(items = snapshot.playlists),
-                                ytMusicHomeShelves = HomeSectionState(items = snapshot.shelves)
-                            )
-                        }
                     }
-                    is RetryLoadResult.Failure -> {
-                        if (!isCurrentYouTubeMusicHomeLoad(
-                                requestGeneration = requestGeneration,
-                                requestAuthFingerprint = requestAuthFingerprint
-                            )
-                        ) {
-                            NPLogger.d(TAG, "refreshYtMusicHome discarded stale failure")
-                            return@launch
-                        }
-                        NPLogger.e(TAG, "refreshYtMusicHome failed", result.throwable)
-                        val error = buildHomeErrorText(result.throwable)
-                        _uiState.update { state ->
-                            state.copy(
-                                ytMusicPlaylists = state.ytMusicPlaylists.copy(
-                                    loading = false,
-                                    error = error
-                                ),
-                                ytMusicHomeShelves = state.ytMusicHomeShelves.copy(
-                                    loading = false,
-                                    error = error
-                                )
-                            )
-                        }
-                    }
-                }
-            } finally {
-                val completedJob = coroutineContext[Job]
-                if (ytMusicHomeJob === completedJob) {
-                    ytMusicHomeJob = null
-                    val shouldRefreshPendingLoad = shouldScheduleYouTubeMusicHomeRefresh(
-                        refreshPending = ytMusicHomeRefreshPending,
-                        offlineMode = offlineMode,
-                        requestGeneration = requestGeneration,
-                        activeGeneration = ytMusicHomeLoadGeneration,
-                        requestAuthFingerprint = requestAuthFingerprint,
-                        activeAuthFingerprint = buildYouTubeAuthFingerprint(
-                            youtubeAuthRepo.getAuthOnce()
-                        ),
-                        internationalizationEnabled = _uiState.value.internationalizationEnabled
+                } while (cursor != null)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (!isCurrentYouTubeHomePage(generation, source)) return@launch
+                val message = buildHomeErrorText(error)
+                failedYouTubeHomeCursor = cursor
+                _uiState.update { state ->
+                    state.copy(
+                        ytMusicHomeShelves = state.ytMusicHomeShelves.copy(loading = false, error = message.takeIf { cursor == null }),
+                        loadingMoreYouTubeHome = false,
+                        youTubeHomeLoadMoreError = message.takeIf { cursor != null }
                     )
-                    ytMusicHomeRefreshPending = false
-                    if (shouldRefreshPendingLoad) {
-                        refreshYtMusicHome()
-                    }
                 }
             }
         }
     }
 
-    private fun isCurrentYouTubeMusicHomeLoad(
-        requestGeneration: Long,
-        requestAuthFingerprint: String
-    ): Boolean {
-        return shouldAcceptYouTubeMusicHomeLoadResult(
-            requestGeneration = requestGeneration,
-            activeGeneration = ytMusicHomeLoadGeneration,
-            requestAuthFingerprint = requestAuthFingerprint,
-            activeAuthFingerprint = buildYouTubeAuthFingerprint(youtubeAuthRepo.getAuthOnce()),
-            internationalizationEnabled = _uiState.value.internationalizationEnabled
-        )
+    private fun isCurrentYouTubeHomePage(generation: Long, source: HomeFeedSource): Boolean {
+        return source.catalogKey == YouTubeContentSettings.catalogKey() &&
+            shouldAcceptYouTubeMusicHomeLoadResult(
+                requestGeneration = generation,
+                activeGeneration = ytMusicHomeLoadGeneration,
+                requestAuthFingerprint = source.authFingerprint,
+                activeAuthFingerprint = youtubeAuthRepo.getAuthOnce().buildRefreshObserverFingerprint(),
+                internationalizationEnabled = _uiState.value.youtubeHomeEnabled
+            )
     }
 
-    private suspend fun parseRecommendOnWorker(raw: String): List<PlaylistSummary> =
+    private suspend fun parseRecommendOnWorker(
+        raw: String,
+        limit: Int = HOME_NETEASE_PLAYLIST_LIMIT
+    ): List<PlaylistSummary> =
         withContext(Dispatchers.Default) {
-            parseNeteaseHomePlaylists(raw, limit = HOME_NETEASE_PLAYLIST_LIMIT)
+            parseNeteaseHomePlaylists(raw, limit = limit)
         }
 
-    private suspend fun parseSongsOnWorker(raw: String): List<SongItem> =
+    private suspend fun parseSongsOnWorker(
+        raw: String,
+        limit: Int = HOME_NETEASE_SONG_LIMIT
+    ): List<SongItem> =
         withContext(Dispatchers.Default) {
-            parseNeteaseHomeSongs(raw, limit = HOME_NETEASE_SONG_LIMIT)
+            parseNeteaseHomeSongs(raw, limit = limit)
         }
 
     private suspend fun fetchSongSection(
@@ -1131,6 +1135,126 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     section = HomeSectionState(error = buildHomeErrorText(result.throwable))
                 )
             }
+        }
+    }
+
+    /**
+     * 拉取某个首页歌曲小模块的完整列表，供二级页使用。
+     */
+    suspend fun fetchFullSongSection(
+        source: NeteaseHomeSongSource
+    ): Result<List<SongItem>> {
+        return runCatching {
+            if (source == NeteaseHomeSongSource.PRIVATE_FM) {
+                fetchPrivateFmSongs()
+            } else {
+                val raw = withContext(Dispatchers.IO) {
+                    fetchFullSongSourceRaw(source)
+                }
+                parseSongsOnWorker(raw, limit = HOME_FULL_SONG_LIMIT)
+            }
+        }
+    }
+
+    /**
+     * 拉取某个首页歌单分类的完整列表，供二级页使用。
+     *
+     * 与首页那份截断列表不同，这里按 [HOME_FULL_PLAYLIST_LIMIT] 请求并解析，
+     * 否则会拿到上百条数据却只保留首页用的 30 条。
+     */
+    suspend fun fetchFullPlaylistSection(
+        source: NeteaseHomePlaylistSource
+    ): Result<List<PlaylistSummary>> {
+        return runCatching {
+            val raw = withContext(Dispatchers.IO) {
+                fetchFullPlaylistSourceRaw(source)
+            }
+            parseRecommendOnWorker(raw, limit = HOME_FULL_PLAYLIST_LIMIT)
+        }.recoverCatching { error ->
+            // 与首页加载保持一致：cookie 过期导致 301 / 50000005 时退回匿名请求，
+            // 否则用户在首页能正常看到该模块，点进二级页却只会看到错误页。
+            if (
+                error is ApiCodeException &&
+                source == NeteaseHomePlaylistSource.PERSONALIZED &&
+                hasRecommendLogin &&
+                shouldFallbackRecommend(error.code)
+            ) {
+                NPLogger.w(
+                    TAG,
+                    "fetchFullPlaylistSection fallback to anonymous due to api_code=${error.code}"
+                )
+                val fallbackRaw = withContext(Dispatchers.IO) {
+                    client.getRecommendedPlaylists(
+                        limit = HOME_FULL_PLAYLIST_LIMIT,
+                        usePersistedCookies = false
+                    )
+                }
+                parseRecommendOnWorker(fallbackRaw, limit = HOME_FULL_PLAYLIST_LIMIT)
+            } else {
+                throw error
+            }
+        }
+    }
+
+    /** 二级页使用的完整歌单来源请求参数，比首页那份截断列表取更多。 */
+    private fun fetchFullPlaylistSourceRaw(source: NeteaseHomePlaylistSource): String {
+        return when (source) {
+            NeteaseHomePlaylistSource.PERSONALIZED -> client.getRecommendedPlaylists(
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomePlaylistSource.DAILY_RESOURCE -> client.getDailyRecommendedPlaylists()
+            NeteaseHomePlaylistSource.HIGH_QUALITY -> client.getHighQualityPlaylists(
+                cat = "全部",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                before = 0L
+            )
+            NeteaseHomePlaylistSource.HOT_PLAYLISTS -> client.getTopPlaylists(
+                cat = "全部",
+                order = "hot",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomePlaylistSource.ACG_PLAYLISTS -> client.getTopPlaylists(
+                cat = "ACG",
+                order = "hot",
+                limit = HOME_FULL_PLAYLIST_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+        }
+    }
+
+    /** 二级页使用的完整歌曲来源请求参数，比首页那份截断列表取更多。 */
+    private fun fetchFullSongSourceRaw(source: NeteaseHomeSongSource): String {
+        return when (source) {
+            NeteaseHomeSongSource.TOP_SOARING -> client.getPlaylistDetail(
+                playlistId = NETEASE_TOPLIST_SOARING_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
+            NeteaseHomeSongSource.PERSONAL_RADAR -> client.getPlaylistDetail(
+                playlistId = NETEASE_PRIVATE_RADAR_PLAYLIST_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
+            NeteaseHomeSongSource.DAILY_RECOMMEND -> client.getDailyRecommendedSongs(
+                afresh = true
+            )
+            NeteaseHomeSongSource.PRIVATE_FM -> client.getPersonalFmSongs()
+            NeteaseHomeSongSource.PERSONALIZED_NEW_SONGS -> client.getPersonalizedNewSongs(
+                limit = HOME_FULL_SONG_LIMIT,
+                usePersistedCookies = hasRecommendLogin
+            )
+            NeteaseHomeSongSource.TOP_HOT -> client.getPlaylistDetail(
+                playlistId = NETEASE_TOPLIST_HOT_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
+            NeteaseHomeSongSource.TOP_NEW -> client.getPlaylistDetail(
+                playlistId = NETEASE_TOPLIST_NEW_ID,
+                n = HOME_FULL_SONG_LIMIT,
+                s = 0
+            )
         }
     }
 
@@ -1286,13 +1410,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun buildYouTubeAuthFingerprint(bundle: YouTubeAuthBundle): String {
-        return bundle.buildRefreshObserverFingerprint()
-    }
-
-    private fun YouTubeAuthBundle.hasYouTubeMusicCookieContext(): Boolean {
-        return hasSavedAuthMaterial()
-    }
 }
 
 internal sealed interface RetryLoadResult<out T> {

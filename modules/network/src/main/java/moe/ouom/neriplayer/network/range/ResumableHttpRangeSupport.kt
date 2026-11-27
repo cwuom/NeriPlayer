@@ -16,8 +16,7 @@ class ChunkRequestIOException(
 ) : IOException(message)
 
 object ResumableHttpRangeSupport {
-    @PublishedApi
-    internal const val DEFAULT_CHUNK_SIZE_BYTES = 1024L * 1024L
+    const val DEFAULT_CHUNK_SIZE_BYTES = 1024L * 1024L
     private const val MIN_CHUNK_SIZE_BYTES = 128L * 1024L
 
     fun resolveQueryContentLength(url: String): Long? {

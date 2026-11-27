@@ -26,6 +26,9 @@ package moe.ouom.neriplayer.platform.youtube.playlist
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistTrack
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
 import android.content.Context
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -34,6 +37,7 @@ import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRecord
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheRoomStore
 import moe.ouom.neriplayer.data.local.database.store.PlatformPlaylistCacheTrackRecord
+import java.util.Locale
 import java.io.File
 import java.security.MessageDigest
 
@@ -59,8 +63,17 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
         cacheDir = cacheDir
     )
 
-    fun read(browseId: String): CachedYouTubeMusicPlaylistDetail? {
-        readRoom(browseId)?.toYouTubeMusicPlaylistDetail()?.let { return it }
+    fun read(browseId: String, includeHiddenTracks: Boolean = false): CachedYouTubeMusicPlaylistDetail? {
+        val settings = YouTubeContentSettings.preferences.value
+        val system = YouTubeContentSettings.systemLocale()
+        val unfiltered = readRoom(browseId)?.toYouTubeMusicPlaylistDetail()?.forPreferences(settings, system, includeHiddenTracks)
+        if (includeHiddenTracks && unfiltered != null) return unfiltered
+        if (settings.hideExplicit || settings.hideMusicVideos) {
+            val filtered = readRoom(filteredCacheKey(browseId))?.toYouTubeMusicPlaylistDetail()?.forPreferences(settings, system)
+            return if (filtered != null && (unfiltered == null || filtered.savedAtMs >= unfiltered.savedAtMs)) filtered else unfiltered
+        }
+        if (unfiltered != null) return unfiltered
+        if (!settings.acceptsLegacyCache) return null
         val file = cacheFile(browseId)
         if (!file.exists()) return null
         return runCatching {
@@ -82,6 +95,7 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     fun clear(browseId: String) {
         runCatching {
             clearRoom(browseId)
+            clearRoom(filteredCacheKey(browseId))
             cacheFile(browseId).delete()
         }.onFailure { error ->
             NPLogger.w(TAG, "Failed to clear YouTube Music playlist cache: browseId=$browseId", error)
@@ -172,7 +186,7 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     private fun CachedYouTubeMusicPlaylistDetail.toRecord(): PlatformPlaylistCacheRecord {
         return PlatformPlaylistCacheRecord(
             platform = PLATFORM,
-            cacheKey = browseId,
+            cacheKey = if (containsUnfilteredTracks) browseId else filteredCacheKey(browseId),
             alternateKey = playlistId,
             title = title,
             subtitle = subtitle,
@@ -181,6 +195,7 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
             trackCount = trackCount,
             totalCount = tracks.size,
             signaturePrimary = firstPageSignature,
+            signatureSecondary = catalogSignature(),
             savedAtMs = savedAtMs,
             tracks = tracks.map { track ->
                 PlatformPlaylistCacheTrackRecord(
@@ -196,8 +211,9 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     }
 
     private fun PlatformPlaylistCacheRecord.toYouTubeMusicPlaylistDetail(): CachedYouTubeMusicPlaylistDetail {
+        val labels = signatureSecondary.orEmpty().substringAfter('|', "")
         return CachedYouTubeMusicPlaylistDetail(
-            browseId = cacheKey,
+            browseId = cacheKey.removeSuffix(FILTERED_CACHE_SUFFIX),
             playlistId = alternateKey.orEmpty(),
             title = title.orEmpty(),
             subtitle = subtitle.orEmpty(),
@@ -205,9 +221,12 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
             coverUrl = coverUrl.orEmpty(),
             trackCount = trackCount,
             firstPageSignature = signaturePrimary.orEmpty(),
-            tracks = tracks.map { track ->
+            catalogKey = signatureSecondary?.substringBefore('|'),
+            filteredEmpty = labels == "!",
+            tracks = tracks.mapIndexed { index, track ->
                 CachedYouTubeMusicPlaylistTrack(
                     videoId = track.itemKey.orEmpty(),
+                    contentLabel = labels.getOrNull(index)?.let { code -> YouTubeContentLabel.entries.firstOrNull { it.cacheCode == code } },
                     name = track.name,
                     artist = track.artist,
                     albumName = track.album,
@@ -220,8 +239,39 @@ class YouTubeMusicPlaylistCacheRepository private constructor(
     }
 
     private companion object {
+        // keep the full offline playlist when a filtered request refreshes
+        const val FILTERED_CACHE_SUFFIX = "|filtered"
+        fun filteredCacheKey(browseId: String): String = browseId + FILTERED_CACHE_SUFFIX
         const val PLATFORM = "youtube_music"
         const val TAG = "YouTubeMusicPlaylistCache"
         const val CACHE_DIR_NAME = "youtube_music_playlist_cache"
     }
+}
+
+private fun CachedYouTubeMusicPlaylistDetail.catalogSignature(): String? {
+    val key = catalogKey ?: return null
+    if (filteredEmpty) return "$key|!"
+    if (tracks.none { it.contentLabel != null }) return "$key|"
+    return buildString {
+        append(key)
+        append('|')
+        tracks.forEach { append(it.contentLabel?.cacheCode ?: '-') }
+    }
+}
+
+internal fun CachedYouTubeMusicPlaylistDetail.forPreferences(
+    preferences: YouTubeContentPreferences,
+    system: Locale,
+    includeHiddenTracks: Boolean = false
+): CachedYouTubeMusicPlaylistDetail? {
+    val desired = preferences.catalogKey(system)
+    if (catalogKey == desired || (catalogKey == null && preferences.acceptsLegacyCache)) return this
+    val unfiltered = preferences.copy(hideExplicit = false, hideMusicVideos = false).catalogKey(system)
+    if (catalogKey != unfiltered) return null
+    if (includeHiddenTracks) return this
+    val visible = tracks.filterNot { preferences.hides(it.contentLabel) }
+    return copy(
+        tracks = visible, trackCount = visible.size, catalogKey = desired,
+        filteredEmpty = visible.isEmpty() && tracks.isNotEmpty()
+    )
 }

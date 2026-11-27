@@ -61,6 +61,7 @@ fun SyncSong.Companion.fromSongItem(song: SongItem, context: Context? = null, op
 
 fun SyncSong.toSongItem(existing: SongItem? = null): SongItem {
     val restored = SongItem(
+        youtubeContentLabel = existing?.youtubeContentLabel,
         id = id,
         name = name,
         artist = artist,

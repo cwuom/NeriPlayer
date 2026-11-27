@@ -1,5 +1,9 @@
 allprojects {
     tasks.withType(Test).configureEach {
+        def robolectricRepository = providers.environmentVariable("ROBOLECTRIC_DEPENDENCY_REPO_URL").orNull
+        if (robolectricRepository) {
+            systemProperty "robolectric.dependency.repo.url", robolectricRepository
+        }
         testLogging {
             events "started", "passed", "skipped", "failed"
         }

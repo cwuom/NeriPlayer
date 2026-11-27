@@ -1,7 +1,8 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.listentogether
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -13,11 +14,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.ui.component.playback.PlaybackSheetTextField
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsOutlinedButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
-import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextField
 
 @Composable
 internal fun SettingsListenTogetherDialogs(controller: SettingsListenTogetherController) {
@@ -80,13 +82,12 @@ private fun SettingsListenTogetherNicknameDialog(controller: SettingsListenToget
 
 @Composable
 private fun SettingsListenTogetherNicknameInput(controller: SettingsListenTogetherController) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        MiuixSettingsTextField(
+    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PlaybackSheetTextField(
             value = controller.nicknameInput,
             onValueChange = controller.updateNicknameAction,
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text(stringResource(CoreCommonR.string.settings_listen_together_default_nickname_input_label)) }
+            label = stringResource(CoreCommonR.string.settings_listen_together_default_nickname_input_label)
         )
         SettingsListenTogetherErrorMessage(controller.nicknameError)
     }
@@ -122,16 +123,17 @@ internal fun listenTogetherJoinButtonLabelId(joining: Boolean): Int =
 
 @Composable
 private fun SettingsListenTogetherJoinInput(controller: SettingsListenTogetherController) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(CoreCommonR.string.settings_listen_together_join_room_desc))
-        MiuixSettingsTextField(
+        PlaybackSheetTextField(
             value = controller.inviteInput,
             onValueChange = controller.updateInviteAction,
             enabled = !controller.joining,
+            singleLine = false,
             minLines = 2,
             maxLines = 5,
-            label = { Text(stringResource(CoreCommonR.string.settings_listen_together_join_invite_input_label)) },
-            placeholder = { Text(stringResource(CoreCommonR.string.settings_listen_together_join_invite_input_placeholder)) }
+            label = stringResource(CoreCommonR.string.settings_listen_together_join_invite_input_label),
+            placeholder = stringResource(CoreCommonR.string.settings_listen_together_join_invite_input_placeholder)
         )
         SettingsListenTogetherErrorMessage(controller.inviteError)
         SettingsListenTogetherJoinProgress(controller.joining)
@@ -170,7 +172,7 @@ private fun SettingsListenTogetherServerDialog(controller: SettingsListenTogethe
 
 @Composable
 private fun SettingsListenTogetherServerDialogContent(controller: SettingsListenTogetherController) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(listenTogetherServerDescriptionId(controller.isUsingDefaultServer)))
         SettingsListenTogetherServerInput(controller)
         if (controller.serverInput.trim().startsWith("http://", ignoreCase = true)) {
@@ -191,13 +193,12 @@ internal fun listenTogetherServerDescriptionId(usingDefault: Boolean): Int =
 
 @Composable
 private fun SettingsListenTogetherServerInput(controller: SettingsListenTogetherController) {
-    MiuixSettingsTextField(
+    PlaybackSheetTextField(
         value = controller.serverInput,
         onValueChange = controller.updateServerAction,
         modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        label = { Text(stringResource(CoreCommonR.string.settings_listen_together_server_input_label)) },
-        placeholder = { Text(stringResource(CoreCommonR.string.settings_listen_together_server_input_placeholder)) }
+        label = stringResource(CoreCommonR.string.settings_listen_together_server_input_label),
+        placeholder = stringResource(CoreCommonR.string.settings_listen_together_server_input_placeholder)
     )
 }
 
@@ -222,8 +223,12 @@ private fun SettingsListenTogetherServerResult(message: String?) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun SettingsListenTogetherServerActions(controller: SettingsListenTogetherController) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         SettingsListenTogetherTestServerButton(controller)
         SettingsListenTogetherResetServerButton(controller)
     }

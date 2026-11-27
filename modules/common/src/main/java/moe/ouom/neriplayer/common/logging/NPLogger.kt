@@ -55,7 +55,9 @@ object NPLogger {
     )
 
     private var appTag: String = BuildConfig.TAG
-    private var isFileLoggingEnabled = false
+    @Volatile
+    var isFileLoggingEnabled = false
+        private set
     private var logFile: File? = null
     private var initialized = false
     @Volatile

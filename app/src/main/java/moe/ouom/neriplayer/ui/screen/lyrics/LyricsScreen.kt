@@ -23,14 +23,13 @@ package moe.ouom.neriplayer.ui.screen.lyrics
  * Created: 2025/8/13
  */
 
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.annotation.SuppressLint
 import android.content.ClipData
-import android.content.Context
 import android.content.res.Configuration
-import android.media.AudioDeviceInfo
-import android.media.AudioManager
-import android.os.PowerManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
@@ -51,7 +50,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -76,16 +74,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.SpeakerGroup
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
@@ -111,7 +107,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalConfiguration
@@ -136,7 +131,7 @@ import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingPlaybackSource
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
@@ -175,7 +170,9 @@ import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticFeedbackEffect
-import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
+import moe.ouom.neriplayer.ui.component.playback.NeriPlayPauseButton
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingPrimaryGlyphRatio
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingWaitingIndicatorSize
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -196,10 +193,15 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheet
 import moe.ouom.neriplayer.ui.screen.nowplaying.MoreOptionsSheetNavigation
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingFavoriteIconColor
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingQueueSheet
-import moe.ouom.neriplayer.ui.screen.nowplaying.VolumeControlSheetContent
+import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackOutputIcon
+import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackOutputSheet
+import moe.ouom.neriplayer.ui.screen.nowplaying.rememberAudioDeviceInfo
+import moe.ouom.neriplayer.ui.screen.nowplaying.rememberPlaybackRoomActive
 import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveLyricPreviewTimeMs
 import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingPageSwipeDirection
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingPageSwipe
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarDescription
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarIcon
@@ -208,9 +210,8 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFligh
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsCoverFlightRow
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToolbarAction
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.R as AppR
-
-private const val LyricsSwipeBackThresholdPx = 50f
 
 internal data class LyricsTabletPortraitWidths(
     val header: Dp,
@@ -268,8 +269,11 @@ fun LyricsScreen(
     val lyricFontScale = lyricFontScales.lyricsPageLyric
     val translationFontScale = lyricFontScales.lyricsPageTranslation
     val latestOnNavigateBack by rememberUpdatedState(onNavigateBack)
+    val playbackSource = LocalNowPlayingPlaybackSource.current
+    // 引导预览不开放会改动真实数据的二级入口
+    val secondaryActionsEnabled = playbackSource.secondaryActionsEnabled
 
-    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
+    val currentSong by playbackSource.currentSongFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val nowPlayingSongTitleMarqueeEnabled by settingsRepo
         .nowPlayingSongTitleMarqueeEnabledFlow
@@ -277,23 +281,25 @@ fun LyricsScreen(
     val playbackControlLayoutPreferences by settingsRepo
         .playbackControlLayoutPreferencesFlow
         .collectAsStateWithLifecycle(initialValue = settingsRepo.defaultPlaybackControlLayoutPreferences)
-    val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
-    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
+    val queue by playbackSource.currentQueueFlow.collectAsStateWithLifecycle()
+    val queueDisplayRevision by playbackSource.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
     val queueDisplayState = remember(queue, currentSong, queueDisplayRevision) {
-        PlayerManager.currentQueueDisplaySnapshot()
+        playbackSource.currentQueueDisplaySnapshot()
     }
     val displayedQueueItems = queueDisplayState.items
     val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
-    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
-    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
-    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
+    val isPlaying by playbackSource.isPlayingFlow.collectAsStateWithLifecycle()
+    val isPlaybackControlPlaying by playbackSource.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val isAudioRouteMuted by playbackSource.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
+    val usbPlaybackPreparing by playbackSource.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
         isPlaying = isPlaying,
-        usbPlaybackPreparing = usbPlaybackPreparing
+        usbPlaybackPreparing = usbPlaybackPreparing,
+        lanPreparing = lanControls.preparing
     )
-    val lyricsPlaybackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
+    val lyricsPlaybackSoundState by playbackSource.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val plainLyrics = remember(lyrics) { lyrics.flattenWordTimedEntries() }
     val plainTranslatedLyrics = remember(translatedLyrics) {
         translatedLyrics.orEmpty().flattenWordTimedEntries()
@@ -331,9 +337,7 @@ fun LyricsScreen(
     val durationMs = currentSong?.durationMs ?: 0L
 
     val context = LocalContext.current
-    val lowPowerLyricsRendering = remember(context) {
-        context.isSystemPowerSaveMode()
-    }
+    val lowPowerLyricsRendering = rememberSystemPowerPressure().reduceOptionalEffects
     val currentCoverUrl = rememberSongDisplayCoverUrl(currentSong)
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
@@ -369,7 +373,7 @@ fun LyricsScreen(
     val toolbarWidthFraction = if (isTabletLandscape) 0.58f else 1f
     val lyricsControlSize = playbackControlLayoutPreferences.lyricsSize
     val baseToolbarIconSize = if (isTabletLandscape) 22.dp else 20.dp
-    val basePrimaryControlSize = if (isTabletLandscape) 50.dp else 42.dp
+    val basePrimaryControlSize = if (isTabletLandscape) 56.dp else 52.dp
     val baseSecondaryControlSize = if (isTabletLandscape) 46.dp else 42.dp
     val lyricsTopActionButtonSize = lyricsControlSize.scaleButtonSize(48.dp)
     val lyricsTopActionIconSize = lyricsControlSize.scaleIconSize(24.dp)
@@ -379,7 +383,7 @@ fun LyricsScreen(
     val primaryControlSize = lyricsControlSize.scaleButtonSize(basePrimaryControlSize)
     val secondaryControlSize = lyricsControlSize.scaleButtonSize(baseSecondaryControlSize)
     val secondaryControlIconSize = lyricsControlSize.scaleIconSize(32.dp)
-    val primaryControlIconSize = lyricsControlSize.scaleIconSize(24.dp)
+    val primaryControlIconSize = (primaryControlSize * nowPlayingPrimaryGlyphRatio(NeriDesign.isClean)).coerceAtLeast(20.dp)
     val snackbarHostState = remember { SnackbarHostState() }
 
     // 启动进入动画
@@ -442,20 +446,10 @@ fun LyricsScreen(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .pointerInput(Unit) {
-                    var horizontalDragPx = 0f
-                    // 手势可能被系统接管或回拖，等抬手后再提交返回
-                    detectHorizontalDragGestures(
-                        onDragStart = { horizontalDragPx = 0f },
-                        onDragCancel = { horizontalDragPx = 0f },
-                        onDragEnd = {
-                            val shouldNavigateBack = horizontalDragPx > LyricsSwipeBackThresholdPx
-                            horizontalDragPx = 0f
-                            if (shouldNavigateBack) latestOnNavigateBack()
-                        },
-                        onHorizontalDrag = { _, dragAmount -> horizontalDragPx += dragAmount }
-                    )
-                }
+                .nowPlayingPageSwipe(
+                    key = Unit,
+                    direction = NowPlayingPageSwipeDirection.Right
+                ) { latestOnNavigateBack() }
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                 .testTag("lyricsScreenContent"),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -635,8 +629,8 @@ fun LyricsScreen(
             }
 
             // 收藏按钮 (与 NowPlaying 保持一致的逻辑)
-            val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
-            val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
+            val playlists by playbackSource.playlistsFlow.collectAsStateWithLifecycle()
+            val localPlaylistsReady by playbackSource.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
             val isFavoriteComputed = remember(currentSong, playlists) {
                 val song = currentSong
                 if (song == null) {
@@ -664,7 +658,7 @@ fun LyricsScreen(
                         warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                     ) {
                         favOverride = willFav
-                        PlayerManager.toggleCurrentFavorite()
+                        playbackSource.toggleCurrentFavorite()
                     }
                 },
                 enabled = localPlaylistsReady,
@@ -696,8 +690,10 @@ fun LyricsScreen(
             // 更多按钮
             HapticIconButton(
                 onClick = {
-                    startMoreOptionsWithLyricBehavior = false
-                    showMoreOptions = true
+                    if (secondaryActionsEnabled) {
+                        startMoreOptionsWithLyricBehavior = false
+                        showMoreOptions = true
+                    }
                 },
                 modifier = Modifier.size(lyricsTopActionButtonSize)
                     .then(
@@ -721,7 +717,7 @@ fun LyricsScreen(
                 )
             }
             if (showMoreOptions && currentSong != null) {
-                val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
+                val queue by playbackSource.currentQueueFlow.collectAsStateWithLifecycle()
                 val displayedQueue = remember(queue) { queue }
                 val nowPlayingViewModel: NowPlayingViewModel = viewModel()
                 MoreOptionsSheet(
@@ -791,7 +787,7 @@ fun LyricsScreen(
                 isPlaying = isPlaying,
                 lowPowerRendering = lowPowerLyricsRendering,
                 useTabletLayout = isTabletLandscape,
-                onLyricLongClick = { line -> lyricShareInitialLine = line },
+                onLyricLongClick = { line -> if (secondaryActionsEnabled) lyricShareInitialLine = line },
                 onSeekTo = onSeekTo
             )
         }
@@ -939,7 +935,7 @@ fun LyricsScreen(
                 isPlaybackWaiting = isPlaybackWaiting,
                 playbackSpeed = lyricsPlaybackSoundState.speed,
                 onSeekTo = onSeekTo,
-                seekEnabled = progressSeekEnabled,
+                seekEnabled = progressSeekEnabled && lanControls.permissions.seek,
                 onPreviewPositionChange = { previewPositionOverrideMs = it },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -969,7 +965,8 @@ fun LyricsScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                HapticIconButton(onClick = { PlayerManager.previous() },
+                HapticIconButton(onClick = { playbackSource.previous() },
+                    enabled = lanControls.permissions.seek,
                     modifier = Modifier
                     .then(
                         if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -987,15 +984,16 @@ fun LyricsScreen(
                     .size(secondaryControlSize)
                 ) {
                     Icon(
-                        Icons.Outlined.SkipPrevious,
+                        if (NeriDesign.isClean) Icons.Rounded.SkipPrevious else Icons.Outlined.SkipPrevious,
                         contentDescription = stringResource(CoreCommonR.string.lyrics_previous),
                         modifier = Modifier.size(secondaryControlIconSize)
                     )
                 }
 
-                HapticFilledIconButton(
-                    onClick = { PlayerManager.togglePlayPause() },
-                    enabled = !usbPlaybackPreparing,
+                NeriPlayPauseButton(
+                    isPlaying = isPlaybackControlPlaying,
+                    onClick = { playbackSource.togglePlayPause() },
+                    enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                     modifier = Modifier
                         .then(
                             if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -1021,11 +1019,13 @@ fun LyricsScreen(
                         restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                         waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                         modifier = Modifier.size(primaryControlIconSize),
-                        progressIndicatorSize = primaryControlIconSize
+                        progressIndicatorSize = nowPlayingWaitingIndicatorSize(primaryControlSize),
+                        iconSize = primaryControlIconSize
                     )
                 }
 
-                HapticIconButton(onClick = { PlayerManager.next() },
+                HapticIconButton(onClick = { playbackSource.next() },
+                    enabled = lanControls.permissions.seek,
                     modifier = Modifier
                         .then(
                             if (sharedTransitionScope != null && animatedContentScope != null) {
@@ -1043,7 +1043,7 @@ fun LyricsScreen(
                         .size(secondaryControlSize)
                 ) {
                     Icon(
-                        Icons.Outlined.SkipNext,
+                        if (NeriDesign.isClean) Icons.Rounded.SkipNext else Icons.Outlined.SkipNext,
                         contentDescription = stringResource(CoreCommonR.string.lyrics_next),
                         modifier = Modifier.size(secondaryControlIconSize)
                     )
@@ -1101,7 +1101,7 @@ fun LyricsScreen(
                     }
             // 播放队列按钮
             var showQueueSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showQueueSheet = true },  modifier = toolbarActionModifier.then(
+            HapticIconButton(onClick = { if (secondaryActionsEnabled) showQueueSheet = true },  modifier = toolbarActionModifier.then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
                         Modifier.sharedBounds(
@@ -1122,9 +1122,9 @@ fun LyricsScreen(
             }
 
             // 定时器按钮
-            val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
+            val sleepTimerState by playbackSource.sleepTimerStateFlow.collectAsStateWithLifecycle()
             var showSleepTimerDialog by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showSleepTimerDialog = true },
+            HapticIconButton(onClick = { if (secondaryActionsEnabled) showSleepTimerDialog = true },
                 modifier = toolbarActionModifier.then(
                     if (sharedTransitionScope != null && animatedContentScope != null) {
                         with(sharedTransitionScope) {
@@ -1146,19 +1146,8 @@ fun LyricsScreen(
                 )
             }
 
-            // 音量按钮 (根据设备显示不同图标, 居中)
-            val context = LocalContext.current
-            val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            val audioDeviceIcon = remember(devices) {
-                when {
-                    devices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP } -> Icons.Default.Headset
-                    devices.any { it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES } -> Icons.Default.Headset
-                    else -> Icons.Default.SpeakerGroup
-                }
-            }
             var showVolumeSheet by remember { mutableStateOf(false) }
-            HapticIconButton(onClick = { showVolumeSheet = true },
+            HapticIconButton(onClick = { if (secondaryActionsEnabled) showVolumeSheet = true },
                 modifier = toolbarActionModifier.then(
                     if (sharedTransitionScope != null && animatedContentScope != null) {
                         with(sharedTransitionScope) {
@@ -1172,9 +1161,9 @@ fun LyricsScreen(
                         }
                     } else Modifier
                 )) {
-                Icon(
-                    audioDeviceIcon,
-                    contentDescription = stringResource(CoreCommonR.string.cd_audio_device),
+                PlaybackOutputIcon(
+                    roomActive = rememberPlaybackRoomActive(),
+                    device = rememberAudioDeviceInfo(),
                     modifier = Modifier.size(toolbarLayout.iconSize)
                 )
             }
@@ -1185,8 +1174,10 @@ fun LyricsScreen(
                 onClick = resolveNowPlayingLyricsToolbarAction(
                     lyricsAdjustBehavior = lyricsAdjustBehavior,
                     onAdjust = {
-                        startMoreOptionsWithLyricBehavior = true
-                        showMoreOptions = true
+                        if (secondaryActionsEnabled) {
+                            startMoreOptionsWithLyricBehavior = true
+                            showMoreOptions = true
+                        }
                     },
                     onSwitchPage = onNavigateBack
                 ),
@@ -1226,7 +1217,7 @@ fun LyricsScreen(
             val addSheetState = rememberModalBottomSheetState(
                 skipPartiallyExpanded = true
             )
-            HapticIconButton(onClick = { showAddSheet = true },
+            HapticIconButton(onClick = { if (secondaryActionsEnabled) showAddSheet = true },
                 modifier = toolbarActionModifier.then(
                 if (sharedTransitionScope != null && animatedContentScope != null) {
                     with(sharedTransitionScope) {
@@ -1254,14 +1245,8 @@ fun LyricsScreen(
                 )
             }
 
-            // 音量控制弹窗
             if (showVolumeSheet) {
-                DensityScaledModalBottomSheet(
-                    onDismissRequest = { showVolumeSheet = false },
-                    sheetGesturesEnabled = false
-                ) {
-                    VolumeControlSheetContent()
-                }
+                PlaybackOutputSheet(onDismiss = { showVolumeSheet = false })
             }
 
             // 播放队列弹窗
@@ -1278,7 +1263,7 @@ fun LyricsScreen(
 
             // 添加到歌单弹窗
             if (showAddSheet && currentSong != null) {
-                val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
+                val playlists by playbackSource.playlistsFlow.collectAsStateWithLifecycle()
                 val selectablePlaylists = remember(playlists, context) {
                     playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                 }
@@ -1301,7 +1286,7 @@ fun LyricsScreen(
                                             warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
                                                 shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                         ) {
-                                            PlayerManager.addCurrentToPlaylist(pl.id)
+                                            playbackSource.addCurrentToPlaylist(pl.id)
                                             showAddSheet = false
                                         }
                                     }
@@ -1402,7 +1387,7 @@ internal fun LyricsContentPane(
         return
     }
 
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
+    val currentPosition by LocalNowPlayingPlaybackSource.current.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectiveLyricTimeMs = previewPositionOverrideMs ?: currentPosition
     val isPreviewingSeek = previewPositionOverrideMs != null
     val shouldAnimateFromPlayback = isPlaying && !isPreviewingSeek
@@ -1490,11 +1475,6 @@ internal fun LyricsContentPane(
     )
 }
 
-internal fun Context.isSystemPowerSaveMode(): Boolean {
-    val powerManager = getSystemService(PowerManager::class.java) ?: return false
-    return powerManager.isPowerSaveMode
-}
-
 @Composable
 private fun LyricsProgressSection(
     songKey: String?,
@@ -1511,7 +1491,8 @@ private fun LyricsProgressSection(
 ) {
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val context = LocalContext.current
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
+    val playbackSource = LocalNowPlayingPlaybackSource.current
+    val currentPosition by playbackSource.playbackPositionFlow.collectAsStateWithLifecycle()
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
     val lyricSeekHaptic = rememberLyricSeekHapticFeedback(
         lyrics = lyrics,
@@ -1519,7 +1500,7 @@ private fun LyricsProgressSection(
     )
     var isUserDraggingSlider by remember(songKey) { mutableStateOf(false) }
     var sliderPosition by remember(songKey) {
-        mutableFloatStateOf(PlayerManager.playbackPositionFlow.value.toFloat())
+        mutableFloatStateOf(playbackSource.playbackPositionFlow.value.toFloat())
     }
     var pendingSeekPreviewPositionMs by remember(songKey) { mutableStateOf<Long?>(null) }
     val effectivePreviewPositionMs = resolveLyricPreviewTimeMs(

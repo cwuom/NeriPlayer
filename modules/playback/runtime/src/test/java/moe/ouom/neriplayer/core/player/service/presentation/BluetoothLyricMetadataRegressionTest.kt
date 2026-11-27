@@ -75,11 +75,97 @@ class BluetoothLyricMetadataRegressionTest {
         assertFalse(title.contains('\uFFFD'))
     }
 
+    /**
+     * 蓝牙输出时, 「蓝牙外接设备翻译歌词」关闭后 metadata 里不能带翻译。
+     * 开关变化要立刻反映到 metadata, 不能等下一行歌词。
+     */
+    @Test
+    fun `disabling the bluetooth translation switch strips the translation from the metadata`() {
+        val payload = ExternalBluetoothLyricPayload("line", "译文")
+
+        val withTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = true,
+        )
+        val withoutTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = false,
+        )
+
+        assertTrue(withTranslation.title.contains("译文"))
+        assertFalse(withoutTranslation.title.contains("译文"))
+        // 歌词本身要保留
+        assertTrue(withoutTranslation.title.contains("line"))
+    }
+
+    /**
+     * 关掉车机翻译时, 只有 AVRCP 面向的 TITLE/ARTIST 丢掉译文。
+     * 灵动岛读的 DISPLAY_* 字段必须保留译文, 否则关车机翻译会连带关掉灵动岛翻译。
+     */
+    @Test
+    fun `disabling the bluetooth translation switch keeps the display fields translated`() {
+        val payload = ExternalBluetoothLyricPayload("line", "译文")
+
+        val text = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = false,
+        )
+
+        // AVRCP 面向车机的字段: 不带译文
+        assertFalse(text.title.contains("译文"))
+        assertFalse(text.artist.contains("译文"))
+        // 系统展示面(灵动岛等)读的字段: 保留译文
+        assertTrue(text.displayTitle.contains("译文"))
+        assertTrue(text.displayDescription.orEmpty().contains("译文"))
+    }
+
+    /**
+     * 非蓝牙输出时, 翻译开关不影响 metadata: 灵动岛、锁屏歌词等展示面仍然要带翻译。
+     * 非蓝牙时标题只放歌词本身, 译文落在 artist 上, 所以两处都要查。
+     */
+    @Test
+    fun `the bluetooth translation switch does not affect non bluetooth output`() {
+        val payload = ExternalBluetoothLyricPayload("line", "译文")
+
+        val withTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = true,
+        )
+        val withoutTranslation = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = false,
+        )
+
+        assertTrue(withTranslation.title.contains("译文") || withTranslation.artist.contains("译文"))
+        assertTrue(withoutTranslation.title.contains("译文") || withoutTranslation.artist.contains("译文"))
+    }
+
     private fun metadata(
         payload: ExternalBluetoothLyricPayload,
         route: Int = AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
     ): MediaMetadata {
-        val text = serviceMetadataText(song, payload, route, forceSendLyrics = true)
+        val text = serviceMetadataText(
+            song = song,
+            payload = payload,
+            audioDeviceType = route,
+            forceSendLyrics = true,
+            bluetoothTranslationEnabled = true,
+        )
         val mediaId = serviceMetadataMediaId(song, listOf(song), 0)
         val snapshot = serviceMetadataSnapshot(song, text, artwork, 1, 0, mediaId = mediaId)
         return serviceMediaMetadata(snapshot, artwork)

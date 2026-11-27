@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.storage
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.core.download.storage.metadata.serialization.toJson
 import moe.ouom.neriplayer.data.identity.stableKey
 
@@ -153,6 +154,10 @@ internal object ManagedDownloadStorageJsonCodec {
         }
     }
 
+    fun storedEntryToJson(entry: ManagedDownloadStorage.StoredEntry): JSONObject = entry.toJson()
+
+    fun storedEntryFromJson(root: JSONObject): ManagedDownloadStorage.StoredEntry? = root.toStoredEntry()
+
     private fun ManagedDownloadStorage.StoredEntry.toJson(): JSONObject {
         return JSONObject().apply {
             put("name", name)
@@ -212,6 +217,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("channelId", channelId)
             put("audioId", audioId)
             put("subAudioId", subAudioId)
+            put("youtubeContentLabel", youtubeContentLabel?.name)
             put("playlistContextId", playlistContextId)
             put("coverPath", coverPath)
             put("lyricPath", lyricPath)
@@ -296,6 +302,7 @@ internal object ManagedDownloadStorageJsonCodec {
             put("channelId", channelId)
             put("audioId", audioId)
             put("subAudioId", subAudioId)
+            put("youtubeContentLabel", youtubeContentLabel?.name)
             put("playlistContextId", playlistContextId)
             put("logicalCreatedAtMs", logicalCreatedAtMs)
             put("createdAtSource", createdAtSource)
@@ -391,6 +398,7 @@ internal object ManagedDownloadStorageJsonCodec {
             channelId = optPresentString("channelId"),
             audioId = optPresentString("audioId"),
             subAudioId = optPresentString("subAudioId"),
+            youtubeContentLabel = YouTubeContentLabel.fromName(optPresentString("youtubeContentLabel")),
             playlistContextId = optPresentString("playlistContextId"),
             logicalCreatedAtMs = optLong("logicalCreatedAtMs")
                 .takeIf { has("logicalCreatedAtMs") && it > 0L },

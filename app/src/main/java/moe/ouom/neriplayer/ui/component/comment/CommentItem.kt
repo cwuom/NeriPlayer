@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.component.comment
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -78,6 +82,8 @@ private val CommentActionContentPadding = PaddingValues(horizontal = 14.dp, vert
  * @param onLikeReply 点击楼中楼点赞, 参数是该回复的评论 id
  * @param showReplyActions 是否显示回复和楼中楼入口，百科预览只保留点赞
  */
+private val CommentHairlineInset = 56.dp
+
 @Composable
 internal fun CommentItem(
     comment: SongComment,
@@ -94,7 +100,8 @@ internal fun CommentItem(
     modifier: Modifier = Modifier,
     likingIds: Set<String> = emptySet(),
     onLikeReply: (String) -> Unit = {},
-    showReplyActions: Boolean = true
+    showReplyActions: Boolean = true,
+    onTimestampClick: (Long) -> Unit = {}
 ) {
     val context = LocalContext.current
     val anonymous = stringResource(AppR.string.comment_anonymous_user)
@@ -109,19 +116,35 @@ internal fun CommentItem(
         comment, comment.id, replyEnabled, onReply, modifier.fillMaxWidth(),
         showReplyAction = showReplyActions
     ) {
+        val clean = NeriDesign.isClean
+        val hairline = MaterialTheme.colorScheme.outlineVariant
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = if (NeriDesign.isClean) NeriDesign.tokens.cardShape else MaterialTheme.shapes.extraLarge,
-            // Clean 下 surfaceContainer 与 sheet 底 surfaceContainerLow 只差一点点，
-            // 评论卡片会糊成一片，改用墨色半透明拉开层次。
-            color = if (NeriDesign.isClean) {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainer
-            }
+            // Clean 走 iOS 式平铺列表: 不画卡片, 楼与楼之间只留一条从头像右侧起的发丝线
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (clean && floor > 1) {
+                        Modifier.drawBehind {
+                            val inset = CommentHairlineInset.toPx()
+                            drawLine(
+                                color = hairline,
+                                start = Offset(inset, 0f),
+                                end = Offset(size.width, 0f),
+                                strokeWidth = 0.5.dp.toPx()
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
+                ),
+            shape = if (clean) RectangleShape else MaterialTheme.shapes.extraLarge,
+            color = if (clean) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(
+                    horizontal = if (clean) 4.dp else 16.dp,
+                    vertical = if (clean) 14.dp else 16.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -176,7 +199,8 @@ internal fun CommentItem(
                     content = comment.content,
                     emotes = comment.emotes,
                     style = MaterialTheme.typography.bodyLarge,
-                    offlineMode = offlineMode
+                    offlineMode = offlineMode,
+                    onTimestampClick = onTimestampClick
                 )
                 if (comment.images.isNotEmpty()) {
                     CommentImageGrid(
@@ -197,7 +221,8 @@ internal fun CommentItem(
                             isLiking = reply.id in likingIds,
                             likeEnabled = likeEnabled && !offlineMode,
                             onLike = { onLikeReply(reply.id) },
-                            showReplyAction = showReplyActions
+                            showReplyAction = showReplyActions,
+                            onTimestampClick = onTimestampClick
                         )
                     }
                 }

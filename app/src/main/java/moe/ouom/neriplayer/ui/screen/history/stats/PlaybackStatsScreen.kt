@@ -6,13 +6,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ClearAll
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -23,6 +24,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalConfiguration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.WeekFields
+import moe.ouom.neriplayer.data.stats.toPlaybackStatsSongItem
+import moe.ouom.neriplayer.data.stats.PlaybackStatsSummary
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,8 +39,9 @@ import androidx.compose.ui.res.stringResource
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.stats.PlaybackStatsSort
-import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
@@ -52,16 +62,38 @@ fun PlaybackStatsScreen(
     offlineMode: Boolean = false
 ) {
     val mini = LocalMiniPlayerHeight.current
-    var selectedPeriod by remember { mutableStateOf(PlaybackStatsPeriod.ALL) }
-    var sortMode by remember { mutableStateOf(StatsSortMode.PLAY_COUNT) }
+    var selection by rememberSaveable { mutableStateOf(StatsDateFilter()) }
+    var showRankings by rememberSaveable { mutableStateOf(false) }
+    var sortMode by rememberSaveable { mutableStateOf(StatsSortMode.PLAY_COUNT) }
     var showClearDialog by remember { mutableStateOf(false) }
     val queryDay by rememberStatsQueryDay()
-    val query = rememberPlaybackStatsQuery(selectedPeriod, PlaybackStatsSort.valueOf(sortMode.name), queryDay.nowMillis)
-    val queryDayKey = queryDay.key.takeUnless { selectedPeriod == PlaybackStatsPeriod.ALL }
-    val pageRequestState = remember(query, queryDayKey) { mutableStateOf(StatsPageRequest()) }
+    val zone = ZoneId.of(queryDay.key.timeZoneId)
+    val today = Instant.ofEpochMilli(queryDay.nowMillis).atZone(zone).toLocalDate()
+    val firstWeekday = WeekFields.of(LocalConfiguration.current.locales[0]).firstDayOfWeek
+    val dates = selection.dates(today, firstWeekday)
+    val sort = if (showRankings) PlaybackStatsSort.valueOf(sortMode.name) else PlaybackStatsSort.LISTEN_TIME
+    val query = rememberPlaybackStatsQuery(selection.period, sort, queryDay.nowMillis).copy(range = dates?.toStatsTimeRange(zone))
+    val pageRequestState = remember(query) { mutableStateOf(StatsPageRequest()) }
     var pageRequest by pageRequestState
-    val pageState by rememberStatsPage(query, pageRequestState)
+    val insightState = if (showRankings) null else rememberListeningInsights(query, pageRequest.retry).value
+    val pageState = if (insightState == null) {
+        val page = rememberStatsPage(query, pageRequestState).value
+        when {
+            page.loadedQuery != null && page.loadedQuery != query ->
+                StatsPageState(loading = !page.failed, failed = page.failed)
+            !page.failed && page.loadedRequest != pageRequest -> page.copy(loading = true)
+            else -> page
+        }
+    } else {
+        StatsPageState(
+            summary = insightState.insights?.summary ?: PlaybackStatsSummary(),
+            loading = insightState.loading,
+            failed = insightState.failed
+        )
+    }
     val tablet = usePlaybackStatsTabletLayout(currentWindowWidthDp())
+    // 与下方内容同一组 key，筛选或排序变化时照旧回到新列表顶部
+    val rankingListState = key(selection, showRankings, sort) { rememberLazyListState() }
 
     if (showClearDialog) {
         AlertDialog(
@@ -93,24 +125,39 @@ fun PlaybackStatsScreen(
                     sortMode = sortMode,
                     onSortModeChange = { sortMode = it },
                     onBack = onBack,
-                    onClearRequest = { showClearDialog = true }
+                    onClearRequest = { showClearDialog = true },
+                    showSort = showRankings,
+                    modifier = Modifier.scrollToTopOnTitleBarTap { rankingListState.scrollToTopForReselect() }
                 )
             }
         ) { innerPadding ->
-            PlaybackStatsContent(
-                state = if (!pageState.failed && (pageState.loadedQuery != query || pageState.loadedRequest != pageRequest))
-                    pageState.copy(loading = true) else pageState,
-                request = pageRequest,
-                selectedPeriod = selectedPeriod,
-                sortMode = sortMode,
-                onPeriodSelected = { selectedPeriod = it },
-                onPageRequest = { pageRequest = it },
-                onSongClick = onSongClick,
-                offlineMode = offlineMode,
-                miniPlayerHeight = mini,
-                tablet = tablet,
-                modifier = Modifier.fillMaxSize().padding(innerPadding)
-            )
+            key(selection, showRankings, sort) {
+                PlaybackStatsContent(
+                    state = pageState,
+                    request = pageRequest,
+                    selectedPeriod = selection.period,
+                    sortMode = sortMode,
+                    onPeriodSelected = { selection = StatsDateFilter(period = it) },
+                    onPageRequest = { pageRequest = it },
+                    onSongClick = onSongClick,
+                    offlineMode = offlineMode,
+                    miniPlayerHeight = mini,
+                    tablet = tablet,
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    rankingListState = rankingListState,
+                    filters = {
+                        StatsDateControls(selection, today, firstWeekday) { selection = it }
+                        StatsViewSelector(showRankings) { showRankings = it }
+                    },
+                    overviewContent = if (insightState == null) null else ({
+                        insightState.insights?.let { insights ->
+                            PlaybackStatsInsightsContent(insights, insightState.hours, offlineMode, singleDay = dates.isSingleDay, onTrackClick = {
+                                onSongClick(listOf(it.toPlaybackStatsSongItem()), 0)
+                            })
+                        }
+                    })
+                )
+            }
         }
     }
 }
@@ -121,11 +168,14 @@ internal fun PlaybackStatsTopBar(
     sortMode: StatsSortMode,
     onSortModeChange: (StatsSortMode) -> Unit,
     onBack: () -> Unit,
-    onClearRequest: () -> Unit
+    onClearRequest: () -> Unit,
+    showSort: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
     TopAppBar(
         title = { Text(stringResource(AppR.string.stats_title)) },
+        modifier = modifier,
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = Color.Transparent
         ),
@@ -138,7 +188,7 @@ internal fun PlaybackStatsTopBar(
             }
         },
         actions = {
-            Box {
+            if (showSort) Box {
                 HapticIconButton(onClick = { showSortMenu = true }) {
                     Icon(
                         Icons.AutoMirrored.Filled.Sort,

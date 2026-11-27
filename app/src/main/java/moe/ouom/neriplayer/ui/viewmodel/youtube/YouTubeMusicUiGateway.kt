@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.viewmodel.youtube
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
 data class YouTubeMusicPlaylistDetail(
@@ -32,7 +33,8 @@ data class YouTubeMusicPlaylistDetail(
     val coverUrl: String,
     val trackCount: Int,
     val tracks: List<YouTubeMusicTrack>,
-    val fullyLoaded: Boolean = true
+    val fullyLoaded: Boolean = true,
+    val filteredEmpty: Boolean = false
 )
 
 data class YouTubeMusicTrack(
@@ -42,6 +44,7 @@ data class YouTubeMusicTrack(
     val albumName: String = "",
     val durationMs: Long = 0L,
     val coverUrl: String = "",
+    val contentLabel: YouTubeContentLabel? = null
 )
 
 interface YouTubeMusicLibraryGateway {

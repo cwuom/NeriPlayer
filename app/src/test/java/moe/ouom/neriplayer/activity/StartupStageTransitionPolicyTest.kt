@@ -13,6 +13,16 @@ import org.junit.Test
 
 class StartupStageTransitionPolicyTest {
     @Test
+    fun disclaimerAndOnboardingShareOneContentKeySoTheFlowIsNotRebuilt() {
+        assertEquals(
+            startupStageContentKey(StartupStage.Disclaimer),
+            startupStageContentKey(StartupStage.Onboarding)
+        )
+        assertEquals(StartupStage.Main, startupStageContentKey(StartupStage.Main))
+        assertEquals(StartupStage.Loading, startupStageContentKey(StartupStage.Loading))
+    }
+
+    @Test
     fun onboardingDefersOnlyDuringStartupBootstrap() {
         assertTrue(shouldDeferStartupStageContent(StartupStage.Onboarding))
         assertTrue(

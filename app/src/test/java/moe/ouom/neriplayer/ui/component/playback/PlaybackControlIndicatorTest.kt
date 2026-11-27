@@ -6,6 +6,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackControlIndicatorTest {
+    @Test
+    fun `room preparation shows waiting before Media3 requests playback`() {
+        assertTrue(resolvePlaybackWaiting(false, false, false, lanPreparing = true))
+    }
+
 
     @Test
     fun `requested playback waits until audio starts`() {

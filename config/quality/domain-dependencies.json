@@ -30,6 +30,7 @@
     "package": "moe.ouom.neriplayer.core.player.runtime.",
     "descriptor_only": [],
     "allowed_classes": [
+      "java.time.ZoneId",
       "java.lang.*",
       "java.util.*",
       "kotlin.*",
@@ -82,6 +83,7 @@
     "package": "moe.ouom.neriplayer.data.ltw.",
     "descriptor_only": [],
     "allowed_classes": [
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
       "java.lang.*",
       "java.util.*",
       "kotlin.*",
@@ -146,6 +148,12 @@
       "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata$Companion"
     ],
     "bridges": {
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel": [
+        "Fieldref Companion:Lmoe/ouom/neriplayer/data/model/youtube/music/YouTubeContentLabel$Companion;"
+      ],
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel$Companion": [
+        "Methodref fromName:(Ljava/lang/String;)Lmoe/ouom/neriplayer/data/model/youtube/music/YouTubeContentLabel;"
+      ],
       "moe.ouom.neriplayer.core.download.storage.metadata.serialization.ManagedDownloadRestorableMetadataJsonKt": [
         "Methodref fromJson:(Lmoe/ouom/neriplayer/data/model/download/ManagedDownloadRestorableMetadata$Companion;Lorg/json/JSONObject;)Lmoe/ouom/neriplayer/data/model/download/ManagedDownloadRestorableMetadata;"
       ]
@@ -164,6 +172,7 @@
       "moe.ouom.neriplayer.data.model.SongIdentity"
     ],
     "bridges": {
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel": [],
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongCatalogModelsKt": [
         "Methodref isResolvableLocalReference:(Ljava/lang/String;)Z"
       ],
@@ -194,6 +203,7 @@
       "moe.ouom.neriplayer.data.model.download.DownloadedSong"
     ],
     "bridges": {
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel": [],
       "moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState": [],
       "moe.ouom.neriplayer.data.model.download.ManagedDownloadRestorableMetadata": [],
       "moe.ouom.neriplayer.core.download.catalog.DownloadedSongBuilderKt": [
@@ -868,6 +878,8 @@
     "name": "platform-bilibili-client",
     "package": "moe.ouom.neriplayer.platform.bilibili.api.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.network.proxy.NetworkDns",
+      "okhttp3.Dns",
       "moe.ouom.neriplayer.network.security.TrustedHostSupportKt",
       "okhttp3.Interceptor",
       "okhttp3.Interceptor$Chain",
@@ -987,6 +999,7 @@
       "moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicHotVideo",
       "moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankPeriod",
       "moe.ouom.neriplayer.data.model.bilibili.music.BiliMusicRankSong",
+      "moe.ouom.neriplayer.data.model.bilibili.playback.BiliPlayHistoryTarget",
       "moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo",
       "moe.ouom.neriplayer.data.model.bilibili.playback.DashStream",
       "moe.ouom.neriplayer.data.model.bilibili.playback.DolbyAudio",
@@ -994,6 +1007,7 @@
       "moe.ouom.neriplayer.data.model.bilibili.playback.FlacAudio",
       "moe.ouom.neriplayer.data.model.bilibili.playback.PlayInfo",
       "moe.ouom.neriplayer.data.model.bilibili.playback.PlayOptions",
+      "moe.ouom.neriplayer.data.model.bilibili.search.SearchUploaderPage",
       "moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem",
       "moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage",
       "moe.ouom.neriplayer.data.model.bilibili.uploader.UploaderContent",
@@ -1037,6 +1051,8 @@
     "name": "platform-netease-client",
     "package": "moe.ouom.neriplayer.platform.netease.api.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.network.proxy.NetworkDns",
+      "okhttp3.Dns",
       "android.content.Context",
       "android.webkit.CookieManager",
       "android.webkit.JavascriptInterface",
@@ -1208,6 +1224,16 @@
     "name": "platform-youtube-client",
     "package": "moe.ouom.neriplayer.platform.youtube.api.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeCatalogPolicy",
+      "kotlin.Triple",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel$Companion",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeCursor",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomePage",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelfContinuation",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchCursor",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchPage",
+      "moe.ouom.neriplayer.network.weblogin.WebViewNetworkRoute",
       "android.content.Context",
       "android.content.res.AssetManager",
       "android.net.Uri",
@@ -1787,6 +1813,7 @@
     "name": "platform-bilibili-repository",
     "package": "moe.ouom.neriplayer.platform.bilibili.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
       "android.content.Context",
       "android.content.SharedPreferences",
       "android.content.SharedPreferences$Editor",
@@ -1946,6 +1973,7 @@
       "moe.ouom.neriplayer.data.model.lyrics.LyricEntry",
       "moe.ouom.neriplayer.platform.bilibili.api.auth.BiliCookieSource",
       "moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient",
+      "moe.ouom.neriplayer.platform.bilibili.api.client.BiliVideoIdCodec",
       "moe.ouom.neriplayer.platform.bilibili.api.sponsorblock.BiliSponsorBlockClient",
       "moe.ouom.neriplayer.common.logging.NPLogger",
       "moe.ouom.neriplayer.platform.bilibili.auth.*",
@@ -1970,6 +1998,7 @@
       "moe.ouom.neriplayer.data.model.bilibili.cache.archive.CachedBiliArchiveVideo",
       "moe.ouom.neriplayer.data.model.bilibili.cache.favorite.BiliFavoriteFolderContentCache",
       "moe.ouom.neriplayer.data.model.bilibili.cache.favorite.CachedBiliFavoriteVideo",
+      "moe.ouom.neriplayer.data.model.bilibili.playback.BiliPlayHistoryTarget",
       "moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo",
       "moe.ouom.neriplayer.data.model.bilibili.playback.BiliQuality",
       "moe.ouom.neriplayer.data.model.bilibili.playback.BiliQuality$Companion",
@@ -2217,6 +2246,7 @@
     "name": "platform-netease-repository",
     "package": "moe.ouom.neriplayer.platform.netease.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
       "android.content.Context",
       "android.content.SharedPreferences",
       "android.content.SharedPreferences$Editor",
@@ -2349,6 +2379,7 @@
       "moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncPlan",
       "moe.ouom.neriplayer.data.model.netease.playlist.NeteaseLikeSyncResult",
       "moe.ouom.neriplayer.data.model.netease.playlist.NeteaseRemotePlaylist",
+      "moe.ouom.neriplayer.data.model.netease.cloud.NeteaseCloudPage",
       "moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaAward",
       "moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo",
       "moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaBasicInfo",
@@ -2522,6 +2553,9 @@
     "name": "platform-youtube-repository",
     "package": "moe.ouom.neriplayer.platform.youtube.playlist.",
     "allowed_classes": [
+      "java.lang.Character",
+      "kotlin.enums.EnumEntries",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
       "android.content.Context",
       "android.content.SharedPreferences",
       "android.content.SharedPreferences$Editor",
@@ -2771,6 +2805,19 @@
     "name": "platform-youtube-auth",
     "package": "moe.ouom.neriplayer.platform.youtube.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeCatalogPolicy",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeCatalogPolicyKt",
+      "android.content.SharedPreferences$OnSharedPreferenceChangeListener",
+      "java.lang.Enum",
+      "kotlin.enums.EnumEntries",
+      "kotlin.enums.EnumEntriesKt",
+      "kotlin.jvm.functions.Function3",
+      "kotlinx.coroutines.channels.ProduceKt",
+      "kotlinx.coroutines.channels.ProducerScope",
+      "kotlinx.coroutines.flow.Flow",
+      "moe.ouom.neriplayer.common.locale.DeviceLocale",
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
+      "org.schabi.newpipe.extractor.localization.ContentCountry",
       "kotlinx.coroutines.AwaitKt",
       "kotlinx.coroutines.JobKt",
       "kotlinx.coroutines.NonCancellable",
@@ -3026,6 +3073,7 @@
     "name": "platform-comments",
     "package": "moe.ouom.neriplayer.platform.comments.",
     "allowed_classes": [
+      "moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel",
       "java.lang.Boolean",
       "java.lang.CharSequence",
       "java.lang.Class",
@@ -3473,6 +3521,27 @@
       "moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSeed",
       "moe.ouom.neriplayer.data.model.lyrics.LyricsEditorSource",
       "moe.ouom.neriplayer.data.model.lyrics.WordTiming"
+    ],
+    "bridges": {},
+    "descriptor_only": []
+  },
+  {
+    "name": "lan-beatsync-core",
+    "package": "moe.ouom.neriplayer.lanltw.core.",
+    "allowed_classes": [
+      "java.lang.*",
+      "java.io.*",
+      "java.util.*",
+      "java.util.concurrent.*",
+      "kotlin.*",
+      "kotlinx.coroutines.*",
+      "kotlinx.serialization.*",
+      "moe.ouom.neriplayer.data.model.lan.*",
+      "moe.ouom.neriplayer.data.model.ltw.track.*",
+      "moe.ouom.neriplayer.lanltw.core.*",
+      "moe.ouom.neriplayer.lanltw.protocol.LanCodec",
+      "androidx.annotation.OptIn",
+      "java.nio.charset.Charset"
     ],
     "bridges": {},
     "descriptor_only": []

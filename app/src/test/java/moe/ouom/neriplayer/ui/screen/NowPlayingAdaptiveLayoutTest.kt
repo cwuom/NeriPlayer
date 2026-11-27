@@ -13,7 +13,10 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingBackIcon
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingAdaptiveCoverSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingTopBarButtonSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingPhoneTopActionButtonSize
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingTabletPortraitContentMaxWidth
+import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingTabletImmersiveContentWidth
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideLayoutSpec
+import moe.ouom.neriplayer.ui.screen.nowplaying.shouldUseNowPlayingTabletPortraitLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingWideControlSlot
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideControlPlacement
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolveNowPlayingWideControlOffsets
@@ -151,6 +154,27 @@ class NowPlayingAdaptiveLayoutTest {
     }
 
     @Test
+    fun `immersive tablet portrait leaves the lyrics layout for the large cover`() {
+        assertTrue(shouldUseNowPlayingTabletPortraitLayout(tabletPortrait = true, immersiveMode = false))
+        assertFalse(shouldUseNowPlayingTabletPortraitLayout(tabletPortrait = true, immersiveMode = true))
+        assertFalse(shouldUseNowPlayingTabletPortraitLayout(tabletPortrait = false, immersiveMode = false))
+        assertEquals(
+            NowPlayingTabletPortraitContentMaxWidth,
+            resolveNowPlayingTabletPortraitLayoutSpec(1_000.dp, 1_400.dp).contentWidth
+        )
+    }
+
+    @Test
+    fun `immersive tablet portrait sizes content by the cover and leaves breathing room`() {
+        // 矮一些的平板按高度收窄, 封面不再吃掉全部高度
+        assertEquals(458.dp, resolveNowPlayingTabletImmersiveContentWidth(600.dp, 878.dp))
+        assertEquals(NowPlayingTabletPortraitContentMaxWidth, resolveNowPlayingTabletImmersiveContentWidth(800.dp, 1_200.dp))
+        // 控件和工具栏至少保留手机宽度
+        assertEquals(360.dp, resolveNowPlayingTabletImmersiveContentWidth(600.dp, 700.dp))
+        assertEquals(340.dp, resolveNowPlayingTabletImmersiveContentWidth(340.dp, 700.dp))
+    }
+
+    @Test
     fun `tablet portrait limits cover and action widths while reserving height for lyrics`() {
         val tablet = resolveNowPlayingTabletPortraitLayoutSpec(800.dp, 1280.dp)
         assertEquals(560.dp, tablet.contentWidth)
@@ -259,14 +283,18 @@ class NowPlayingAdaptiveLayoutTest {
         val shortTablet = resolveNowPlayingControlBaseSizes(false, true, true, false)
         val portrait = resolveNowPlayingControlBaseSizes(false, false, false, false)
         assertEquals(36.dp, phone.secondaryButtonSize)
-        assertEquals(40.dp, phone.primaryButtonSize)
+        assertEquals(44.dp, phone.primaryButtonSize)
         assertEquals(20.dp, phone.iconSize)
         assertTrue(phone.spacing < tablet.spacing)
         assertEquals(46.dp, tablet.secondaryButtonSize)
-        assertEquals(50.dp, tablet.primaryButtonSize)
+        assertEquals(56.dp, tablet.primaryButtonSize)
         assertEquals(42.dp, shortTablet.secondaryButtonSize)
-        assertEquals(46.dp, shortTablet.primaryButtonSize)
-        assertEquals(42.dp, portrait.primaryButtonSize)
+        assertEquals(52.dp, shortTablet.primaryButtonSize)
+        assertEquals(56.dp, portrait.primaryButtonSize)
+        // 主键在所有布局下都应明显大于两侧按钮
+        listOf(phone, tablet, shortTablet, portrait).forEach { sizes ->
+            assertTrue(sizes.primaryButtonSize >= sizes.secondaryButtonSize * 1.2f)
+        }
     }
 
     @Test

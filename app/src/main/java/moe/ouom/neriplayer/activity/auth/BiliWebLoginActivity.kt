@@ -29,6 +29,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.http.SslError
 import android.net.Uri
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import android.os.Bundle
 import android.view.MenuItem
 import android.view.ViewGroup
@@ -108,6 +110,7 @@ class BiliWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installLoginRoute()
         if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
         enableNeriEdgeToEdge()
@@ -335,7 +338,7 @@ class BiliWebLoginActivity : ComponentActivity() {
         if (!webView.url.isNullOrBlank()) {
             webView.stopLoading()
         }
-        webView.loadUrl(LOGIN_URL)
+        lifecycleScope.launch { webView.loadLoginUrl(LOGIN_URL) }
     }
 
     private inner class InnerClient : WebViewClient() {

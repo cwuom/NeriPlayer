@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.download.index
 import java.nio.file.Files
 import java.security.MessageDigest
 import moe.ouom.neriplayer.data.model.download.DownloadedAudioEmbeddingState
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.policy.publication.isFinalizedDownloadedMetadata
 import org.json.JSONObject
@@ -47,7 +48,7 @@ class ManagedLibraryFastIndexTest {
     @Test
     fun `index round trips and sorts entries`() {
         val entries = listOf(
-            entry("z-song"),
+            entry("z-song").copy(youtubeContentLabel = YouTubeContentLabel.EXPLICIT_MUSIC_VIDEO),
             entry("a-song")
         )
         val raw = ManagedLibraryFastIndex.encode("library", "03", entries, 42L)
@@ -56,6 +57,7 @@ class ManagedLibraryFastIndexTest {
 
         assertNotNull(restored)
         assertEquals(listOf("a-song", "z-song"), restored?.entries?.map { it.stableKey })
+        assertEquals(listOf(null, YouTubeContentLabel.EXPLICIT_MUSIC_VIDEO), restored?.entries?.map { it.youtubeContentLabel })
         assertEquals("library", restored?.libraryId)
     }
 

@@ -113,7 +113,7 @@ class PlaybackStatsPhoneRefreshRenderingTest {
             val replacement = (4..6).map(::track)
             composeRule.runOnIdle { state.value = page(replacement, finalQuery) }
             tracks.forEach { row(it).assertDoesNotExist() }
-            assertOverviewAndChart(replacement, expectedDuration = "2h 30m")
+            assertOverviewAndChart(replacement, expectedDuration = string(AppR.string.stats_short_hour, 2L, 30L))
             assertTransparentEdges(rowEdgePixels(replacement))
             row(replacement.first()).assertIsDisplayed().assertIsEnabled().performTouchInput { click() }
             composeRule.runOnIdle {
@@ -225,7 +225,10 @@ class PlaybackStatsPhoneRefreshRenderingTest {
         }
     }
 
-    private fun assertOverviewAndChart(renderedTracks: List<TrackStat>, expectedDuration: String = "1h 0m") {
+    private fun assertOverviewAndChart(
+        renderedTracks: List<TrackStat>,
+        expectedDuration: String = string(AppR.string.stats_short_hour, 1L, 0L)
+    ) {
         val summary = summary(renderedTracks)
         listOf(summary.trackCount.toString(), summary.totalPlayCount.toString(), expectedDuration)
             .forEach { value ->
@@ -279,7 +282,8 @@ class PlaybackStatsPhoneRefreshRenderingTest {
     private fun rowTag(stat: TrackStat) = "statsTrack_${stat.identityKey}"
     private fun retainedTags() = listOf("statsSingleColumn", OVERVIEW, CHART) + tracks.map(::rowTag)
     private fun bounds(tag: String) = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
-    private fun string(resourceId: Int) = ApplicationProvider.getApplicationContext<Context>().getString(resourceId)
+    private fun string(resourceId: Int, vararg args: Any) =
+        ApplicationProvider.getApplicationContext<Context>().getString(resourceId, *args)
     private fun colorDistance(first: Color, second: Color) = maxOf(abs(first.red - second.red), abs(first.green - second.green), abs(first.blue - second.blue))
 
     private fun page(renderedTracks: List<TrackStat>, query: PlaybackStatsQuery, loadedRequest: StatsPageRequest = StatsPageRequest()) =

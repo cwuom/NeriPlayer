@@ -35,10 +35,10 @@ import moe.ouom.neriplayer.data.settings.SettingsKeys
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.settings.dataStore
-import moe.ouom.neriplayer.data.settings.bootstrap.persistBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.synchronizeBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.persistPlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.bootstrap.toBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.settings.playback.toPlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.sync.store.preferences.SyncPreferences
 import moe.ouom.neriplayer.data.sync.github.GitHubSyncWorker
@@ -317,12 +317,15 @@ class ConfigFileManager(
         }
     }
 
+    /** 恢复设置时同步启动页缓存，避免导入与设置观察器交错后留下旧路由 */
     private suspend fun restoreSettings(snapshot: TypedPreferenceSnapshot) {
-        context.dataStore.edit { prefs -> prefs.replaceSettingsWith(snapshot) }
+        synchronizeStartDestinationSnapshot(context) {
+            context.dataStore.edit { prefs -> prefs.replaceSettingsWith(snapshot) }
+        }
 
         val restoredPrefs = context.dataStore.data.first()
         persistThemePreferenceSnapshot(context, restoredPrefs.toThemePreferenceSnapshot())
-        persistBootstrapSettingsSnapshot(context, restoredPrefs.toBootstrapSettingsSnapshot())
+        synchronizeBootstrapSettingsSnapshot(context)
         persistPlaybackPreferenceSnapshot(context, restoredPrefs.toPlaybackPreferenceSnapshot())
     }
 

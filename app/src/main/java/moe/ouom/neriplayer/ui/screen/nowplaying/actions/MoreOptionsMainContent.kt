@@ -1,5 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.actions
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextOverflow
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.download.DownloadStage
 import moe.ouom.neriplayer.data.ltw.validation.format
@@ -21,7 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,12 +47,14 @@ import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.ThumbDown as ThumbDownOutlined
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -58,6 +67,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.foundation.layout.BoxScope
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NeteaseCollectionFeedback
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -97,7 +110,6 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
 import moe.ouom.neriplayer.data.local.media.isLocalSong
 import moe.ouom.neriplayer.data.model.SongItem
-import moe.ouom.neriplayer.data.model.server.isServerSong
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
@@ -110,6 +122,9 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.hasCachedLocalDownload
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNeteaseExclusiveFeatureAvailable
 import moe.ouom.neriplayer.ui.screen.nowplaying.shouldHideDownloadActionForSong
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.NowPlayingNeteasePlaylistOwner
+import moe.ouom.neriplayer.ui.viewmodel.nowplaying.canCollectToNeteasePlaylist
+import moe.ouom.neriplayer.ui.component.playlist.NeteaseRemotePlaylistPickerDialog
 import moe.ouom.neriplayer.ui.viewmodel.album.isNeteaseAlbumNavigationSource
 import moe.ouom.neriplayer.ui.viewmodel.album.neteaseAlbumDisplayName
 import moe.ouom.neriplayer.ui.viewmodel.album.resolveNeteaseAlbum
@@ -122,6 +137,7 @@ import kotlin.math.roundToInt
 import moe.ouom.neriplayer.ui.feedback.startActivityOrShowUnavailable
 import moe.ouom.neriplayer.R as AppR
 
+/** 播放页更多菜单。可用的歌曲操作取决于当前音源。 */
 @Composable
 internal fun MoreOptionsMainContent(
     viewModel: NowPlayingViewModel,
@@ -144,7 +160,8 @@ internal fun MoreOptionsMainContent(
     onShowSongDetails: () -> Unit,
     onShowQualitySwitch: () -> Unit,
     onEnterAlbum: (AlbumSummary) -> Unit,
-    onDismissSheet: (() -> Unit) -> Unit
+    onDismissSheet: (() -> Unit) -> Unit,
+    offlineMode: Boolean
 ) {
     val scrollState = rememberScrollState()
     val neteaseExclusiveFeatureAvailable = isNeteaseExclusiveFeatureAvailable(originalSong)
@@ -154,6 +171,45 @@ internal fun MoreOptionsMainContent(
             .verticalScroll(scrollState)
             .padding(bottom = 32.dp)
     ) {
+        // 常用操作两列平铺, 其余设置类入口按主题分组成列表
+        MoreOptionsTileGrid {
+            DownloadOrDetailsAction(
+                viewModel = viewModel,
+                song = originalSong,
+                isLocalSong = isLocalSong,
+                onShowSongDetails = onShowSongDetails
+            )
+            ShareSongAction(
+                song = originalSong,
+                queue = queue,
+                snackbarHostState = snackbarHostState,
+                onDismissSheet = onDismissSheet
+            )
+            NeteasePlaylistCollectionAction(
+                owner = viewModel.neteasePlaylistCollection,
+                song = originalSong,
+                audioInfo = currentPlaybackAudioInfo,
+                offlineMode = offlineMode,
+                isDismissing = isDismissing,
+                onSubmitted = { onDismissSheet {} }
+            )
+            if (neteaseExclusiveFeatureAvailable) {
+                DislikeSongAction(originalSong)
+                MoreOptionsItem(
+                    title = stringResource(AppR.string.encyclopedia_title),
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    hue = MoreHueViolet,
+                    onClick = onOpenEncyclopedia
+                )
+            }
+            MoreOptionsItem(
+                title = stringResource(CoreCommonR.string.listen_together_title),
+                icon = Icons.Outlined.Headphones,
+                hue = MoreHueIndigo,
+                onClick = onOpenListenTogether
+            )
+            PlaybackStatsAction(originalSong)
+        }
         MoreOptionsGroup {
             MetadataAndPlaybackActions(
                 audioInfo = currentPlaybackAudioInfo,
@@ -161,12 +217,6 @@ internal fun MoreOptionsMainContent(
                 onOpenSearch = onOpenSearch,
                 onOpenEditInfo = onOpenEditInfo,
                 onShowQualitySwitch = onShowQualitySwitch
-            )
-            DownloadOrDetailsAction(
-                viewModel = viewModel,
-                song = originalSong,
-                isLocalSong = isLocalSong,
-                onShowSongDetails = onShowSongDetails
             )
             NeteaseAlbumAction(
                 song = originalSong,
@@ -182,8 +232,8 @@ internal fun MoreOptionsMainContent(
                 onOpenFontSize = onOpenFontSize
             )
         }
-        MoreOptionsGroup {
-            if (PlayerManager.isBiliTrack(originalSong)) {
+        if (PlayerManager.isBiliTrack(originalSong)) {
+            MoreOptionsGroup {
                 MoreOptionsItem(
                     title = stringResource(CoreCommonR.string.bili_video_skip_manage),
                     icon = Icons.Outlined.SkipNext,
@@ -197,33 +247,56 @@ internal fun MoreOptionsMainContent(
                     onClick = onOpenBiliCcSubtitle
                 )
             }
-            ShareSongAction(
-                song = originalSong,
-                queue = queue,
-                snackbarHostState = snackbarHostState,
-                onDismissSheet = onDismissSheet
-            )
-            PlaybackStatsAction(originalSong)
-            if (neteaseExclusiveFeatureAvailable) {
-                DislikeSongAction(originalSong)
-                MoreOptionsItem(
-                    title = stringResource(AppR.string.encyclopedia_title),
-                    icon = Icons.AutoMirrored.Outlined.MenuBook,
-                    hue = MoreHueViolet,
-                    onClick = onOpenEncyclopedia
-                )
-            }
-            MoreOptionsItem(
-                title = stringResource(CoreCommonR.string.listen_together_title),
-                icon = Icons.Outlined.Headphones,
-                hue = MoreHueIndigo,
-                enabled = !originalSong.isServerSong(),
-                subtitle = if (originalSong.isServerSong()) {
-                    stringResource(CoreCommonR.string.server_listen_together_unavailable)
-                } else null,
-                onClick = onOpenListenTogether
-            )
         }
+    }
+}
+
+/** 两个界面共享提示状态。菜单可见时由菜单内的 Snackbar 显示消息。 */
+@Composable
+internal fun BoxScope.NeteaseCollectionFeedbackHost(
+    feedback: NeteaseCollectionFeedback,
+    host: SnackbarHostState,
+    menuOpen: Boolean
+) {
+    val resources = LocalResources.current
+    LaunchedEffect(feedback, host, resources) {
+        feedback.display { host.showNeriSnackbar(it.resolve(resources)) }
+    }
+    if (!menuOpen) NeriOverlaySnackbarHost(host)
+}
+
+/** 选择器只在提交被接受时收起更多菜单。 */
+@Composable
+internal fun NeteasePlaylistCollectionAction(
+    owner: NowPlayingNeteasePlaylistOwner,
+    song: SongItem,
+    audioInfo: PlaybackAudioInfo?,
+    offlineMode: Boolean,
+    isDismissing: Boolean,
+    onSubmitted: () -> Unit
+) {
+    val state by owner.state.collectAsStateWithLifecycle()
+    LaunchedEffect(owner, song, audioInfo) { owner.updatePlayback(song, audioInfo) }
+    DisposableEffect(owner) { onDispose { owner.dismiss() } }
+    if (!canCollectToNeteasePlaylist(song, audioInfo)) return
+    MoreOptionsItem(
+        title = stringResource(CoreCommonR.string.nowplaying_netease_playlist_collect),
+        icon = Icons.AutoMirrored.Outlined.PlaylistAdd,
+        hue = MoreHuePink,
+        enabled = !isDismissing && !state.submitting,
+        busy = state.submitting,
+        onClick = { owner.open(song, audioInfo, offlineMode) }
+    )
+    if (state.song != null) {
+        NeteaseRemotePlaylistPickerDialog(
+            playlists = state.playlists,
+            loading = state.loading,
+            errorMessage = state.error,
+            onPlaylistClick = { playlist ->
+                if (owner.select(playlist, song, audioInfo, offlineMode)) onSubmitted()
+            },
+            onDismissRequest = owner::dismiss
+        )
     }
 }
 
@@ -584,7 +657,7 @@ private fun PlaybackStatsAction(song: SongItem) {
         title = { Text(stringResource(AppR.string.stats_title)) },
         shape = neriRoundedShape(28.dp),
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatsCard(AppR.string.stats_song_first_played, firstPlayedText)
                 StatsCard(AppR.string.stats_song_total_listen, totalListenText)
                 StatsCard(
@@ -664,26 +737,77 @@ private val MoreHueViolet = Color(0xFF7D7AFF)
 private val MoreHueMint = Color(0xFF00C7BE)
 private val MoreHuePink = Color(0xFFFF375F)
 private val MoreHueIndigo = Color(0xFF5E5CE6)
-private val MoreRowShape = ContinuousRoundedCornerShape(14.dp)
-private val MoreGlyphShape = ContinuousRoundedCornerShape(8.dp)
-private val MoreGroupShape = ContinuousRoundedCornerShape(20.dp)
+private val MoreRowShape = RoundedCornerShape(14.dp)
+private val MoreGlyphShape = RoundedCornerShape(8.dp)
+private val MoreGroupShape = RoundedCornerShape(20.dp)
 
-/** Clean sheets group related actions into cards; Material keeps its flat list. */
+private val MoreTileShapeMaterial = RoundedCornerShape(20.dp)
+private val MoreTileShapeClean = RoundedCornerShape(16.dp)
+private val MoreGroupShapeMaterial = RoundedCornerShape(24.dp)
+
+/** 平铺网格内的条目改画成磁贴, 由所在 FlowRow 提供等分权重 */
+private val LocalMoreOptionsTileScope = staticCompositionLocalOf<FlowRowScope?> { null }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MoreOptionsTileGrid(content: @Composable () -> Unit) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        maxItemsInEachRow = 2,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        CompositionLocalProvider(LocalMoreOptionsTileScope provides this) { content() }
+    }
+}
+
+/** 两种风格都把相关入口收进一块连续的卡片, 卡片内不画分隔线 */
 @Composable
 private fun MoreOptionsGroup(content: @Composable ColumnScope.() -> Unit) {
-    if (!NeriDesign.isClean) {
-        Column(content = content)
-        return
-    }
+    val clean = NeriDesign.isClean
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(MoreGroupShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+            .clip(if (clean) MoreGroupShape else MoreGroupShapeMaterial)
+            .background(moreOptionsSurfaceColor())
             .padding(4.dp),
         content = content
     )
+}
+
+@Composable
+private fun moreOptionsSurfaceColor(): Color =
+    if (NeriDesign.isClean) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+
+@Composable
+private fun MoreOptionsGlyph(icon: ImageVector, hue: Color, busy: Boolean) {
+    val clean = NeriDesign.isClean
+    val container = if (clean) hue else MaterialTheme.colorScheme.secondaryContainer
+    val content = if (clean) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+    Box(
+        modifier = Modifier
+            .size(if (clean) 30.dp else 40.dp)
+            .clip(if (clean) MoreGlyphShape else CircleShape)
+            .background(container),
+        contentAlignment = Alignment.Center
+    ) {
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(if (clean) 16.dp else 20.dp),
+                strokeWidth = 2.dp,
+                color = content
+            )
+        } else {
+            Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(if (clean) 18.dp else 20.dp))
+        }
+    }
 }
 
 @Composable
@@ -697,61 +821,101 @@ private fun MoreOptionsItem(
     subtitle: String? = null,
     supporting: (@Composable () -> Unit)? = null
 ) {
-    if (!NeriDesign.isClean) {
-        ListItem(
-            headlineContent = { Text(title) },
-            leadingContent = {
-                if (busy) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(icon, null)
-                }
-            },
-            supportingContent = supporting ?: subtitle?.let { text -> { Text(text) } },
-            modifier = Modifier.clickable(enabled = enabled, onClick = onClick)
+    val tileScope = LocalMoreOptionsTileScope.current
+    if (tileScope != null) {
+        MoreOptionsTile(
+            title = title,
+            icon = icon,
+            hue = hue,
+            onClick = onClick,
+            enabled = enabled,
+            busy = busy,
+            subtitle = subtitle,
+            supporting = supporting,
+            modifier = with(tileScope) { Modifier.weight(1f) }
         )
         return
     }
+    val clean = NeriDesign.isClean
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MoreRowShape)
+            .clip(if (clean) MoreRowShape else MoreTileShapeMaterial)
             .clickable(enabled = enabled, onClick = onClick)
-            .heightIn(min = 52.dp)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .heightIn(min = if (clean) 52.dp else 60.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .alpha(if (enabled) 1f else 0.5f),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(MoreGlyphShape)
-                .background(hue),
-            contentAlignment = Alignment.Center
-        ) {
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-            } else {
-                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            }
-        }
+        MoreOptionsGlyph(icon, hue, busy)
         Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = colors.onSurface)
-            if (!subtitle.isNullOrBlank()) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            }
-            if (supporting != null) {
-                CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
-                    ProvideTextStyle(MaterialTheme.typography.bodySmall) { supporting() }
-                }
+        MoreOptionsTexts(title, subtitle, supporting, Modifier.weight(1f))
+        if (clean) {
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoreOptionsTile(
+    title: String,
+    icon: ImageVector,
+    hue: Color,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    busy: Boolean,
+    subtitle: String?,
+    supporting: (@Composable () -> Unit)?,
+    modifier: Modifier
+) {
+    val clean = NeriDesign.isClean
+    Row(
+        modifier = modifier
+            .clip(if (clean) MoreTileShapeClean else MoreTileShapeMaterial)
+            .background(moreOptionsSurfaceColor())
+            .clickable(enabled = enabled, onClick = onClick)
+            .heightIn(min = if (clean) 60.dp else 68.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .alpha(if (enabled) 1f else 0.5f),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MoreOptionsGlyph(icon, hue, busy)
+        Spacer(Modifier.width(if (clean) 10.dp else 12.dp))
+        MoreOptionsTexts(title, subtitle, supporting, Modifier.weight(1f), maxTitleLines = 2)
+    }
+}
+
+@Composable
+private fun MoreOptionsTexts(
+    title: String,
+    subtitle: String?,
+    supporting: (@Composable () -> Unit)?,
+    modifier: Modifier,
+    maxTitleLines: Int = Int.MAX_VALUE
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(modifier) {
+        Text(
+            title,
+            style = if (maxTitleLines == Int.MAX_VALUE) MaterialTheme.typography.bodyLarge
+            else MaterialTheme.typography.labelLarge,
+            color = colors.onSurface,
+            maxLines = maxTitleLines,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (!subtitle.isNullOrBlank()) {
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        if (supporting != null) {
+            CompositionLocalProvider(LocalContentColor provides colors.onSurfaceVariant) {
+                ProvideTextStyle(MaterialTheme.typography.bodySmall) { supporting() }
             }
         }
-        Icon(
-            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.onSurfaceVariant.copy(alpha = 0.6f),
-            modifier = Modifier.size(20.dp)
-        )
     }
 }

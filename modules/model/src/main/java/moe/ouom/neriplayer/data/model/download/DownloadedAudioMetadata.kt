@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.model.download
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
+
 data class DownloadedAudioMetadata(
     val stableKey: String? = null,
     val songId: Long? = null,
@@ -51,5 +53,6 @@ data class DownloadedAudioMetadata(
     val sourceModifiedAtMs: Long? = null,
     val restorableMetadata: ManagedDownloadRestorableMetadata? = null,
     val createdAtConfidence: String? = null,
-    val audioPublicationOwnerId: String? = null
+    val audioPublicationOwnerId: String? = null,
+    val youtubeContentLabel: YouTubeContentLabel? = null
 )

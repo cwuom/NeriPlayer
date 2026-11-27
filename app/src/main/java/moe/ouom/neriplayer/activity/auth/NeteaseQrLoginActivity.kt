@@ -99,6 +99,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installLoginRoute()
         lockPortraitIfPhone()
         enableNeriEdgeToEdge()
         foregroundWebLoginToken = ForegroundWebLoginGuard.enter("netease")
@@ -390,7 +391,7 @@ class NeteaseQrLoginActivity : ComponentActivity() {
     private fun openWebFallback() {
         pollJob?.cancel()
         NPLogger.d(LOG_TAG, "Open web fallback login")
-        webLoginLauncher.launch(Intent(this, NeteaseWebLoginActivity::class.java))
+        webLoginLauncher.launch(loginIntent(this, NeteaseWebLoginActivity::class.java))
     }
 
     private fun setLoadingState(loading: Boolean) {

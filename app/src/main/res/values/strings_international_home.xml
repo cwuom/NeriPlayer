@@ -1,0 +1,13 @@
+<resources>
+    <string name="youtube_content_page">内容与发现</string>
+    <string name="youtube_featured_playlists">精选歌单</string>
+    <string name="youtube_community_playlists">社区歌单</string>
+    <string name="youtube_home_no_items">当前内容偏好和首页设置下暂无推荐。</string>
+    <string name="youtube_explore_no_playlists">当前没有可显示的歌单。可以搜索歌曲、艺人或专辑。</string>
+    <string name="international_home_all">全部</string>
+    <string name="international_home_offline">离线模式</string>
+    <string name="international_home_disabled">YouTube Music 已关闭</string>
+    <string name="international_home_open_general">打开通用设置</string>
+    <string name="international_home_no_category">已加载的推荐中没有此类内容。</string>
+    <string name="international_home_no_history">暂无最近播放</string>
+</resources>

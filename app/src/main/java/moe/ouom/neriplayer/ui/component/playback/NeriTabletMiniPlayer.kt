@@ -25,8 +25,8 @@ import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -96,6 +96,7 @@ internal fun miniPlayerSeekPosition(progress: Float, durationMs: Long): Long =
 internal fun TabletMiniPlayerContent(
     controls: MiniPlayerTabletControls,
     playPauseEnabled: Boolean,
+    skipEnabled: Boolean = true,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -134,7 +135,8 @@ internal fun TabletMiniPlayerContent(
                             icon = Icons.Outlined.SkipPrevious,
                             label = CoreCommonR.string.player_previous,
                             tag = "miniPlayerPrevious",
-                            onClick = onPrevious
+                            onClick = onPrevious,
+                            enabled = skipEnabled
                         )
                     }
                     HapticIconButton(
@@ -143,7 +145,7 @@ internal fun TabletMiniPlayerContent(
                         modifier = Modifier.size(48.dp).testTag("miniPlayerPlayPause")
                     ) {
                         Box(
-                            Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
+                            Modifier.size(40.dp).background(if (playPauseEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = .12f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) { playPauseIcon() }
                     }
@@ -152,7 +154,8 @@ internal fun TabletMiniPlayerContent(
                             icon = Icons.Outlined.SkipNext,
                             label = CoreCommonR.string.player_next,
                             tag = "miniPlayerNext",
-                            onClick = onNext
+                            onClick = onNext,
+                            enabled = skipEnabled
                         )
                     }
                     if (layout == TabletMiniPlayerLayout.Full) {
@@ -205,6 +208,7 @@ internal fun TabletMiniPlayerContent(
                             controls = controls,
                             showUtilities = showUtilities,
                             showSkipItems = layout == TabletMiniPlayerLayout.Minimal,
+                            skipEnabled = skipEnabled,
                             onPrevious = onPrevious,
                             onNext = onNext,
                             onExpand = onExpand
@@ -224,13 +228,15 @@ private fun TabletMiniPlayerAction(
     label: Int,
     tag: String,
     onClick: () -> Unit,
-    active: Boolean = false
+    active: Boolean = false,
+    enabled: Boolean = true
 ) {
-    HapticIconButton(onClick = onClick, modifier = Modifier.size(48.dp).testTag(tag)) {
+    HapticIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp).testTag(tag)) {
         Icon(
             imageVector = icon,
             contentDescription = stringResource(label),
-            tint = if (active) MaterialTheme.colorScheme.primary
+            tint = if (!enabled) MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
+                else if (active) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSecondaryContainer
         )
     }
@@ -241,6 +247,7 @@ private fun TabletMiniPlayerOverflow(
     controls: MiniPlayerTabletControls,
     showUtilities: Boolean,
     showSkipItems: Boolean,
+    skipEnabled: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onExpand: () -> Unit
@@ -255,8 +262,9 @@ private fun TabletMiniPlayerOverflow(
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             @Composable
-            fun ActionItem(icon: ImageVector, label: Int, callback: () -> Unit) {
+            fun ActionItem(icon: ImageVector, label: Int, callback: () -> Unit, enabled: Boolean = true) {
                 DropdownMenuItem(
+                    enabled = enabled,
                     text = { Text(stringResource(label)) },
                     leadingIcon = { Icon(icon, null) },
                     onClick = {
@@ -266,8 +274,8 @@ private fun TabletMiniPlayerOverflow(
                 )
             }
             if (showSkipItems) {
-                ActionItem(Icons.Outlined.SkipPrevious, CoreCommonR.string.player_previous, onPrevious)
-                ActionItem(Icons.Outlined.SkipNext, CoreCommonR.string.player_next, onNext)
+                ActionItem(Icons.Outlined.SkipPrevious, CoreCommonR.string.player_previous, onPrevious, skipEnabled)
+                ActionItem(Icons.Outlined.SkipNext, CoreCommonR.string.player_next, onNext, skipEnabled)
             }
             ActionItem(Icons.Outlined.Shuffle, CoreCommonR.string.player_shuffle, controls.onShuffle)
             ActionItem(
@@ -291,7 +299,7 @@ private fun TabletMiniPlayerProgress(controls: MiniPlayerTabletControls) {
     var preview by remember(controls.trackKey, controls.durationMs, enabled) { mutableStateOf<Float?>(null) }
     val latestSeek by rememberUpdatedState(controls.onSeek)
     val progress = preview ?: miniPlayerProgress(controls.positionMs, controls.durationMs)
-    val color = MaterialTheme.colorScheme.primary
+    val color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)
     val track = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.18f)
     val description = stringResource(CoreCommonR.string.mini_player_progress)
     Canvas(
@@ -330,17 +338,16 @@ private fun TabletMiniPlayerProgress(controls: MiniPlayerTabletControls) {
                 )
             }
     ) {
-        val strokeWidth = NeriMiniPlayerDefaults.TabletProgressThickness.toPx().coerceAtMost(size.height)
-        val y = size.height / 2f
+        // 进度线贴住迷你播放器顶边, 下方剩余高度只作触控区; 拖动时向下加粗代替圆点, 避免圆点被顶边裁半
+        val thickness = if (preview != null) {
+            NeriMiniPlayerDefaults.TabletProgressDragThickness
+        } else {
+            NeriMiniPlayerDefaults.TabletProgressThickness
+        }
+        val strokeWidth = thickness.toPx().coerceAtMost(size.height)
+        val y = strokeWidth / 2f
         val x = progress * size.width
-        val radius = minOf(
-            if (preview != null) 5.dp.toPx() else 3.dp.toPx(),
-            size.width / 2f,
-            size.height / 2f
-        )
-        val thumbX = x.coerceIn(radius, size.width - radius)
         drawLine(track, Offset(0f, y), Offset(size.width, y), strokeWidth, StrokeCap.Butt)
         drawLine(color, Offset(0f, y), Offset(x, y), strokeWidth, StrokeCap.Butt)
-        drawCircle(color, radius, Offset(thumbX, y))
     }
 }

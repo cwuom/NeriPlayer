@@ -649,7 +649,7 @@ internal suspend fun GlobalDownloadManager.inspectFinalizedDownloadedAudio(
         ?: return FinalizedDownloadedAudioProbe(readable = false, durationMs = null)
     return withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
-        try {
+        val extractorProbe = try {
             extractor.setDataSource(context, playbackUri, null)
             val audioDurationsUs = (0 until extractor.trackCount).mapNotNull { index ->
                 val format = extractor.getTrackFormat(index)
@@ -663,43 +663,64 @@ internal suspend fun GlobalDownloadManager.inspectFinalizedDownloadedAudio(
                     0L
                 }
             }
-            if (audioDurationsUs.isEmpty()) {
-                return@withContext FinalizedDownloadedAudioProbe(
-                    readable = false,
-                    durationMs = null
-                )
-            }
-            val extractorDurationMs = audioDurationsUs
-                .maxOrNull()
-                ?.takeIf { it > 0L }
-                ?.div(1_000L)
-            // MP3 extractor 可能用文件大小和首帧码率估算，优先使用容器解析结果
-            val containerDurationMs = runCatching {
-                context.contentResolver.openFileDescriptor(playbackUri, "r")?.use { descriptor ->
-                    TagLib.getAudioProperties(descriptor.dup().detachFd())
-                        ?.length?.toLong()?.takeIf { it > 0L }
-                }
-            }.getOrNull()
-            val durationMs = containerDurationMs ?: extractorDurationMs ?: readFinalizedAudioDuration(
-                context = context,
-                playbackUri = playbackUri
-            )
             FinalizedDownloadedAudioProbe(
-                readable = true,
-                durationMs = durationMs
+                readable = audioDurationsUs.isNotEmpty(),
+                durationMs = audioDurationsUs.maxOrNull()?.takeIf { it > 0L }?.div(1_000L)
             )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
             NPLogger.w(
                 TAG,
-                "最终音频可读性或时长校验失败，保留恢复凭据: " +
-                    "audio=${audio.logicalName}, error=${error.message}"
+                "最终音频平台解析失败，继续容器校验: " +
+                    "audio=${audio.logicalName}, error=${error.javaClass.simpleName}: ${error.message}"
             )
             FinalizedDownloadedAudioProbe(readable = false, durationMs = null)
         } finally {
             runCatching { extractor.release() }
         }
+        val containerProperties = try {
+            context.contentResolver.openFileDescriptor(playbackUri, "r")?.use { descriptor ->
+                TagLib.getAudioProperties(descriptor.dup().detachFd())
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            NPLogger.w(
+                TAG,
+                "最终音频 TagLib 解析失败，继续备用校验: " +
+                    "audio=${audio.logicalName}, error=${error.javaClass.simpleName}: ${error.message}"
+            )
+            null
+        }
+        val containerHasAudio = containerProperties?.let {
+            it.length > 0 && it.sampleRate > 0 && it.channels > 0
+        } == true
+        // MP3 extractor 可能用文件大小和首帧码率估算，可信音频属性的时长优先
+        val containerDurationMs = containerProperties?.length?.toLong()
+            ?.takeIf { it > 0L && containerHasAudio }
+        val mp4DurationMs = if (extractorProbe.durationMs == null && !containerHasAudio) {
+            try {
+                readFinalizedMp4AudioDuration(context, playbackUri)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                NPLogger.w(
+                    TAG,
+                    "最终音频 MP4 备用解析失败，继续平台元数据校验: " +
+                        "audio=${audio.logicalName}, error=${error.javaClass.simpleName}: ${error.message}"
+                )
+                null
+            }
+        } else {
+            null
+        }
+        val durationMs = containerDurationMs ?: extractorProbe.durationMs ?: mp4DurationMs
+            ?: readFinalizedAudioDuration(context, playbackUri)
+        FinalizedDownloadedAudioProbe(
+            readable = extractorProbe.readable || containerHasAudio || durationMs != null,
+            durationMs = durationMs
+        )
     }
 }
 
@@ -707,6 +728,9 @@ internal fun GlobalDownloadManager.readFinalizedAudioDuration(context: Context, 
     val retriever = MediaMetadataRetriever()
     return try {
         retriever.setDataSource(context, playbackUri)
+        if (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) != "yes") {
+            return null
+        }
         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             ?.toLongOrNull()
             ?.takeIf { it > 0L }

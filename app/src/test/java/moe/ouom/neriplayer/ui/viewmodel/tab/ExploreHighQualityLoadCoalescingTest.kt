@@ -85,6 +85,19 @@ class ExploreHighQualityLoadCoalescingTest {
     }
 
     @Test
+    fun `applying the mode preserves an active search and a manually selected source on return`() {
+        val vm = createViewModel()
+        vm.applyBrowseDefault(SearchSource.BILIBILI, "demo")
+        assertEquals(SearchSource.NETEASE, vm.uiState.value.selectedSearchSource)
+        vm.applyBrowseDefault(SearchSource.NETEASE, "")
+        vm.applyBrowseDefault(SearchSource.BILIBILI, "")
+        assertEquals(SearchSource.BILIBILI, vm.uiState.value.selectedSearchSource)
+        vm.setSearchSource(SearchSource.NETEASE)
+        vm.applyBrowseDefault(SearchSource.BILIBILI, "")
+        assertEquals(SearchSource.NETEASE, vm.uiState.value.selectedSearchSource)
+    }
+
+    @Test
     fun `same category entry requests retain the running response without cancelling or restarting it`(): Unit = runBlocking {
         val vm = createViewModel()
         val original = nextRequest()
@@ -171,7 +184,10 @@ class ExploreHighQualityLoadCoalescingTest {
 
     private fun createViewModel(): ExploreViewModel = ExploreViewModel(
         ApplicationProvider.getApplicationContext()
-    ).also { viewModel = it }
+    ).also {
+        viewModel = it
+        it.loadHighQuality()
+    }
 
     private fun nextRequest(): PendingRequest {
         val request = startedRequests.poll(5L, TimeUnit.SECONDS)

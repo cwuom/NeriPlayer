@@ -5,6 +5,7 @@ import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 
 @Entity(tableName = "playback_stats_snapshot")
 data class PlaybackStatsSnapshotEntity(
@@ -68,7 +69,8 @@ data class PlaybackStatsPendingDeltaEntity(
     @ColumnInfo(name = "play_count_increment") val playCountIncrement: Int?,
     @ColumnInfo(name = "played_at") val playedAt: Long,
     @ColumnInfo(name = "epoch_started_at") val epochStartedAt: Long,
-    @ColumnInfo(name = "device_id") val deviceId: String
+    @ColumnInfo(name = "device_id") val deviceId: String,
+    @ColumnInfo(name = "played_zone") val playedZone: String? = null
 )
 
 data class PlaybackStatsSnapshotTrackData(
@@ -182,11 +184,20 @@ data class PlaybackStatsSnapshotBucketData(
     @ColumnInfo(name = "custom_artist")
     val customArtist: String?,
     @ColumnInfo(name = "custom_cover_url")
-    val customCoverUrl: String?
+    val customCoverUrl: String?,
+    @ColumnInfo(name = "recorded_local_date")
+    val recordedLocalDate: String? = null,
+    @ColumnInfo(name = "hourly_totals", defaultValue = "'[]'")
+    val hourlyTotals: List<SyncPlaybackHourTotal> = emptyList(),
+    @ColumnInfo(name = "local_hourly_totals", defaultValue = "'[]'")
+    val localHourlyTotals: List<SyncPlaybackHourTotal> = emptyList()
 )
 
 fun PlaybackStatBucketEntity.toSnapshotData() = PlaybackStatsSnapshotBucketData(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
+    hourlyTotals = hourlyTotals,
+    localHourlyTotals = localHourlyTotals,
     identityKey = identityKey,
     id = id,
     name = name,
@@ -209,6 +220,9 @@ fun PlaybackStatBucketEntity.toSnapshotData() = PlaybackStatsSnapshotBucketData(
 
 fun PlaybackStatsSnapshotBucketData.toEntity() = PlaybackStatBucketEntity(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
+    hourlyTotals = hourlyTotals,
+    localHourlyTotals = localHourlyTotals,
     identityKey = identityKey,
     id = id,
     name = name,
@@ -282,11 +296,14 @@ data class PlaybackStatsSnapshotDailyCounterData(
     @ColumnInfo(name = "first_played_at")
     val firstPlayedAt: Long,
     @ColumnInfo(name = "last_played_at")
-    val lastPlayedAt: Long
+    val lastPlayedAt: Long,
+    @ColumnInfo(name = "recorded_local_date")
+    val recordedLocalDate: String? = null
 )
 
 fun PlaybackStatDailyCounterShardEntity.toSnapshotData() = PlaybackStatsSnapshotDailyCounterData(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
     identityKey = identityKey,
     deviceId = deviceId,
     epochStartedAt = epochStartedAt,
@@ -298,6 +315,7 @@ fun PlaybackStatDailyCounterShardEntity.toSnapshotData() = PlaybackStatsSnapshot
 
 fun PlaybackStatsSnapshotDailyCounterData.toEntity() = PlaybackStatDailyCounterShardEntity(
     dayStartAt = dayStartAt,
+    recordedLocalDate = recordedLocalDate,
     identityKey = identityKey,
     deviceId = deviceId,
     epochStartedAt = epochStartedAt,

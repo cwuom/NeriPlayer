@@ -27,7 +27,15 @@ import moe.ouom.neriplayer.platform.netease.api.crypto.NeteaseCrypto
 import moe.ouom.neriplayer.data.model.netease.crypto.CryptoMode
 import moe.ouom.neriplayer.data.model.encyclopedia.EncyclopediaArtistInfo
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteasePlaylistAddTracksParams
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseCloudParams
 import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseFollowedArtistsParams
+import moe.ouom.neriplayer.platform.netease.api.request.NETEASE_SCROBBLE_URL
+import moe.ouom.neriplayer.platform.netease.api.request.NETEASE_SCROBBLE_USER_AGENT
+import moe.ouom.neriplayer.platform.netease.api.request.NeteaseScrobbleIdentity
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseScrobbleHeader
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseScrobbleLogs
+import moe.ouom.neriplayer.platform.netease.api.request.buildNeteaseScrobblePayload
+import moe.ouom.neriplayer.platform.netease.api.request.neteaseScrobbleCookieHeader
 import moe.ouom.neriplayer.common.json.JsonUtil.jsonQuote
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.network.http.awaitResponse
@@ -56,6 +64,7 @@ import java.security.SecureRandom
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 
 internal fun mergeNeteaseRequestCookies(
     persistedCookies: Map<String, String>,
@@ -185,6 +194,7 @@ internal class NeteaseRequestSession(
     internal val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         // use a dynamic ProxySelector so bypass can be toggled at runtime
+        .dns(NetworkDns)
         .proxySelector(DynamicProxySelector)
         .build()
     internal val http1RetryClient: OkHttpClient = okHttpClient.newBuilder()
@@ -914,8 +924,23 @@ class NeteaseClient(
             "includeVideo" to "true"
         )
         return request(url, params, CryptoMode.WEAPI, "POST", usePersistedCookies = true)
-    }  
-    
+    }
+
+    /**
+     * 分页获取用户云盘歌曲
+     * @param offset 偏移量
+     * @param limit 单页数量
+     */
+    suspend fun getCloudSongsCancellable(offset: Int = 0, limit: Int = 200): String {
+        return requestCancellable(
+            url = "https://music.163.com/weapi/v1/cloud/get",
+            params = buildNeteaseCloudParams(offset, limit),
+            mode = CryptoMode.WEAPI,
+            method = "POST",
+            usePersistedCookies = true
+        )
+    }
+
     @Throws(IOException::class)
     fun getUserAlbums(userId: Long, offset: Int = 0, limit: Int = 30): String {
         val url = "https://interface3.music.163.com/eapi/mine/rn/resource/list"
@@ -1376,6 +1401,45 @@ class NeteaseClient(
             "like" to like,
             "time" to (time ?: 3L).toString()
         )
+    }
+
+    // 同一进程内保持稳定，服务端按设备聚合客户端日志
+    private val scrobbleDeviceId: String = newNeteaseSessionCookieValue().uppercase(Locale.ROOT)
+
+    /**
+     * 听歌打卡，计入网易云的最近播放与听歌排行。
+     * 未登录时直接跳过；非 200 只抛出异常交给调用方记录，不能当作登录失效处理。
+     */
+    @Throws(IOException::class)
+    suspend fun scrobbleSongCancellable(songId: Long, listenedSec: Long) {
+        val session = sessionStore.currentSession()
+        val musicU = session.persistedCookiesSnapshot()["MUSIC_U"]?.takeIf { it.isNotBlank() } ?: return
+        withContext(Dispatchers.IO) { ensureWeapiSessionIfNeeded(session, CryptoMode.WEAPI, usePersistedCookies = true) }
+        val identity = NeteaseScrobbleIdentity(
+            musicU = musicU,
+            csrf = session.requestCookiesForUrl(neteaseMainUrl)["__csrf"].orEmpty(),
+            deviceId = scrobbleDeviceId
+        )
+        // Cookie 必须与 eapi header 一致，不能让会话 CookieJar 覆盖成 os=pc
+        val client = session.okHttpClient.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+        val url = NETEASE_SCROBBLE_URL.toHttpUrl()
+        buildNeteaseScrobbleLogs(songId, listenedSec).forEach { log ->
+            val nowMs = System.currentTimeMillis()
+            val header = buildNeteaseScrobbleHeader(identity, nowMs, SecureRandom().nextInt(10_000))
+            val form = FormBody.Builder(StandardCharsets.UTF_8).apply {
+                NeteaseCrypto.eApiEncrypt(url.encodedPath, buildNeteaseScrobblePayload(log, header))
+                    .forEach { (name, value) -> add(name, value) }
+            }.build()
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", NETEASE_SCROBBLE_USER_AGENT)
+                .header("Cookie", neteaseScrobbleCookieHeader(header))
+                .post(form)
+                .build()
+            val raw = executeRequestCancellable(client, request)
+            val code = runCatching { JSONObject(raw).optInt("code", -1) }.getOrDefault(-1)
+            if (code != 200) throw IOException("NetEase scrobble rejected: code=$code")
+        }
     }
 
     /**

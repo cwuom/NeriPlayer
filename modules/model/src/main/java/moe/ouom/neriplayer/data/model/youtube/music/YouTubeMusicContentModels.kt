@@ -16,7 +16,8 @@ data class YouTubeMusicPlaylistTrack(
     val album: String,
     val durationText: String,
     val durationMs: Long,
-    val coverUrl: String
+    val coverUrl: String,
+    val contentLabel: YouTubeContentLabel? = null
 )
 
 data class YouTubeMusicPlaylistDetail(
@@ -27,7 +28,8 @@ data class YouTubeMusicPlaylistDetail(
     val coverUrl: String,
     val trackCount: Int? = null,
     val tracks: List<YouTubeMusicPlaylistTrack>,
-    val fullyLoaded: Boolean = true
+    val fullyLoaded: Boolean = true,
+    val filteredEmpty: Boolean = false
 )
 
 data class YouTubeMusicPlayableAudio(
@@ -56,6 +58,9 @@ enum class YouTubeMusicSearchResultType {
 enum class YouTubeMusicSearchFilter {
     Song,
     Video,
+    Album,
+    FeaturedPlaylist,
+    CommunityPlaylist,
     Creator
 }
 
@@ -68,7 +73,8 @@ data class YouTubeMusicSearchResult(
     val coverUrl: String,
     val durationText: String,
     val durationMs: Long,
-    val type: YouTubeMusicSearchResultType
+    val type: YouTubeMusicSearchResultType,
+    val contentLabel: YouTubeContentLabel? = null
 )
 
 data class YouTubeMusicCreatorSummary(
@@ -107,7 +113,8 @@ data class YouTubeMusicCreatorItem(
     val playlistId: String = "",
     val artist: String = "",
     val album: String = "",
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val contentLabel: YouTubeContentLabel? = null
 )
 
 data class YouTubeMusicCreatorBrowseEndpoint(
@@ -138,9 +145,33 @@ data class YouTubeMusicVideoMetadata(
     val thumbnailUrl: String
 )
 
+data class YouTubeMusicHomeCursor(
+    val token: String,
+    val locale: YouTubeMusicRequestLocale,
+    val visitedTokens: Set<String>,
+    val activeShelf: YouTubeMusicHomeShelfContinuation? = null,
+    val pendingShelves: List<YouTubeMusicHomeShelfContinuation> = emptyList(),
+    val nextShelfIndex: Int = 0
+) {
+    val requestIdentity: Pair<String?, String> get() = activeShelf?.key to token
+}
+
+data class YouTubeMusicHomeShelfContinuation(
+    val key: String,
+    val title: String,
+    val token: String,
+    val visitedTokens: Set<String> = setOf(token)
+)
+
+data class YouTubeMusicHomePage(
+    val shelves: List<YouTubeMusicHomeShelf>,
+    val next: YouTubeMusicHomeCursor? = null
+)
+
 data class YouTubeMusicHomeShelf(
     val title: String,
-    val items: List<YouTubeMusicHomeItem>
+    val items: List<YouTubeMusicHomeItem>,
+    val continuationKey: String? = null
 )
 
 data class YouTubeMusicHomeItem(
@@ -151,7 +182,10 @@ data class YouTubeMusicHomeItem(
     val videoId: String = "",
     val pageType: String = "",
     val durationText: String = "",
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val artist: String = "",
+    val album: String = "",
+    val contentLabel: YouTubeContentLabel? = null
 )
 
 data class YouTubeMusicHomeSongMetadata(

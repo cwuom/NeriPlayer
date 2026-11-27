@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.NeriMotion
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.SizeTransform
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 
@@ -11,7 +17,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -89,7 +94,7 @@ import moe.ouom.neriplayer.ui.component.playback.SongMetadataSearchContent
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
-import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherRoomPanel
+import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliCcSubtitleContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsContent
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.MoreOptionsMainContent
@@ -677,7 +682,7 @@ private fun MoreOptionsPages(
     MoreOptionsMainPage(
         targetState, viewModel, originalSong, queue, isLocalSong,
         currentLyricFontScale, currentTranslationFontScale,
-        currentPlaybackAudioInfo, snackbarHostState, owner, mainActions
+        currentPlaybackAudioInfo, snackbarHostState, owner, mainActions, offlineMode
     )
     MoreOptionsListenTogetherPage(targetState)
     MoreOptionsBiliVideoSkipPage(targetState, actualSong, owner, biliClient)
@@ -811,15 +816,33 @@ internal fun MoreOptionsAnimatedPage(
         onBack = { owner.back() },
         label = "more_options_sheet_content"
     )
+    val clean = NeriDesign.isClean
+    val materialOffsetPx = with(LocalDensity.current) { MoreOptionsSharedAxisOffset.roundToPx() }
     pageTransition.AnimatedContent(
         transitionSpec = {
-            (fadeIn(animationSpec = tween(220, delayMillis = 90)) +
-                scaleIn(initialScale = 0.92f, animationSpec = tween(220, delayMillis = 90)))
-                .togetherWith(fadeOut(animationSpec = tween(90)))
+            // 共享 X 轴: 进入子页向左推进, 返回主页向右退回; 面板高度同步平滑变化
+            val direction = if (targetState == MoreOptionsPage.MAIN) -1 else 1
+            val offset: (Int) -> Int = { fullWidth ->
+                if (clean) fullWidth / 4 else materialOffsetPx
+            }
+            val enter = slideInHorizontally(
+                tween(MoreOptionsPageDurationMs, easing = NeriMotion.EmphasizedDecelerate)
+            ) { direction * offset(it) } + fadeIn(tween(210, delayMillis = 90))
+            val exit = slideOutHorizontally(
+                tween(MoreOptionsPageDurationMs, easing = NeriMotion.EmphasizedAccelerateSoft)
+            ) { -direction * offset(it) } + fadeOut(tween(90))
+            (enter togetherWith exit).using(
+                SizeTransform(clip = true) { _, _ ->
+                    tween(MoreOptionsPageDurationMs, easing = NeriMotion.Emphasized)
+                }
+            )
         },
         content = { targetState -> content(targetState) }
     )
 }
+
+private val MoreOptionsSharedAxisOffset = 48.dp
+private const val MoreOptionsPageDurationMs = 320
 
 @Composable
 private fun MoreOptionsListenTogetherPage(
@@ -835,10 +858,7 @@ private fun MoreOptionsListenTogetherPage(
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
-        ListenTogetherRoomPanel(
-            modifier = Modifier.fillMaxWidth(),
-            showBaseUrlEditor = false
-        )
+        ListenTogetherPanel(Modifier.fillMaxWidth())
     }
 }
 
@@ -1175,12 +1195,13 @@ private fun MoreOptionsMainPage(
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     snackbarHostState: SnackbarHostState,
     owner: MoreOptionsSheetOwner,
-    actions: MoreOptionsMainActions
+    actions: MoreOptionsMainActions,
+    offlineMode: Boolean
 ) {
     if (targetState != MoreOptionsPage.MAIN) return
     MoreOptionsMainPageContent(
         viewModel, originalSong, queue, isLocalSong, lyricFontScale,
-        translationFontScale, currentPlaybackAudioInfo, snackbarHostState, owner, actions
+        translationFontScale, currentPlaybackAudioInfo, snackbarHostState, owner, actions, offlineMode
     )
 }
 
@@ -1195,7 +1216,8 @@ private fun MoreOptionsMainPageContent(
     currentPlaybackAudioInfo: PlaybackAudioInfo?,
     snackbarHostState: SnackbarHostState,
     owner: MoreOptionsSheetOwner,
-    actions: MoreOptionsMainActions
+    actions: MoreOptionsMainActions,
+    offlineMode: Boolean
 ) {
     MoreOptionsMainContent(
         viewModel = viewModel,
@@ -1218,6 +1240,7 @@ private fun MoreOptionsMainPageContent(
         onShowSongDetails = actions.onShowDetails,
         onShowQualitySwitch = actions.onShowQuality,
         onEnterAlbum = actions.onAlbum,
-        onDismissSheet = actions.onDismissSheet
+        onDismissSheet = actions.onDismissSheet,
+        offlineMode = offlineMode
     )
 }

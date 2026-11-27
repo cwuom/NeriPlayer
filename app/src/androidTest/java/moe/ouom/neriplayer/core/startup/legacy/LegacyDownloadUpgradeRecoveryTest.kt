@@ -723,12 +723,7 @@ class LegacyDownloadUpgradeRecoveryTest {
             fixture.databaseName,
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
-            NeriUserDataDatabase.MIGRATION_15_FINAL,
-            NeriUserDataDatabase.MIGRATION_16_17,
-            NeriUserDataDatabase.MIGRATION_17_18,
-            NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20,
-            NeriUserDataDatabase.MIGRATION_20_21
+            *NeriUserDataDatabase.allMigrations()
         ).close()
         return Room.databaseBuilder(
             fixture.baseContext,
@@ -832,8 +827,9 @@ class LegacyDownloadUpgradeRecoveryTest {
         val previousDatabase = databaseInstanceField.get(null)
         val previousSettings = capturePrivateState(
             ManagedDownloadStorage.settings,
-            "customDirectoryUri", "customDirectoryLabel", "downloadFileNameTemplate"
+            "customDirectoryUri", "customDirectoryLabel"
         )
+        val previousFileNameTemplate = ManagedDownloadStorage.currentDownloadFileNameTemplate()
         val previousRoot = capturePrivateState(ManagedDownloadStorage.rootResolver, "cachedTreeRoot")
         val previousSnapshot = capturePrivateState(
             ManagedDownloadStorage.snapshotCacheStore,
@@ -849,7 +845,8 @@ class LegacyDownloadUpgradeRecoveryTest {
         val root = ManagedDownloadRootResolver.defaultRootDirectory(context).apply { mkdirs() }
         return StorageFixture(
             baseContext, context, sandbox, root, "legacy-upgrade-recovery-$fixtureId.db",
-            databaseInstanceField, previousDatabase, previousSettings, previousRoot, previousSnapshot,
+            databaseInstanceField, previousDatabase, previousSettings, previousFileNameTemplate,
+            previousRoot, previousSnapshot,
             schedulerReservation
         )
     }
@@ -863,6 +860,7 @@ class LegacyDownloadUpgradeRecoveryTest {
         val databaseInstanceField: Field,
         private val previousDatabase: Any?,
         private val previousSettings: PrivateState,
+        private val previousFileNameTemplate: String?,
         private val previousRoot: PrivateState,
         private val previousSnapshot: PrivateState,
         private val schedulerReservation: SchedulerReservation
@@ -872,7 +870,7 @@ class LegacyDownloadUpgradeRecoveryTest {
                 ManagedDownloadStorage.primeSettings(
                     directoryUri = previousSettings.stringValue("customDirectoryUri"),
                     directoryLabel = previousSettings.stringValue("customDirectoryLabel"),
-                    fileNameTemplate = previousSettings.stringValue("downloadFileNameTemplate")
+                    fileNameTemplate = previousFileNameTemplate
                 )
                 previousRoot.restore()
                 previousSnapshot.restore()

@@ -97,6 +97,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
@@ -609,23 +610,18 @@ class YouTubeMusicPlaybackRepository(
     }
 
     private fun ensureInitialized() {
-        if (initialized) {
-            return
-        }
+        val preferred = YouTubeMusicLocaleResolver.preferred()
+        if (initializedLocale == preferred) return
         synchronized(initializationLock) {
-            if (initialized) {
-                return
+            if (initializedLocale == preferred) return
+            val localization = Localization.fromLocale(Locale.forLanguageTag(preferred.hl))
+            val country = ContentCountry(preferred.gl)
+            if (initializedLocale == null) {
+                NewPipe.init(downloader, localization, country)
+            } else {
+                NewPipe.setupLocalization(localization, country)
             }
-            val locale = Locale.getDefault()
-            val preferred = YouTubeMusicLocaleResolver.preferred(locale)
-            NewPipe.init(
-                downloader,
-                Localization(
-                    preferred.hl.substringBefore('-'),
-                    preferred.gl
-                )
-            )
-            initialized = true
+            initializedLocale = preferred
         }
     }
 
@@ -1739,6 +1735,6 @@ class YouTubeMusicPlaybackRepository(
         val initializationLock = Any()
 
         @Volatile
-        var initialized: Boolean = false
+        var initializedLocale: YouTubeMusicRequestLocale? = null
     }
 }

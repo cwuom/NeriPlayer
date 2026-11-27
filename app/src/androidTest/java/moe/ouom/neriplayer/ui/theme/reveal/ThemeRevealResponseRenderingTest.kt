@@ -1,9 +1,12 @@
 package moe.ouom.neriplayer.ui.theme.reveal
 
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,6 +17,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -24,12 +28,17 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.testutil.assumeComposeHostAvailable
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -52,6 +61,134 @@ class ThemeRevealResponseRenderingTest {
     @Test
     fun switchingToLightRevealsContentWhileTheMoonIconIsStillAnimating() {
         assertRevealStartsPromptly(initiallyDark = true)
+    }
+
+    @Test
+    fun missingSnapshotKeepsContentVisibleWhenSwitchingToDark() {
+        assertMissingSnapshotKeepsContentVisible(initiallyDark = false)
+    }
+
+    @Test
+    fun missingSnapshotKeepsContentVisibleWhenSwitchingToLight() {
+        assertMissingSnapshotKeepsContentVisible(initiallyDark = true)
+    }
+
+    private fun assertMissingSnapshotKeepsContentVisible(initiallyDark: Boolean) {
+        val dark = mutableStateOf(initiallyDark)
+        val presentation = mutableStateOf<AppThemeRevealPresentation?>(null)
+        val snapshot = mutableStateOf<ImageBitmap?>(null)
+        val completedTokens = mutableListOf<Int>()
+        var captureToken = 0
+        var startRadiusPx = 0f
+        lateinit var captureView: View
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val darkAction = context.getString(CoreCommonR.string.settings_theme_toggle_dark)
+        val lightAction = context.getString(CoreCommonR.string.settings_theme_toggle_light)
+        val autoAdvance = composeRule.mainClock.autoAdvance
+        composeRule.mainClock.autoAdvance = false
+        try {
+            composeRule.setContent {
+                val host = LocalView.current
+                SideEffect { captureView = host.rootView }
+                NeriTheme(
+                    followSystemDark = false,
+                    forceDark = dark.value,
+                    dynamicColor = false,
+                    seedColorHex = "6750A4",
+                    uiStyle = UiStyle.Clean,
+                    animateColors = snapshot.value == null
+                ) {
+                    val background = MaterialTheme.colorScheme.background
+                    Box(
+                        Modifier.requiredSize(240.dp).background(background).testTag(ViewportTag),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.align(Alignment.TopStart).size(48.dp).background(Color.Red))
+                        Box(Modifier.align(Alignment.TopEnd).size(48.dp).background(Color.Green))
+                        Box(Modifier.align(Alignment.BottomStart).size(48.dp).background(Color.Blue))
+                        ThemeModeActionButton(
+                            isDarkTheme = dark.value,
+                            onToggleRequest = { origin, radius ->
+                                if (presentation.value == null) {
+                                    captureToken += 1
+                                    startRadiusPx = radius
+                                    presentation.value = AppThemeRevealPresentation(
+                                        originInWindow = origin,
+                                        fallbackColorArgb = background.toArgb(),
+                                        captureToken = captureToken,
+                                        reverse = shouldReverseThemeReveal(nextDark = !dark.value)
+                                    )
+                                    dark.value = !dark.value
+                                }
+                            }
+                        )
+                        AppThemeRevealOverlayHost(
+                            presentation = presentation.value,
+                            snapshot = snapshot.value,
+                            startRadiusPx = startRadiusPx,
+                            onFinished = { token ->
+                                completedTokens += token
+                                if (presentation.value?.captureToken == token) presentation.value = null
+                            }
+                        )
+                    }
+                }
+            }
+            composeRule.waitForIdle()
+            var windowCaptureCalls = 0
+            snapshot.value = runBlocking {
+                withTimeout(5_000L) {
+                    withContext(Dispatchers.Main.immediate) {
+                        assertTrue("the fallback must come from a real hardware window",
+                            captureView.isAttachedToWindow && captureView.isHardwareAccelerated)
+                        captureThemeRevealSnapshot(null, captureView, windowCapture = {
+                            windowCaptureCalls += 1
+                            null
+                        })
+                    }
+                }
+            }
+            assertEquals("the failed window capture must execute", 1, windowCaptureCalls)
+            assertNull("the host must receive the actual missing snapshot", snapshot.value)
+            assertFixtureContentVisible("before switching")
+
+            composeRule.onNodeWithContentDescription(if (initiallyDark) lightAction else darkAction).performClick()
+            composeRule.mainClock.advanceTimeByFrame()
+            assertFixtureContentVisible("handoff")
+            composeRule.mainClock.advanceTimeBy(80L)
+            assertFixtureContentVisible("intermediate")
+            composeRule.mainClock.advanceTimeBy(1_000L)
+            assertFixtureContentVisible("settled")
+            composeRule.runOnIdle {
+                assertEquals(!initiallyDark, dark.value)
+                assertEquals("the missing snapshot must release its token once", listOf(1), completedTokens)
+                assertNull(presentation.value)
+            }
+
+            composeRule.onNodeWithContentDescription(if (initiallyDark) darkAction else lightAction).performClick()
+            composeRule.mainClock.advanceTimeByFrame()
+            assertFixtureContentVisible("second handoff")
+            composeRule.mainClock.advanceTimeBy(1_000L)
+            assertFixtureContentVisible("second settled")
+            composeRule.runOnIdle {
+                assertEquals("the next switch must be accepted", 2, captureToken)
+                assertEquals(initiallyDark, dark.value)
+                assertEquals("each switch must finish exactly once", listOf(1, 2), completedTokens)
+                assertNull(presentation.value)
+            }
+        } finally {
+            composeRule.mainClock.autoAdvance = autoAdvance
+        }
+    }
+
+    private fun assertFixtureContentVisible(stage: String) {
+        val pixels = composeRule.onNodeWithTag(ViewportTag).captureToImage().toPixelMap()
+        assertColor("red content must stay visible: $stage", Color.Red,
+            pixels[pixels.width / 10, pixels.height / 10])
+        assertColor("green content must stay visible: $stage", Color.Green,
+            pixels[pixels.width * 9 / 10, pixels.height / 10])
+        assertColor("blue content must stay visible: $stage", Color.Blue,
+            pixels[pixels.width / 10, pixels.height * 9 / 10])
     }
 
     private fun assertRevealStartsPromptly(initiallyDark: Boolean) {

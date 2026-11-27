@@ -27,6 +27,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.*
@@ -34,6 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.BorderStroke
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 private const val VIBRATION_EFFECT_CLICK = 0
 private const val VIBRATION_EFFECT_DOUBLE_CLICK = 1
@@ -143,6 +147,8 @@ fun HapticButton(
     shape: Shape = ButtonDefaults.shape,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    interactionSource: MutableInteractionSource? = null,
+    border: BorderStroke? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     Button(
@@ -151,7 +157,9 @@ fun HapticButton(
         enabled = enabled,
         shape = shape,
         colors = colors,
+        border = border,
         contentPadding = contentPadding,
+        interactionSource = interactionSource,
         content = content
     )
 }
@@ -161,11 +169,11 @@ fun HapticTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: ButtonColors = ButtonDefaults.textButtonColors(),
+    colors: ButtonColors? = null,
     contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
     content: @Composable RowScope.() -> Unit
 ) {
-    TextButton(
+    DialogActionTextButton(
         onClick = hapticClick(LocalContext.current, HapticFeedbackEffect.Click, onClick),
         modifier = modifier,
         enabled = enabled,
@@ -183,6 +191,7 @@ fun HapticOutlinedButton(
     enabled: Boolean = true,
     shape: Shape = ButtonDefaults.shape,
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    border: BorderStroke? = neriOutlinedButtonBorder(enabled),
     content: @Composable RowScope.() -> Unit
 ) {
     OutlinedButton(
@@ -190,6 +199,7 @@ fun HapticOutlinedButton(
         modifier = modifier,
         enabled = enabled,
         shape = shape,
+        border = border,
         contentPadding = contentPadding,
         content = content
     )

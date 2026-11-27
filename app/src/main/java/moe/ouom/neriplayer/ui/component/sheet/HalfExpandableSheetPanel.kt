@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.component.sheet
  * Created: 2025/10/17
  */
 
+import moe.ouom.neriplayer.ui.component.common.NeriSheetDragHandle
 import android.content.res.Configuration
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animate
@@ -38,7 +39,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -222,7 +222,7 @@ internal fun HalfExpandableSheetPanel(
                     }
                 }
         ) {
-            // 勾柄：外观与 BottomSheetDefaults 一致，点击仍然关闭面板
+            // 勾柄随风格切换外观, 点击仍然关闭面板
             if (!landscape) {
                 Box(
                     modifier = Modifier
@@ -234,7 +234,7 @@ internal fun HalfExpandableSheetPanel(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    BottomSheetDefaults.DragHandle()
+                    NeriSheetDragHandle()
                 }
             }
             with(controls) { header() }

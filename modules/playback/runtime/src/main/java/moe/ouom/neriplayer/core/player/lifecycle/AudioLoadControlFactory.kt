@@ -5,19 +5,20 @@ package moe.ouom.neriplayer.core.player.lifecycle
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.LoadControl
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.lanltw.core.LanSchedule
 
 internal data class AudioLoadControlPolicy(
-    val minBufferMs: Int = 15_000,
+    val localMinBufferMs: Int = 15_000,
+    // 网络请求恢复供数可能需要几秒，提早开始下一轮加载
+    val streamingMinBufferMs: Int = 30_000,
     /**
-     * 缓冲降到下限才重新加载，一直加载到上限再停；上下限差得越大，
-     * 两轮加载之间网卡和存储空闲越久，蜂窝尾流与 Wi-Fi 唤醒次数越少
-     *
-     * 字节上限仍是 Media3 的音频默认值，高码率无损会先触到字节上限；
-     * 锁屏后系统断网或网络抖动时，这段余量决定能不间断播多久
+     * 超过低水位后，时长上限和 Media3 的音频字节目标都能结束本轮加载，
+     * 让网络和存储在两轮读取之间保持空闲
      */
     val maxBufferMs: Int = 300_000,
     val bufferForPlaybackMs: Int = 1_000,
-    val bufferForPlaybackAfterRebufferMs: Int = 3_000,
+    val localBufferForPlaybackAfterRebufferMs: Int = 3_000,
+    val streamingBufferForPlaybackAfterRebufferMs: Int = 5_000,
     /**
      * 往回拖进度条时留着已经下过的那段
      *
@@ -27,16 +28,30 @@ internal data class AudioLoadControlPolicy(
     val backBufferMs: Int = 60_000
 )
 
+internal fun buildLanAudioLoadControl(): LoadControl = buildAudioLoadControl(
+    AudioLoadControlPolicy(
+        maxBufferMs = DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+        bufferForPlaybackMs = LanSchedule.START_BUFFER_MS,
+        backBufferMs = 0
+    )
+)
+
 internal fun buildAudioLoadControl(
     policy: AudioLoadControlPolicy = AudioLoadControlPolicy()
 ): LoadControl {
     return try {
         DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                policy.minBufferMs,
+            .setBufferDurationsMsForLocalPlayback(
+                policy.localMinBufferMs,
                 policy.maxBufferMs,
                 policy.bufferForPlaybackMs,
-                policy.bufferForPlaybackAfterRebufferMs
+                policy.localBufferForPlaybackAfterRebufferMs
+            )
+            .setBufferDurationsMsForStreaming(
+                policy.streamingMinBufferMs,
+                policy.maxBufferMs,
+                policy.bufferForPlaybackMs,
+                policy.streamingBufferForPlaybackAfterRebufferMs
             )
             // 纯音频按缓冲时长判断，避免字节阈值提前打断加载
             .setPrioritizeTimeOverSizeThresholds(true)

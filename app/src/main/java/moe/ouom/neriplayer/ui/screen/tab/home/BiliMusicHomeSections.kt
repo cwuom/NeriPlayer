@@ -80,7 +80,8 @@ internal fun LazyGridScope.addBiliMusicRankSection(
 
     item(
         key = registerKey("home:biliMusic:rank:header"),
-        span = { GridItemSpan(maxLineSpan) }
+        span = { GridItemSpan(maxLineSpan) },
+        contentType = HomeContentTypeBiliRankHeader
     ) {
         BiliMusicSectionHeader(
             icon = Icons.Outlined.MusicNote,
@@ -98,7 +99,8 @@ internal fun LazyGridScope.addBiliMusicRankSection(
     when {
         hasContent -> item(
             key = registerKey("home:biliMusic:rank:content"),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeBiliRankStrip
         ) {
             BiliMusicRankStrip(
                 state = state,
@@ -109,14 +111,16 @@ internal fun LazyGridScope.addBiliMusicRankSection(
 
         state.loading -> item(
             key = registerKey("home:biliMusic:rank:loading"),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeLoading
         ) {
             BiliMusicSectionLoading(text = stringResource(CoreCommonR.string.home_loading))
         }
 
         else -> item(
             key = registerKey("home:biliMusic:rank:error"),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeError
         ) {
             BiliMusicSectionError(
                 detail = state.error?.asString().orEmpty(),
@@ -145,7 +149,8 @@ internal fun LazyGridScope.addBiliMusicHotSection(
 
     item(
         key = registerKey("home:biliMusic:hot:header"),
-        span = { GridItemSpan(maxLineSpan) }
+        span = { GridItemSpan(maxLineSpan) },
+        contentType = HomeContentTypeBiliHeader
     ) {
         BiliMusicSectionHeader(
             icon = Icons.Outlined.LibraryMusic,
@@ -157,7 +162,8 @@ internal fun LazyGridScope.addBiliMusicHotSection(
     when {
         hasContent -> item(
             key = registerKey("home:biliMusic:hot:content"),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeBiliHotStrip
         ) {
             BiliMusicHotStrip(
                 videos = state.items,
@@ -168,14 +174,16 @@ internal fun LazyGridScope.addBiliMusicHotSection(
 
         state.loading -> item(
             key = registerKey("home:biliMusic:hot:loading"),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeLoading
         ) {
             BiliMusicSectionLoading(text = stringResource(CoreCommonR.string.home_loading))
         }
 
         else -> item(
             key = registerKey("home:biliMusic:hot:error"),
-            span = { GridItemSpan(maxLineSpan) }
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = HomeContentTypeError
         ) {
             BiliMusicSectionError(
                 detail = state.error?.asString().orEmpty(),
@@ -302,8 +310,9 @@ private fun BiliMusicRankStrip(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         itemsIndexed(
-            items = state.songs,
-            key = { index, song -> song.musicId.ifBlank { "rank-$index-${song.creationBvid}" } }
+            items = state.songs.take(HomeSongPagerMaxSongs),
+            key = { index, song -> song.musicId.ifBlank { "rank-$index-${song.creationBvid}" } },
+            contentType = { _, _ -> HomeContentTypeBiliRankCard }
         ) { _, song ->
             BiliMusicRankSongCard(
                 song = song,
@@ -347,9 +356,12 @@ private fun BiliMusicRankSongCard(
             context = context,
             data = thumbnailUrl,
             sizePx = 336,
-            allowHardware = false,
+            allowHardware = true,
             offlineMode = offlineMode
         )
+    }
+    val durationText = remember(song.displayDurationSec) {
+        formatDurationSec(song.displayDurationSec)
     }
     Column(
         modifier = Modifier
@@ -384,7 +396,7 @@ private fun BiliMusicRankSongCard(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             )
             Text(
-                text = formatDurationSec(song.displayDurationSec),
+                text = durationText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
@@ -452,8 +464,9 @@ private fun BiliMusicHotStrip(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         itemsIndexed(
-            items = videos,
-            key = { index, video -> video.bvid.ifBlank { "hot-$index-${video.aid}" } }
+            items = videos.take(HomeSongPagerMaxSongs),
+            key = { index, video -> video.bvid.ifBlank { "hot-$index-${video.aid}" } },
+            contentType = { _, _ -> HomeContentTypeBiliHotCard }
         ) { index, video ->
             BiliMusicHotVideoCard(
                 video = video,
@@ -495,9 +508,18 @@ private fun BiliMusicHotVideoCard(
             context = context,
             data = thumbnailUrl,
             sizePx = 336,
-            allowHardware = false,
+            allowHardware = true,
             offlineMode = offlineMode
         )
+    }
+    val durationText = remember(video.durationSec) {
+        formatDurationSec(video.durationSec)
+    }
+    val statsText = remember(context, video.tname, video.viewCount) {
+        listOf(
+            video.tname,
+            formatPlayCount(context, video.viewCount)
+        ).filter { it.isNotBlank() }.joinToString(" · ")
     }
     Column(
         modifier = Modifier
@@ -532,7 +554,7 @@ private fun BiliMusicHotVideoCard(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             )
             Text(
-                text = formatDurationSec(video.durationSec),
+                text = durationText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
@@ -558,10 +580,7 @@ private fun BiliMusicHotVideoCard(
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            text = listOf(
-                video.tname,
-                formatPlayCount(context, video.viewCount)
-            ).filter { it.isNotBlank() }.joinToString(" · "),
+            text = statsText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             maxLines = 1,

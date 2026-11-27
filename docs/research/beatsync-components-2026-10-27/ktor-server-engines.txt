@@ -1,0 +1,321 @@
+ 
+ 
+
+ 
+ Server engines | Ktor Documentation 
+ 
+ Ktor 3.6.0 Help
+ 
+
+ Server engines
+ To run a Ktor server application, you need to create and configure a server first. Server configuration includes different settings:
+ An engine for processing network requests.
+
+ Host and port values used to access a server.
+
+ SSL settings.
+
+ Supported platforms
+ The table below lists the platforms supported by each engine:
+ Engine
+ Platforms
+ HTTP/2
+ 
+ Netty 
+ JVM
+ ✅
+ 
+ Jetty 
+ JVM
+ ✅
+ 
+ Tomcat 
+ JVM
+ ✅
+ 
+ CIO (Coroutine-based I/O)
+ JVM, Native , GraalVM , JavaScript, WasmJs
+ ✖️
+ 
+ ServletApplicationEngine 
+ JVM
+ ✅
+ 
+ 
+ Add dependencies
+ Before using the desired engine, you need to add the corresponding dependency to your build script :
+ ktor-server-netty 
+
+ ktor-server-jetty-jakarta 
+
+ ktor-server-tomcat-jakarta 
+
+ ktor-server-cio 
+
+ Below are examples of adding a dependency for Netty:
+ 
+ implementation("io.ktor:ktor-server-netty:$ktor_version")
+ 
+
+ 
+ implementation "io.ktor:ktor-server-netty:$ktor_version"
+ 
+
+ 
+ 
+ <dependency>
+ <groupId>io.ktor</groupId>
+ <artifactId>ktor-server-netty-jvm</artifactId>
+ <version>${ktor_version}</version>
+ </dependency>
+ 
+ 
+
+
+ Choose how to create a server
+ A Ktor server application can be created and run in two ways :
+ Using embeddedServer to quickly pass server parameters in code
+
+ Using EngineMain to load configuration from an external application.conf or application.yaml file.
+
+ embeddedServer
+ The embeddedServer() function accepts an engine factory used to create an engine of a specific type. In the example below, we pass the Netty factory to run a server with the Netty engine and listen on the 8080 port:
+ import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+
+fun main(args: Array<String>) {
+ embeddedServer(Netty, port = 8080) {
+ routing {
+ get("/") {
+ call.respondText("Hello, world!")
+ }
+ }
+ }.start(wait = true)
+}
+ EngineMain
+ EngineMain represents an engine for running a server. You can use the following engines:
+ io.ktor.server.netty.EngineMain 
+
+ io.ktor.server.jetty.jakarta.EngineMain 
+
+ io.ktor.server.tomcat.jakarta.EngineMain 
+
+ io.ktor.server.cio.EngineMain 
+
+ Creating and starting the server
+ The EngineMain.main() function is used to start a server with the selected engine and loads the application module specified in the external configuration file . In the example below, the application's main function starts a server:
+ package com.example
+
+import io.ktor.server.application.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+
+fun main(args: Array<String>): Unit = io.ktor.server.netty.EngineMain.main(args)
+
+fun Application.module() {
+ routing {
+ get("/") {
+ call.respondText("Hello, world!")
+ }
+ }
+}
+
+
+ ktor {
+ deployment {
+ port = 8080
+ }
+ application {
+ modules = [ com.example.ApplicationKt.module ]
+ }
+}
+
+ ktor:
+ deployment:
+ port: 8080
+ application:
+ modules:
+ - com.example.ApplicationKt.module
+
+
+ If you need to start a server using a build system task, you need to configure the required EngineMain as the main class:
+ 
+application {
+ mainClass.set("io.ktor.server.netty.EngineMain")
+}
+
+
+ 
+mainClassName = "io.ktor.server.netty.EngineMain"
+
+
+ 
+<properties>
+ <main.class>io.ktor.server.netty.EngineMain</main.class>
+</properties>
+
+
+
+ Creating the server instance without starting it
+ In addition to directly invoking EngineMain.main() to start the server immediately, you can instead call EngineMain.createServer() which returns an EmbeddedServer instance without starting it.
+ This approach gives you control over when to call .start() , .stop() , or perform any operations with the server before it begins accepting requests.
+ 
+// Example using Netty
+val server = io.ktor.server.netty.EngineMain.createServer(args)
+// perform additional initialization, logging, instrumentation, etc.
+server.start(wait = true)
+
+ Configure an engine
+ In this section, we'll take a look at how to specify various engine-specific options.
+ In code
+ The embeddedServer function allows you to pass engine-specific options using the configure parameter. This parameter includes options common for all engines and exposed by the ApplicationEngine.Configuration class.
+ The example below shows how to configure a server using the Netty engine. Within the configure block, we define a connector to specify the host and port, and customize various server parameters:
+ import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+
+fun main(args: Array<String>) {
+ embeddedServer(Netty, configure = {
+ connectors.add(EngineConnectorBuilder().apply {
+ host = "127.0.0.1"
+ port = 8080
+ })
+ connectionGroupSize = 2
+ workerGroupSize = 5
+ callGroupSize = 10
+ shutdownGracePeriod = 2000
+ shutdownTimeout = 3000
+ }) {
+ routing {
+ get("/") {
+ call.respondText("Hello, world!")
+ }
+ }
+ }.start(wait = true)
+}
+ The connectors.add() method defines a connector with the specified host ( 127.0.0.1 ) and port ( 8080 ).
+ In addition to these options, you can configure other engine-specific properties.
+ Netty
+ Netty-specific options are exposed by the NettyApplicationEngine.Configuration class.
+ 
+ import io.ktor.server.engine.*
+ import io.ktor.server.netty.*
+
+ fun main() {
+ embeddedServer(Netty, configure = {
+ requestQueueLimit = 16
+ shareWorkGroup = false
+ configureBootstrap = {
+ // ...
+ }
+ responseWriteTimeoutSeconds = 10
+ }) {
+ // ...
+ }.start(true)
+ }
+ 
+ Jetty
+ Jetty-specific options are exposed by the JettyApplicationEngineBase.Configuration class.
+ You can configure the Jetty server inside the configureServer block, which provides access to a Server instance.
+ Use the idleTimeout property to specify the duration of time a connection can be idle before it gets closed.
+ 
+ import io.ktor.server.engine.*
+ import io.ktor.server.jetty.jakarta.*
+
+ fun main() {
+ embeddedServer(Jetty, configure = {
+ configureServer = { // this: Server -&gt;
+ // ...
+ }
+ idleTimeout = 30.seconds
+ }) {
+ // ...
+ }.start(true)
+ }
+ 
+ CIO
+ CIO-specific options are exposed by the CIOApplicationEngine.Configuration class.
+ 
+ import io.ktor.server.engine.*
+ import io.ktor.server.cio.*
+
+ fun main() {
+ embeddedServer(CIO, configure = {
+ connectionIdleTimeoutSeconds = 45
+ }) {
+ // ...
+ }.start(true)
+ }
+ 
+ Tomcat
+ If you use Tomcat as the engine, you can configure it using the configureTomcat property, which provides access to a Tomcat instance.
+ 
+ import io.ktor.server.engine.*
+ import io.ktor.server.tomcat.jakarta.*
+
+ fun main() {
+ embeddedServer(Tomcat, configure = {
+ configureTomcat = { // this: Tomcat -&gt;
+ // ...
+ }
+ }) {
+ // ...
+ }.start(true)
+ }
+ 
+ In a configuration file
+ If you use EngineMain , you can specify options common for all engines within the ktor.deployment group.
+ 
+ ktor {
+ deployment {
+ connectionGroupSize = 2
+ workerGroupSize = 5
+ callGroupSize = 10
+ shutdownGracePeriod = 2000
+ shutdownTimeout = 3000
+ }
+ }
+ 
+
+ 
+ ktor:
+ deployment:
+ connectionGroupSize: 2
+ workerGroupSize: 5
+ callGroupSize: 10
+ shutdownGracePeriod: 2000
+ shutdownTimeout: 3000
+ 
+
+
+ Netty
+ You can also configure Netty-specific options in a configuration file within the ktor.deployment group:
+ 
+ ktor {
+ deployment {
+ maxInitialLineLength = 2048
+ maxHeaderSize = 1024
+ maxChunkSize = 42
+ }
+ }
+ 
+
+ 
+ ktor:
+ deployment:
+ maxInitialLineLength: 2048
+ maxHeaderSize: 1024
+ maxChunkSize: 42
+ 
+
+
+ 22 October 2025
+ 
+ Creating a server Configuration in code 
+ 
+
+ 
+ 

@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSearchTypeBarSource
 import moe.ouom.neriplayer.ui.screen.tab.explore.filteredExploreSearchHistory
+import moe.ouom.neriplayer.ui.screen.tab.explore.isExploreSearchActive
 import moe.ouom.neriplayer.ui.screen.tab.explore.isExploreSearchTypeBarSourceSwap
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldShowExploreNeteaseSearchTypeBar
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldShowExploreSearchHistory
@@ -13,6 +14,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExploreSearchHistoryDisplayTest {
+    @Test
+    fun `search mode starts on focus or typed text and ends when idle`() {
+        assertFalse(isExploreSearchActive(query = "", focused = false))
+        assertTrue(isExploreSearchActive(query = "", focused = true))
+        assertTrue(isExploreSearchActive(query = "周杰伦", focused = false))
+    }
+
     @Test
     fun `search history display keeps recent entries in stable order`() {
         val history = listOf("你好", "哈哈", "晴天")
@@ -94,9 +102,9 @@ class ExploreSearchHistoryDisplayTest {
     fun `platform changes retain one search type bar target for an interruptible swap`() {
         val targets = listOf(
             SearchSource.NETEASE,
+            SearchSource.BILIBILI,
             SearchSource.YOUTUBE_MUSIC,
-            SearchSource.NETEASE,
-            SearchSource.YOUTUBE_MUSIC
+            SearchSource.NETEASE
         ).map { source ->
             exploreSearchTypeBarSource(
                 selectedSearchSource = source,
@@ -107,9 +115,9 @@ class ExploreSearchHistoryDisplayTest {
         assertEquals(
             listOf(
                 SearchSource.NETEASE,
+                SearchSource.BILIBILI,
                 SearchSource.YOUTUBE_MUSIC,
-                SearchSource.NETEASE,
-                SearchSource.YOUTUBE_MUSIC
+                SearchSource.NETEASE
             ),
             targets
         )
@@ -125,7 +133,7 @@ class ExploreSearchHistoryDisplayTest {
         assertEquals(
             null,
             exploreSearchTypeBarSource(
-                selectedSearchSource = SearchSource.BILIBILI,
+                selectedSearchSource = SearchSource.LINK_RECOGNITION,
                 contentScrolled = false
             )
         )

@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.component.overlay
 
+import moe.ouom.neriplayer.ui.component.common.NeriSheetDragHandle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -7,8 +8,10 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.AlertDialog as MaterialAlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BottomSheetDefaults
@@ -33,6 +36,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -82,25 +87,48 @@ internal fun DensityScaledAlertDialog(
     titleContentColor: Color = AlertDialogDefaults.titleContentColor,
     textContentColor: Color = AlertDialogDefaults.textContentColor,
     tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
-    properties: DialogProperties = DialogProperties(),
+    properties: DialogProperties? = null,
     neutralButton: @Composable (() -> Unit)? = null
 ) {
     val surfaceScale = LocalOverlaySurfaceScale.current
-    if (NeriDesign.isClean) {
+    val compact = text != null && useCompactAlertLayout()
+    val isClean = NeriDesign.isClean
+    // 让系统在首帧前给 Material 浮窗定位，避免系统栏边距改变窗口高度后再次居中
+    val windowProperties = properties ?: DialogProperties(
+        decorFitsSystemWindows = !isClean,
+        usePlatformDefaultWidth = !compact
+    )
+    // 让弹窗的可用高度跟随键盘，避免系统只平移到输入框而遮住底部操作
+    val safeSurface = when {
+        !windowProperties.decorFitsSystemWindows -> Modifier.safeDrawingPadding()
+        properties == null -> Modifier.imePadding()
+        else -> Modifier
+    }
+    val dialogModifier = safeSurface.scaleOverlaySurfaceWidth(surfaceScale, windowProperties).then(modifier)
+    if (isClean) {
         CleanAlertDialog(
             onDismissRequest = onDismissRequest,
             confirmButton = {
                 ApplyOverlayWindowNavigationBarPolicy()
                 confirmButton()
             },
-            modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
+            modifier = dialogModifier,
             dismissButton = dismissButton,
             icon = icon,
             title = title,
             text = text,
-            properties = properties,
-            neutralButton = neutralButton
+            properties = windowProperties,
+            neutralButton = neutralButton,
+            compact = compact
         )
+        return
+    }
+    if (compact) {
+        CompactMaterialAlertDialog(onDismissRequest, windowProperties, dialogModifier, shape, containerColor, tonalElevation) {
+            CompactAlertContent(icon, title, text, iconContentColor, titleContentColor, textContentColor) {
+                CompactMaterialActions(confirmButton, dismissButton, neutralButton)
+            }
+        }
         return
     }
     val localizedDismissButton = dismissButton?.let { localizedWindowContent(it) }
@@ -109,9 +137,9 @@ internal fun DensityScaledAlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = localizedWindowContent {
             ApplyOverlayWindowNavigationBarPolicy()
-            confirmButton()
+            CompositionLocalProvider(LocalDialogButtonSlot provides DialogButtonSlot.Confirm, content = confirmButton)
         },
-        modifier = Modifier.scaleOverlaySurfaceWidth(surfaceScale).then(modifier),
+        modifier = dialogModifier,
         dismissButton = if (localizedNeutralButton != null) {
             {
                 localizedDismissButton?.invoke()
@@ -129,7 +157,7 @@ internal fun DensityScaledAlertDialog(
         titleContentColor = titleContentColor,
         textContentColor = textContentColor,
         tonalElevation = tonalElevation,
-        properties = properties
+        properties = windowProperties
     )
 }
 
@@ -149,7 +177,7 @@ internal fun DensityScaledModalBottomSheet(
     contentColor: Color = contentColorFor(containerColor),
     tonalElevation: Dp = 0.dp,
     scrimColor: Color = BottomSheetDefaults.ScrimColor,
-    dragHandle: @Composable (() -> Unit)? = { BottomSheetDefaults.DragHandle() },
+    dragHandle: @Composable (() -> Unit)? = { NeriSheetDragHandle() },
     contentWindowInsets: @Composable () -> WindowInsets = {
         WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Top)
     },
@@ -223,21 +251,29 @@ internal fun DensityScaledModalBottomSheet(
     }
 }
 
-private fun Modifier.scaleOverlaySurfaceWidth(surfaceScale: Float): Modifier {
+@Composable
+private fun Modifier.scaleOverlaySurfaceWidth(surfaceScale: Float, properties: DialogProperties): Modifier {
     if (!shouldScaleOverlaySurface(surfaceScale)) {
         return this
     }
-    return layout { measurable, constraints ->
-        val scaledConstraints = constraints.copy(
-            maxWidth = resolveScaledOverlaySurfaceMaxWidth(
-                availableWidthPx = constraints.maxWidth,
-                minimumWidthPx = constraints.minWidth,
-                surfaceScale = surfaceScale
-            )
-        )
-        val placeable = measurable.measure(scaledConstraints)
-        layout(placeable.width, placeable.height) {
-            placeable.placeRelative(0, 0)
+    val hostWidth = LocalWindowInfo.current.containerSize.width
+    val widthModifier = remember(
+        hostWidth, LocalDensity.current, surfaceScale, properties.usePlatformDefaultWidth,
+        properties.decorFitsSystemWindows
+    ) {
+        var unscaledWidth = 0
+        Modifier.layout { measurable, constraints ->
+            val width = if (constraints.hasBoundedWidth) {
+                // 浮窗重测时可能传回卡片已缩放的宽度，同一宿主宽度只应用一次缩放
+                unscaledWidth = maxOf(unscaledWidth, constraints.maxWidth)
+                resolveScaledOverlaySurfaceMaxWidth(unscaledWidth, constraints.minWidth, surfaceScale)
+                    .coerceAtMost(constraints.maxWidth)
+            } else constraints.maxWidth
+            val placeable = measurable.measure(constraints.copy(maxWidth = width))
+            layout(placeable.width, placeable.height) {
+                placeable.placeRelative(0, 0)
+            }
         }
     }
+    return then(widthModifier)
 }

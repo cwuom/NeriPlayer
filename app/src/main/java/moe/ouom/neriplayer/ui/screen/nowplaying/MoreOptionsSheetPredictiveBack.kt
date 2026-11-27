@@ -1,12 +1,12 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.ui.component.common.NeriSheetDragHandle
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.SheetValue
@@ -94,6 +94,6 @@ private fun MoreOptionsSheetDragHandle(sheetState: SheetState, onDismissRequest:
         },
         contentAlignment = Alignment.Center
     ) {
-        BottomSheetDefaults.DragHandle()
+        NeriSheetDragHandle()
     }
 }

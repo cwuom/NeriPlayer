@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
 
 /**
  * Corner radius used by the clean style for a radius designed against Material.
@@ -26,12 +27,17 @@ internal fun cleanCornerRadiusFor(materialRadius: Dp): Dp = when {
     else -> materialRadius
 }
 
-/** Style-aware replacement for `RoundedCornerShape(radius)` on pages that support both styles. */
+/**
+ * Style-aware replacement for `RoundedCornerShape(radius)` on pages that support both styles.
+ * Clean style scales up small radii while keeping analytic [RoundedCornerShape] outlines so
+ * scrolling lists stay on the GPU clip fast path instead of triggering per-frame software path
+ * mask uploads under Skia/OpenGL.
+ */
 @Composable
 @ReadOnlyComposable
 fun neriRoundedShape(radius: Dp): CornerBasedShape =
     if (LocalNeriDesign.current.isClean) {
-        ContinuousRoundedCornerShape(cleanCornerRadiusFor(radius))
+        RoundedCornerShape(cleanCornerRadiusFor(radius))
     } else {
         RoundedCornerShape(radius)
     }
@@ -45,7 +51,7 @@ fun neriRoundedShape(
     bottomStart: Dp = 0.dp
 ): CornerBasedShape =
     if (LocalNeriDesign.current.isClean) {
-        ContinuousRoundedCornerShape(
+        RoundedCornerShape(
             topStart = cleanCornerRadiusFor(topStart),
             topEnd = cleanCornerRadiusFor(topEnd),
             bottomEnd = cleanCornerRadiusFor(bottomEnd),
@@ -55,21 +61,59 @@ fun neriRoundedShape(
         RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart)
     }
 
-/** Search inputs: borderless filled capsule in the clean style, stock outline in Material. */
+/**
+ * Search inputs. Clean: ink-tinted capsule. Material: the M3 search-bar look, a tonal filled
+ * pill that only shows an accent outline while focused; both soften over a custom background
+ */
 @Composable
-fun neriSearchFieldColors(): TextFieldColors = if (LocalNeriDesign.current.isClean) {
+fun neriSearchFieldColors(): TextFieldColors {
     val colors = MaterialTheme.colorScheme
-    OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = colors.onSurface.copy(alpha = 0.06f),
-        unfocusedContainerColor = colors.onSurface.copy(alpha = 0.06f),
-        focusedBorderColor = colors.primary.copy(alpha = 0.5f),
-        unfocusedBorderColor = Color.Transparent
-    )
-} else {
-    OutlinedTextFieldDefaults.colors()
+    val overImage = LocalHasCustomBackground.current
+    return if (LocalNeriDesign.current.isClean) {
+        OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = colors.onSurface.copy(alpha = 0.06f),
+            unfocusedContainerColor = colors.onSurface.copy(alpha = 0.06f),
+            focusedBorderColor = colors.primary.copy(alpha = 0.5f),
+            unfocusedBorderColor = Color.Transparent
+        )
+    } else {
+        val container = if (overImage) {
+            // 底下已有 NeriSearchFieldGlass 的玻璃/半透明底, 这里只补一层轻色调
+            colors.surfaceContainerHigh.copy(alpha = 0.42f)
+        } else {
+            colors.surfaceContainerHigh
+        }
+        OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = container,
+            unfocusedContainerColor = container,
+            disabledContainerColor = container.copy(alpha = container.alpha * 0.6f),
+            focusedBorderColor = colors.primary,
+            unfocusedBorderColor = Color.Transparent,
+            disabledBorderColor = Color.Transparent
+        )
+    }
 }
 
+private val MaterialSearchFieldShape = RoundedCornerShape(28.dp)
+
+/** Material search fields are full pills regardless of the legacy per-page radius */
 @Composable
 @ReadOnlyComposable
-fun neriSearchFieldShape(materialShape: Shape): Shape =
-    if (LocalNeriDesign.current.isClean) LocalNeriDesign.current.groupShape else materialShape
+fun neriSearchFieldShape(): Shape =
+    if (LocalNeriDesign.current.isClean) LocalNeriDesign.current.groupShape else MaterialSearchFieldShape
+
+private val MaterialInputFieldShape = RoundedCornerShape(16.dp)
+
+/** Free-form inputs that may wrap to several lines keep a moderate radius instead of a pill */
+@Composable
+@ReadOnlyComposable
+fun neriInputFieldShape(): Shape =
+    if (LocalNeriDesign.current.isClean) LocalNeriDesign.current.groupShape else MaterialInputFieldShape
+
+/**
+ * 描边按钮的发丝线. M3 默认 outline 是不透明中灰, 压在背景图, 封面色和玻璃上发灰发脏,
+ * 改用半透明前景色让线条和底色融在一起
+ */
+@Composable
+fun neriOutlinedButtonBorder(enabled: Boolean = true): BorderStroke =
+    BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.24f else 0.1f))

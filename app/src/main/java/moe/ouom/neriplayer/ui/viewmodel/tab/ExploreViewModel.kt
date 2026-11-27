@@ -36,17 +36,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.collection.FavFolder
 import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoItem
+import moe.ouom.neriplayer.data.model.bilibili.search.SearchVideoPage
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliSongAlbum
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorPlaylist
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchCursor
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchPage
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -54,8 +60,10 @@ import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.netease.mapping.parseNeteaseSongDetail
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import moe.ouom.neriplayer.platform.youtube.api.transport.buildYouTubeMusicMediaUri
@@ -67,7 +75,6 @@ import org.json.JSONObject
 
 private const val TAG = "NERI-ExploreVM"
 private const val NETEASE_SEARCH_PAGE_SIZE = 30
-private const val YOUTUBE_MUSIC_SEARCH_LIMIT = 30
 private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 
 /**
@@ -116,11 +123,20 @@ enum class NeteaseExploreSearchType(val apiType: Int) {
     ARTIST(apiType = 100)
 }
 
+enum class BilibiliExploreSearchType {
+    SONG,
+    VIDEO,
+    CREATOR
+}
+
 enum class YouTubeExploreSearchType(
     val filter: YouTubeMusicSearchFilter?
 ) {
     SONG(YouTubeMusicSearchFilter.Song),
     VIDEO(YouTubeMusicSearchFilter.Video),
+    ALBUM(YouTubeMusicSearchFilter.Album),
+    FEATURED_PLAYLIST(YouTubeMusicSearchFilter.FeaturedPlaylist),
+    COMMUNITY_PLAYLIST(YouTubeMusicSearchFilter.CommunityPlaylist),
     CREATOR(null)
 }
 
@@ -158,6 +174,10 @@ sealed class ExploreSearchResult {
             "bilibili|playlist|${playlist.kind}|${playlist.mediaId}|${playlist.mid}"
     }
 
+    data class BilibiliCreator(val creator: BiliUploaderSummary) : ExploreSearchResult() {
+        override val stableKey: String = "bilibili|creator|${creator.mid}"
+    }
+
     data class Artist(val result: NeteaseSearchArtistResult) : ExploreSearchResult() {
         override val stableKey: String = "netease|artist|${result.artist.id}"
     }
@@ -191,6 +211,7 @@ data class ExploreUiState(
     val searchDisplayQuery: String = "",
     val selectedSearchSource: SearchSource = SearchSource.NETEASE,
     val selectedNeteaseSearchType: NeteaseExploreSearchType = NeteaseExploreSearchType.SONG,
+    val selectedBilibiliSearchType: BilibiliExploreSearchType = BilibiliExploreSearchType.SONG,
     val selectedYouTubeMusicSearchType: YouTubeExploreSearchType = YouTubeExploreSearchType.SONG,
     val isNeteaseLoggedIn: Boolean = false,
     val ytMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
@@ -325,10 +346,11 @@ internal fun shouldLoadExploreSearchMore(
     return lastVisible >= resultCount - prefetchDistance
 }
 
-private data class ExploreSearchFetchResult(
+internal data class ExploreSearchFetchResult(
     val items: List<ExploreSearchResult>,
     val page: Int,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    val nextYouTubeCursor: YouTubeMusicSearchCursor? = null
 ) {
     val songs: List<SongItem> = searchSongItems(items)
 }
@@ -338,12 +360,15 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private val app: Context get() = LanguageManager.applyLanguage(baseApplication)
     private val neteaseRepo = AppContainer.neteaseCookieRepo
     private var highQualityLoadJob: Job? = null
+    private var browseDefault: SearchSource? = null
+    private var lastBrowseCatalog: Pair<String, String>? = null
     private var highQualityLoadCookies: Map<String, String>? = null
     private var searchJob: Job? = null
     private var searchMoreJob: Job? = null
     private var ytMusicPlaylistsJob: Job? = null
     private var ytMusicPlaylistsPending = false
     private var searchRequestVersion = 0L
+    private var nextYouTubeSearchCursor: YouTubeMusicSearchCursor? = null
     private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
 
     private val _uiState = MutableStateFlow(ExploreUiState())
@@ -365,7 +390,12 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         viewModelScope.launch {
-            neteaseRepo.cookieFlow.collect {
+            neteaseRepo.cookieFlow.drop(1).collect {
+                if (_uiState.value.selectedSearchSource != SearchSource.NETEASE) {
+                    highQualityLoadJob?.cancel()
+                    _uiState.value = _uiState.value.copy(playlists = emptyList(), loading = false)
+                    return@collect
+                }
                 NPLogger.d(TAG, "cookieFlow updated, reload high quality playlists tag=${_uiState.value.selectedTag}")
                 loadHighQuality()
             }
@@ -380,48 +410,56 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun applyBrowseDefault(source: SearchSource, searchQuery: String) {
+        if (browseDefault == source) return
+        val previous = browseDefault
+        browseDefault = source
+        if (searchQuery.isBlank() && (previous == null || _uiState.value.selectedSearchSource == previous)) {
+            setSearchSource(source)
+        }
+    }
+
+    fun updateYouTubeBrowseContext(catalogKey: String, accountKey: String) {
+        val current = catalogKey to accountKey
+        if (current == lastBrowseCatalog) return
+        val hadContext = lastBrowseCatalog != null
+        lastBrowseCatalog = current
+        val state = _uiState.value
+        val hideSelectedVideos = state.selectedYouTubeMusicSearchType == YouTubeExploreSearchType.VIDEO &&
+            YouTubeContentSettings.preferences.value.hideMusicVideos
+        if (!hadContext && !hideSelectedVideos) return
+        ytMusicPlaylistsJob?.cancel()
+        ytMusicPlaylistsJob = null
+        ytMusicPlaylistsPending = false
+        _uiState.value = state.copy(
+            selectedYouTubeMusicSearchType = if (hideSelectedVideos) YouTubeExploreSearchType.SONG else state.selectedYouTubeMusicSearchType,
+            ytMusicPlaylists = emptyList(),
+            ytMusicPlaylistsLoading = false,
+            ytMusicPlaylistsError = null
+        )
+        if (youtubeEnabled && state.selectedSearchSource == SearchSource.YOUTUBE_MUSIC && state.searchKeyword.isNotBlank()) {
+            search(state.searchKeyword, state.searchDisplayQuery)
+        }
+    }
+
     /** 设置当前搜索源 */
     fun setSearchSource(source: SearchSource) {
         if (source == SearchSource.YOUTUBE_MUSIC && !youtubeEnabled) return
         if (source == _uiState.value.selectedSearchSource) return
         NPLogger.d(TAG, "setSearchSource: ${_uiState.value.selectedSearchSource} -> $source")
-        searchJob?.cancel()
-        searchMoreJob?.cancel()
-        invalidateSearchRequest()
-        _uiState.value = _uiState.value.copy(
-            selectedSearchSource = source,
-            searching = false,
-            searchResults = emptyList(), // 切换源时清空结果
-            searchItems = emptyList(),
-            searchHasMore = false,
-            searchLoadingMore = false,
-            searchLoadMoreError = null,
-            searchPage = 0,
-            searchKeyword = "",
-            searchDisplayQuery = "",
-            searchError = null
-        )
+        clearSearch(_uiState.value.copy(selectedSearchSource = source))
     }
 
     fun setNeteaseSearchType(type: NeteaseExploreSearchType) {
         if (type == _uiState.value.selectedNeteaseSearchType) return
         NPLogger.d(TAG, "setNeteaseSearchType: ${_uiState.value.selectedNeteaseSearchType} -> $type")
-        searchJob?.cancel()
-        searchMoreJob?.cancel()
-        invalidateSearchRequest()
-        _uiState.value = _uiState.value.copy(
-            selectedNeteaseSearchType = type,
-            searching = false,
-            searchError = null,
-            searchResults = emptyList(),
-            searchItems = emptyList(),
-            searchHasMore = false,
-            searchLoadingMore = false,
-            searchLoadMoreError = null,
-            searchPage = 0,
-            searchKeyword = "",
-            searchDisplayQuery = ""
-        )
+        clearSearch(_uiState.value.copy(selectedNeteaseSearchType = type))
+    }
+
+    fun setBilibiliSearchType(type: BilibiliExploreSearchType) {
+        val state = _uiState.value
+        if (type == state.selectedBilibiliSearchType) return
+        clearSearch(state.copy(selectedBilibiliSearchType = type))
     }
 
     fun setYouTubeMusicSearchType(type: YouTubeExploreSearchType) {
@@ -430,11 +468,14 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
             TAG,
             "setYouTubeMusicSearchType: ${_uiState.value.selectedYouTubeMusicSearchType} -> $type"
         )
+        clearSearch(_uiState.value.copy(selectedYouTubeMusicSearchType = type))
+    }
+
+    private fun clearSearch(state: ExploreUiState = _uiState.value) {
         searchJob?.cancel()
         searchMoreJob?.cancel()
         invalidateSearchRequest()
-        _uiState.value = _uiState.value.copy(
-            selectedYouTubeMusicSearchType = type,
+        _uiState.value = state.copy(
             searching = false,
             searchError = null,
             searchResults = emptyList(),
@@ -454,21 +495,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         val matchQuery = displayQuery.trim().ifBlank { apiKeyword }
         if (apiKeyword.isBlank()) {
             NPLogger.d(TAG, "search cleared because keyword is blank")
-            searchJob?.cancel()
-            searchMoreJob?.cancel()
-            invalidateSearchRequest()
-            _uiState.value = _uiState.value.copy(
-                searching = false,
-                searchResults = emptyList(),
-                searchItems = emptyList(),
-                searchHasMore = false,
-                searchLoadingMore = false,
-                searchLoadMoreError = null,
-                searchPage = 0,
-                searchKeyword = "",
-                searchDisplayQuery = "",
-                searchError = null
-            )
+            clearSearch()
             return
         }
         val source = _uiState.value.selectedSearchSource
@@ -503,6 +530,8 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
 
         val neteaseType = state.selectedNeteaseSearchType
+        val youtubeCursor = nextYouTubeSearchCursor
+        if (source == SearchSource.YOUTUBE_MUSIC && youtubeCursor == null) return
         val keyword = state.searchKeyword
         val matchQuery = state.searchDisplayQuery.ifBlank { keyword }
         val nextPage = state.searchPage + 1
@@ -510,7 +539,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = state.copy(searchLoadingMore = true, searchLoadMoreError = null)
         NPLogger.d(
             TAG,
-            "search load more: source=$source, request=$requestVersion, keyword=$keyword, page=$nextPage, type=$neteaseType"
+            "search load more: source=$source, request=$requestVersion, keyword=$keyword, page=$nextPage"
         )
         searchMoreJob = viewModelScope.launch {
             try {
@@ -528,9 +557,12 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                     SearchSource.BILIBILI -> fetchBilibiliSearchPage(
                         keyword = keyword,
                         matchQuery = matchQuery,
-                        page = nextPage
+                        page = nextPage,
+                        type = state.selectedBilibiliSearchType
                     )
-                    SearchSource.YOUTUBE_MUSIC,
+                    SearchSource.YOUTUBE_MUSIC -> fetchYouTubeSearchPage(
+                        keyword, matchQuery, state.selectedYouTubeMusicSearchType, nextPage, youtubeCursor
+                    )
                     SearchSource.LINK_RECOGNITION -> return@launch
                 }
                 if (source == SearchSource.NETEASE && !isNeteaseSearchAllowed()) {
@@ -539,6 +571,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 }
                 updateSearchStateIfCurrent(requestVersion, source) {
                     val merged = mergeExploreSearchResults(it.searchItems, result.items)
+                    nextYouTubeSearchCursor = result.nextYouTubeCursor
                     it.copy(
                         searching = false,
                         searchLoadingMore = false,
@@ -569,11 +602,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    /** 搜索 Bilibili 视频 */
     private fun searchBilibili(keyword: String, matchQuery: String, requestVersion: Long) {
+        val type = _uiState.value.selectedBilibiliSearchType
         searchJob = viewModelScope.launch {
             try {
-                val result = fetchBilibiliSearchPage(keyword, matchQuery, page = 1)
+                val result = fetchBilibiliSearchPage(keyword, matchQuery, page = 1, type = type)
                 NPLogger.d(
                     TAG,
                     "search Bilibili success: request=$requestVersion, keyword=$keyword, count=${result.items.size}, page=${result.page}, hasMore=${result.hasMore}"
@@ -619,20 +652,10 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun fetchBilibiliSearchPage(
         keyword: String,
         matchQuery: String,
-        page: Int
-    ): ExploreSearchFetchResult {
-        val searchPage = withContext(Dispatchers.IO) {
-            biliClient.searchVideos(keyword = keyword, page = page)
-        }
-        val songs = rankExploreSongSearchResults(
-            query = matchQuery,
-            songs = searchPage.items.map { it.toSongItem() }
-        )
-        return ExploreSearchFetchResult(
-            items = songs.map { ExploreSearchResult.Song(it) },
-            page = searchPage.page,
-            hasMore = searchPage.page < searchPage.numPages && searchPage.items.isNotEmpty()
-        )
+        page: Int,
+        type: BilibiliExploreSearchType
+    ): ExploreSearchFetchResult = withContext(Dispatchers.IO) {
+        biliClient.fetchExplorePage(keyword, matchQuery, page, type)
     }
 
     private fun beginSearchRequest(keyword: String, displayQuery: String): Long {
@@ -655,6 +678,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun invalidateSearchRequest(): Long {
+        nextYouTubeSearchCursor = null
         searchRequestVersion += 1
         return searchRequestVersion
     }
@@ -1245,70 +1269,60 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return buildBiliPartSong(page, basicInfo, coverUrl)
     }
 
+    private suspend fun fetchYouTubeSearchPage(
+        keyword: String,
+        matchQuery: String,
+        type: YouTubeExploreSearchType,
+        page: Int,
+        cursor: YouTubeMusicSearchCursor? = null
+    ): ExploreSearchFetchResult = withContext(Dispatchers.IO) {
+        val client = AppContainer.youtubeMusicClient
+        fun <T> YouTubeMusicSearchPage<T>.asExplorePage(items: List<ExploreSearchResult>) =
+            ExploreSearchFetchResult(items, page, next != null, next)
+
+        when (type) {
+            YouTubeExploreSearchType.SONG,
+            YouTubeExploreSearchType.VIDEO -> {
+                val response = client.searchPage(keyword, requireNotNull(type.filter), cursor)
+                val songs = rankExploreSongSearchResults(matchQuery, response.items.map { it.toSongItem(app) })
+                response.asExplorePage(songs.map(ExploreSearchResult::Song))
+            }
+            YouTubeExploreSearchType.ALBUM,
+            YouTubeExploreSearchType.FEATURED_PLAYLIST,
+            YouTubeExploreSearchType.COMMUNITY_PLAYLIST -> {
+                val response = client.searchCollectionsPage(keyword, requireNotNull(type.filter), cursor)
+                response.asExplorePage(response.items.mapNotNull { it.toCreatorPlaylist() }.map(ExploreSearchResult::YouTubePlaylist))
+            }
+            YouTubeExploreSearchType.CREATOR -> {
+                val response = client.searchCreatorsPage(keyword, cursor)
+                response.asExplorePage(response.items.map(ExploreSearchResult::YouTubeCreator))
+            }
+        }
+    }
+
     private fun searchYouTubeMusic(keyword: String, matchQuery: String, requestVersion: Long) {
         if (!youtubeEnabled) return
         val searchType = _uiState.value.selectedYouTubeMusicSearchType
         searchJob = viewModelScope.launch {
             try {
-                val items = when (searchType) {
-                    YouTubeExploreSearchType.SONG,
-                    YouTubeExploreSearchType.VIDEO -> {
-                        val songs = withContext(Dispatchers.IO) {
-                            AppContainer.youtubeMusicClient.search(
-                                query = keyword,
-                                limit = YOUTUBE_MUSIC_SEARCH_LIMIT,
-                                filter = requireNotNull(searchType.filter)
-                            ).map { it.toSongItem(app) }
-                        }.let { rankExploreSongSearchResults(matchQuery, it) }
-                        songs.map(ExploreSearchResult::Song)
-                    }
-                    YouTubeExploreSearchType.CREATOR -> {
-                        withContext(Dispatchers.IO) {
-                            AppContainer.youtubeMusicClient.searchCreators(
-                                query = keyword,
-                                limit = YOUTUBE_MUSIC_SEARCH_LIMIT
-                            )
-                        }.map(ExploreSearchResult::YouTubeCreator)
-                    }
-                }
-                if (!isSearchRequestCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC)) return@launch
-                NPLogger.d(
-                    TAG,
-                    "search YouTube Music success: request=$requestVersion, type=$searchType, keyword=$keyword, count=${items.size}"
-                )
+                val result = fetchYouTubeSearchPage(keyword, matchQuery, searchType, page = 1)
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
+                    nextYouTubeSearchCursor = result.nextYouTubeCursor
                     it.copy(
                         searching = false,
                         searchError = null,
                         searchLoadMoreError = null,
-                        searchResults = searchSongItems(items),
-                        searchItems = items,
-                        searchPage = 1,
-                        searchHasMore = false
+                        searchResults = result.songs,
+                        searchItems = result.items,
+                        searchPage = result.page,
+                        searchHasMore = result.hasMore
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                NPLogger.e(
-                    TAG,
-                    "search YouTube Music failed: request=$requestVersion, type=$searchType, keyword=$keyword",
-                    e
-                )
                 updateSearchStateIfCurrent(requestVersion, SearchSource.YOUTUBE_MUSIC) {
-                    it.copy(
-                        searching = false,
-                        searchError = feedbackText(
-                            CoreCommonR.string.error_youtube_search,
-                            e.message ?: feedbackText(CoreCommonR.string.github_sync_failed_message)
-                        ),
-                        searchResults = emptyList(),
-                        searchItems = emptyList(),
-                        searchHasMore = false,
-                        searchLoadingMore = false,
-                        searchLoadMoreError = null,
-                        searchPage = 0
-                    )
+                    it.copy(searching = false, searchError = searchErrorMessage(SearchSource.YOUTUBE_MUSIC, e))
                 }
             }
         }
@@ -1328,9 +1342,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         ytMusicPlaylistsJob = viewModelScope.launch {
             try {
                 val library = withContext(Dispatchers.IO) {
-                    AppContainer.youtubeMusicClient.getLibraryPlaylists(
-                        resolveMissingTrackCounts = false
-                    )
+                    AppContainer.youtubeMusicClient.getExplorePlaylists()
                 }
                 val playlists = library.map { pl ->
                     YouTubeMusicPlaylist(
@@ -1450,6 +1462,39 @@ private fun JSONObject.linkedNeteaseArtistPicUrl(): String? {
         .takeIf { it.isNotBlank() }
 }
 
+internal suspend fun BiliClient.fetchExplorePage(
+    keyword: String,
+    matchQuery: String,
+    page: Int,
+    type: BilibiliExploreSearchType
+): ExploreSearchFetchResult {
+    return when (type) {
+        BilibiliExploreSearchType.SONG -> searchMusicVideos(keyword, page).toExplorePage(matchQuery)
+        BilibiliExploreSearchType.VIDEO -> searchVideos(keyword, page).toExplorePage()
+        BilibiliExploreSearchType.CREATOR -> {
+            val results = searchUploaders(keyword, page)
+            val items = results.items.distinctBy { it.mid }.map {
+                ExploreSearchResult.BilibiliCreator(BiliUploaderSummary(it.mid, it.name, it.faceUrl))
+            }
+            ExploreSearchFetchResult(
+                items = items,
+                page = results.page,
+                hasMore = results.page < results.numPages && items.isNotEmpty()
+            )
+        }
+    }
+}
+
+private fun SearchVideoPage.toExplorePage(rankBy: String? = null): ExploreSearchFetchResult {
+    val songs = items.distinctBy { it.aid }.map { it.toSongItem() }
+    val ordered = if (rankBy == null) songs else rankExploreSongSearchResults(rankBy, songs)
+    return ExploreSearchFetchResult(
+        items = ordered.map(ExploreSearchResult::Song),
+        page = page,
+        hasMore = page < numPages && songs.isNotEmpty()
+    )
+}
+
 /** Bilibili 搜索结果到通用 SongItem 的转换器 */
 private fun SearchVideoItem.toSongItem(): SongItem {
     return SongItem(
@@ -1526,6 +1571,7 @@ internal fun YouTubeMusicSearchResult.toSongItem(app: Context): SongItem {
         }
     }
     return SongItem(
+        youtubeContentLabel = contentLabel,
         id = stableYouTubeMusicId(videoId),
         name = title,
         artist = displayArtist,

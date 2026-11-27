@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.settings.route
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
@@ -107,7 +108,15 @@ internal data class AppHomeCardsSettingsState(
     val showHomeTrendingCard: Boolean,
     val showHomeRadarCard: Boolean,
     val showHomeRecommendedCard: Boolean,
-    val showHomeBilibiliCard: Boolean
+    val showHomeBilibiliCard: Boolean,
+    val majorOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.DEFAULT_ORDER,
+    val trendingOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds.DEFAULT_ORDER,
+    val trendingHidden: Set<String> = emptySet(),
+    val radarOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds.DEFAULT_ORDER,
+    val radarHidden: Set<String> = emptySet(),
+    val recommendedOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds.DEFAULT_ORDER,
+    val recommendedHidden: Set<String> = emptySet(),
+    val internationalLayout: InternationalHomeLayout = InternationalHomeLayout()
 )
 
 internal data class AppStorageSettingsState(
@@ -305,16 +314,75 @@ private fun mobileAudioQualitySettingsFlow(repo: SettingsRepository): Flow<AppMo
         AppMobileAudioQualitySettingsState(v0, v1, v2)
     }
 
-private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSettingsState> =
-    combine(
+private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSettingsState> {
+    val baseFlows = combine(
         repo.homeCardContinueFlow,
         repo.homeCardTrendingFlow,
         repo.homeCardRadarFlow,
         repo.homeCardRecommendedFlow,
         repo.homeCardBilibiliFlow
-    ) { v0, v1, v2, v3, v4 ->
-        AppHomeCardsSettingsState(v0, v1, v2, v3, v4)
+    ) { continueEnabled: Boolean, trending: Boolean, radar: Boolean, recommended: Boolean, bilibili: Boolean ->
+        HomeMajorVisibility(
+            continueEnabled = continueEnabled,
+            trending = trending,
+            radar = radar,
+            recommended = recommended,
+            bilibili = bilibili,
+            majorOrder = HomeMajorDefaultOrder
+        )
     }
+    val majorFlows = combine(
+        baseFlows,
+        repo.homeMajorOrderFlow
+    ) { base, majorOrder -> base.copy(majorOrder = majorOrder) }
+    val trendingFlows = combine(
+        repo.homeTrendingOrderFlow,
+        repo.homeTrendingHiddenFlow
+    ) { order, hidden -> order to hidden }
+    val radarFlows = combine(
+        repo.homeRadarOrderFlow,
+        repo.homeRadarHiddenFlow
+    ) { order, hidden -> order to hidden }
+    val recommendedFlows = combine(
+        repo.homeRecommendedOrderFlow,
+        repo.homeRecommendedHiddenFlow
+    ) { order, hidden -> order to hidden }
+    return combine(
+        majorFlows,
+        trendingFlows,
+        radarFlows,
+        recommendedFlows,
+        repo.internationalHomeLayoutFlow
+    ) { major, trending, radar, recommended, internationalLayout ->
+        AppHomeCardsSettingsState(
+            showHomeContinueCard = major.continueEnabled,
+            showHomeTrendingCard = major.trending,
+            showHomeRadarCard = major.radar,
+            showHomeRecommendedCard = major.recommended,
+            showHomeBilibiliCard = major.bilibili,
+            majorOrder = major.majorOrder,
+            trendingOrder = trending.first,
+            trendingHidden = trending.second,
+            radarOrder = radar.first,
+            radarHidden = radar.second,
+            recommendedOrder = recommended.first,
+            recommendedHidden = recommended.second,
+            internationalLayout = internationalLayout
+        )
+    }
+}
+
+private data class HomeMajorVisibility(
+    val continueEnabled: Boolean,
+    val trending: Boolean,
+    val radar: Boolean,
+    val recommended: Boolean,
+    val bilibili: Boolean,
+    val majorOrder: List<String>
+)
+
+private val HomeMajorDefaultOrder: List<String> =
+    moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds.DEFAULT_ORDER
 
 private fun storageSettingsFlow(repo: SettingsRepository): Flow<AppStorageSettingsState> =
     combine(

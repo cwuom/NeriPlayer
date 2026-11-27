@@ -126,7 +126,7 @@ class LyricsScreenPortraitLayoutTest {
         val readingPane = composeRule.onNodeWithTag("lyricsScreenReadingPane")
         readingPane.performTouchInput {
             down(Offset(width * 0.2f, height * 0.8f))
-            repeat(10) { moveBy(Offset(16f, 0f)) }
+            repeat(10) { moveBy(Offset(12.dp.toPx(), 0f)) }
         }
         composeRule.runOnIdle { assertEquals("累计右滑仍需等待抬起", 0, navigatedBack) }
 
@@ -141,12 +141,26 @@ class LyricsScreenPortraitLayoutTest {
 
         composeRule.onNodeWithTag("lyricsScreenReadingPane").performTouchInput {
             down(Offset(width * 0.2f, height * 0.8f))
-            repeat(10) { moveBy(Offset(16f, 0f)) }
-            repeat(10) { moveBy(Offset(-16f, 0f)) }
+            repeat(10) { moveBy(Offset(12.dp.toPx(), 0f)) }
+            repeat(10) { moveBy(Offset(-12.dp.toPx(), 0f)) }
             up()
         }
 
         composeRule.runOnIdle { assertEquals("回拖原点后抬起必须保留歌词页", 0, navigatedBack) }
+    }
+
+    @Test
+    fun shortRightDragKeepsTheLyricsPage() {
+        render(360.dp, 800.dp, smallestScreenWidth = 360)
+
+        // 64dp 超过旧的 50px 阈值, 模拟拖进度条时手指滑出触摸区
+        composeRule.onNodeWithTag("lyricsScreenReadingPane").performTouchInput {
+            down(Offset(width * 0.2f, height * 0.8f))
+            repeat(8) { moveBy(Offset(8.dp.toPx(), 0f)) }
+            up()
+        }
+
+        composeRule.runOnIdle { assertEquals("短距离右滑不能返回", 0, navigatedBack) }
     }
 
     @Test

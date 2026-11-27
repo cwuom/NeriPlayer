@@ -143,6 +143,13 @@ internal fun SettingsLoginExpandedContent(
             highlightPulse = highlightPulse,
             onHighlightFinished = onHighlightFinished
         )
+        SettingsPlayHistorySyncCard(
+            neteaseSignedIn = netease.hasSavedCookies,
+            biliSignedIn = bili.hasSavedCookies,
+            highlightTargetId = highlightTargetId,
+            highlightPulse = highlightPulse,
+            onHighlightFinished = onHighlightFinished
+        )
         SettingsMusicServerCard(onOpenMusicServers)
     }
 }

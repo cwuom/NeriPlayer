@@ -1,7 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 
-import moe.ouom.neriplayer.core.player.audio.icon
-
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition
@@ -48,7 +46,9 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingLyricsBoundsTransform
 import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackActionToolbarLayout
+import moe.ouom.neriplayer.ui.screen.nowplaying.PlaybackOutputIcon
 import moe.ouom.neriplayer.ui.screen.nowplaying.rememberAudioDeviceInfo
+import moe.ouom.neriplayer.ui.screen.nowplaying.rememberPlaybackRoomActive
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
 
 internal data class NowPlayingCoverToolbarLayoutSpec(
@@ -299,12 +299,12 @@ private fun NowPlayingCoverToolbarRow(
                 status.sleepTimerActive, status.activeColor, LocalContentColor.current
             )
         )
-        val audioDevice = rememberAudioDeviceInfo()
-        NowPlayingCoverToolbarButton(
-            "btn_volume", audioDevice.second, audioDevice.first,
-            layout.iconSize, buttonModifier, sharedTransitionScope, animatedVisibilityScope,
-            actions.onVolume, LocalContentColor.current
-        )
+        HapticIconButton(
+            onClick = actions.onVolume,
+            modifier = buttonModifier.coverToolbarBounds("btn_volume", sharedTransitionScope, animatedVisibilityScope)
+        ) {
+            PlaybackOutputIcon(rememberPlaybackRoomActive(), rememberAudioDeviceInfo(), Modifier.size(layout.iconSize))
+        }
         NowPlayingCoverLyricsButton(
             status, layout.iconSize, buttonModifier, sharedTransitionScope,
             animatedVisibilityScope, actions.onLyrics, spec.lyricsAdjustBehavior
@@ -363,6 +363,22 @@ private fun NowPlayingCoverHeartbeatButton(
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+private fun Modifier.coverToolbarBounds(
+    sharedKey: String,
+    scope: SharedTransitionScope,
+    visibility: AnimatedVisibilityScope
+): Modifier = with(scope) {
+    this@coverToolbarBounds.sharedBounds(
+        rememberSharedContentState(key = sharedKey),
+        boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
+        animatedVisibilityScope = visibility,
+        enter = EnterTransition.None,
+        exit = ExitTransition.None
+    ).zIndex(1f)
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
 private fun NowPlayingCoverToolbarButton(
     sharedKey: String,
     icon: ImageVector,
@@ -374,24 +390,11 @@ private fun NowPlayingCoverToolbarButton(
     onClick: () -> Unit,
     tint: Color
 ) {
-    with(sharedTransitionScope) {
-        HapticIconButton(
-            onClick = onClick,
-            modifier = modifier.sharedBounds(
-                rememberSharedContentState(key = sharedKey),
-                boundsTransform = LocalNowPlayingLyricsBoundsTransform.current,
-                animatedVisibilityScope = animatedVisibilityScope,
-                enter = EnterTransition.None,
-                exit = ExitTransition.None
-            ).zIndex(1f)
-        ) {
-            Icon(
-                icon,
-                contentDescription = contentDescription,
-                tint = tint,
-                modifier = Modifier.size(iconSize)
-            )
-        }
+    HapticIconButton(
+        onClick = onClick,
+        modifier = modifier.coverToolbarBounds(sharedKey, sharedTransitionScope, animatedVisibilityScope)
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(iconSize))
     }
 }
 

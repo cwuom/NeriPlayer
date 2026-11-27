@@ -23,4 +23,5 @@
     <string name="platform_bilibili">Bilibili</string>
     <string name="platform_netease">NetEase Cloud Music</string>
     <string name="platform_netease_short">NetEase</string>
+    <string name="action_scroll_to_top">Scroll to top</string>
 </resources>

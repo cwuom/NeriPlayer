@@ -36,7 +36,9 @@ data class NeriDesignTokens(
     val sectionSpacing: Dp,
     val hairlineAlpha: Float,
     val pressScaleEnabled: Boolean,
-    val liquidGlass: Boolean = false
+    val liquidGlass: Boolean = false,
+    /** Clean-only iOS-style extras: spring menus with slide-to-pick, dialog window blur, deeper bar glass. */
+    val enhancedEffects: Boolean = false
 ) {
     val isClean: Boolean get() = style == UiStyle.Clean
 }
@@ -61,16 +63,16 @@ internal val MaterialDesignTokens = NeriDesignTokens(
 
 internal val CleanDesignTokens = NeriDesignTokens(
     style = UiStyle.Clean,
-    cardShape = ContinuousRoundedCornerShape(20.dp),
-    groupShape = ContinuousRoundedCornerShape(22.dp),
+    cardShape = RoundedCornerShape(20.dp),
+    groupShape = RoundedCornerShape(22.dp),
     controlShape = CircleShape,
     chipShape = CircleShape,
     coverSmallShape = ContinuousRoundedCornerShape(10.dp),
     coverLargeShape = ContinuousRoundedCornerShape(18.dp),
-    dialogShape = ContinuousRoundedCornerShape(30.dp),
-    sheetShape = ContinuousRoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
-    menuShape = ContinuousRoundedCornerShape(18.dp),
-    miniPlayerShape = ContinuousRoundedCornerShape(22.dp),
+    dialogShape = RoundedCornerShape(30.dp),
+    sheetShape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+    menuShape = RoundedCornerShape(18.dp),
+    miniPlayerShape = RoundedCornerShape(22.dp),
     pageHorizontalPadding = 20.dp,
     sectionSpacing = 28.dp,
     hairlineAlpha = 0.06f,

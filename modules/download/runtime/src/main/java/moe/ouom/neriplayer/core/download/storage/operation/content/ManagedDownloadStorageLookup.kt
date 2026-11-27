@@ -435,6 +435,7 @@ internal fun ManagedDownloadStorage.restoreFastIndexPreviewBlocking(context: Con
             channelId = entry.channelId,
             audioId = entry.audioId,
             subAudioId = entry.subAudioId,
+            youtubeContentLabel = entry.youtubeContentLabel,
             playlistContextId = entry.playlistContextId,
             durationMs = entry.durationMs ?: 0L,
             coverPath = entry.coverPath,

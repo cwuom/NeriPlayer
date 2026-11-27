@@ -115,10 +115,10 @@ import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
+import moe.ouom.neriplayer.data.model.settings.navigation.StartDestinationSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemeMode
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
-import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotCached
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutAction
@@ -137,7 +137,10 @@ import moe.ouom.neriplayer.ui.screen.host.ExploreHostScreen
 import moe.ouom.neriplayer.ui.screen.host.HomeHostScreen
 import moe.ouom.neriplayer.ui.screen.host.LibraryHostScreen
 import moe.ouom.neriplayer.ui.screen.host.rememberHomeHostRuntimeState
-import moe.ouom.neriplayer.ui.screen.tab.home.shouldShowHomeContinueSection
+import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.isSettingsHomeStartAvailable
 import moe.ouom.neriplayer.ui.screen.tab.home.rememberHomeUsageSnapshot
 import moe.ouom.neriplayer.ui.screen.tab.home.HomeContinueDiagnostics
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -176,6 +179,8 @@ import moe.ouom.neriplayer.ui.navigation.AppNavigationMediaActions
 import moe.ouom.neriplayer.ui.navigation.AppNavigationScaffold
 import moe.ouom.neriplayer.ui.navigation.AppNavigationSceneRenderer
 import moe.ouom.neriplayer.ui.navigation.AppStartupDestinationEffect
+import moe.ouom.neriplayer.ui.navigation.rememberStartupNavigationRoutes
+import moe.ouom.neriplayer.ui.navigation.startupHomeAvailability
 import moe.ouom.neriplayer.ui.navigation.MainTabGlassOwner
 import moe.ouom.neriplayer.ui.navigation.MainTabLayerHost
 import moe.ouom.neriplayer.ui.navigation.MainTabPredictiveBackHandler
@@ -194,6 +199,10 @@ import moe.ouom.neriplayer.ui.navigation.resolveMainTabNavigationMotionTarget
 import moe.ouom.neriplayer.ui.navigation.selectMainTabRouteContent
 import moe.ouom.neriplayer.ui.navigation.shouldAcceptObservedMainTabRoute
 import moe.ouom.neriplayer.ui.navigation.shouldDispatchMainTabNavigation
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectDispatcher
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.isMainTabReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
 import moe.ouom.neriplayer.ui.navigation.shouldUseAdvancedGlassNavigationHandoff
 import moe.ouom.neriplayer.ui.playback.visual.AppNowPlayingOverlay
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingCoverAssetRefresh
@@ -213,12 +222,11 @@ import moe.ouom.neriplayer.ui.theme.background.CustomBackground
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
 import moe.ouom.neriplayer.ui.animation.SharedCoverFlightState
-import moe.ouom.neriplayer.ui.effect.glass.rememberLiquidGlassDeviceAllowed
+import moe.ouom.neriplayer.ui.effect.glass.rememberVisualEffectsDeviceProfile
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
 import moe.ouom.neriplayer.ui.navigation.PredictiveBackPreviewGate
 import moe.ouom.neriplayer.ui.theme.reveal.shouldReverseThemeReveal
 import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
-import moe.ouom.neriplayer.ui.screen.tab.home.LocalHomeOpenSearch
 import moe.ouom.neriplayer.ui.theme.reveal.AppThemeRevealOverlayHost
 import moe.ouom.neriplayer.ui.theme.reveal.THEME_REVEAL_WATCHDOG_DELAY_MILLIS
 import moe.ouom.neriplayer.ui.theme.reveal.appThemeRevealPresentation
@@ -246,6 +254,12 @@ internal data class BottomBarLayoutInsets(
     val miniPlayerBottomPadding: Dp
 )
 
+/** 简洁风格的底栏始终是悬浮胶囊, 关闭模糊也要让内容延伸到底栏后面; Material 底栏只在模糊开启时悬浮 */
+internal fun shouldExtendContentBehindBottomBar(
+    baseBlurRequested: Boolean,
+    floatingBottomBar: Boolean
+): Boolean = baseBlurRequested || floatingBottomBar
+
 internal fun resolveBottomBarLayoutInsets(
     baseBlurRequested: Boolean,
     bottomBarInset: Dp,
@@ -271,9 +285,17 @@ internal fun localPlaylistIdFromSourceRoute(sourceRoute: String?): Long? {
         ?.toLongOrNull()
 }
 
+/**
+ * 应用主界面入口.
+ *
+ * @param initialThemeSnapshot 启动时同步读到的主题偏好, 让首帧就用正确的明暗与样式.
+ * @param initialStartDestinationSnapshot 启动时同步读到的启动页偏好.
+ *   缓存未就绪时等待已保存的设置，再确定首次导航的起点
+ */
 @Composable
 fun NeriApp(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    initialStartDestinationSnapshot: StartDestinationSnapshot? = null,
     launcherShortcutRequestFlow: StateFlow<LauncherShortcutRequest?> =
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
@@ -295,6 +317,7 @@ fun NeriApp(
         ) {
             NeriAppContent(
                 initialThemeSnapshot = initialThemeSnapshot,
+                initialStartDestinationSnapshot = initialStartDestinationSnapshot,
                 launcherShortcutRequestFlow = launcherShortcutRequestFlow,
                 onLauncherShortcutRequestConsumed = onLauncherShortcutRequestConsumed,
                 onIsDarkChanged = onIsDarkChanged,
@@ -335,9 +358,14 @@ internal fun AppUnderlayBackScope(
     CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides underlayOwner, content = content)
 }
 
+/**
+ * 用同步快照填补偏好 Flow 首次发射前的首帧，之后以持久偏好驱动界面
+ * 导航图起点随导航状态保存，重建时保留已恢复栈的起点，避免启动页偏好变化破坏返回路径
+ */
 @Composable
 private fun NeriAppContent(
     initialThemeSnapshot: ThemePreferenceSnapshot = ThemePreferenceSnapshot(),
+    initialStartDestinationSnapshot: StartDestinationSnapshot? = null,
     launcherShortcutRequestFlow: StateFlow<LauncherShortcutRequest?> =
         EmptyLauncherShortcutRequestFlow,
     onLauncherShortcutRequestConsumed: (LauncherShortcutRequest) -> Unit = {},
@@ -382,7 +410,7 @@ private fun NeriAppContent(
     val storedForceDark by repo.forceDarkFlow.collectAsStateWithLifecycle(
         initialValue = initialThemeSnapshot.forceDark
     )
-    val (uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled) =
+    val (uiStyle, liquidGlassEnabled, predictiveBackPreviewEnabled, enhancedVisualEffectsEnabled) =
         rememberAppStylePreferences(repo, initialThemeSnapshot.uiStyle)
     var showNowPlaying by rememberSaveable { mutableStateOf(false) }
     var nowPlayingOverlayMounted by remember { mutableStateOf(showNowPlaying) }
@@ -424,8 +452,8 @@ private fun NeriAppContent(
         .collectAsStateWithLifecycle(
             initialValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
         )
-    val initialAdvancedBlurQuality = remember {
-        AdvancedBlurQualityPreference.defaultForDevice(isCurrentBuildDimensity())
+    val initialAdvancedBlurQuality = remember(context) {
+        AdvancedBlurQualityPreference.defaultForCurrentDevice(context)
     }
     val advancedBlurQuality by repo.advancedBlurQualityFlow.collectAsStateWithLifecycle(
         initialValue = initialAdvancedBlurQuality
@@ -455,8 +483,11 @@ private fun NeriAppContent(
     val showHomeRadarCard by repo.homeCardRadarFlow.collectAsStateWithLifecycle(initialValue = true)
     val showHomeRecommendedCard by repo.homeCardRecommendedFlow.collectAsStateWithLifecycle(initialValue = true)
     val homeBilibiliCardEnabled by repo.homeCardBilibiliFlow.collectAsStateWithLifecycle(initialValue = true)
-    val internationalizationEnabled by repo.internationalizationEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
-    val showHomeBilibiliCard = homeBilibiliCardEnabled && !internationalizationEnabled
+    val internationalizationEnabled: Boolean? by repo.internationalizationEnabledFlow.collectAsStateWithLifecycle(initialValue = null)
+    val internationalHomeLayout: InternationalHomeLayout? by repo.internationalHomeLayoutFlow.collectAsStateWithLifecycle(
+        initialValue = null
+    )
+    val showHomeBilibiliCard = homeBilibiliCardEnabled && internationalizationEnabled == false
     val storedUsbExclusivePlayback by repo.usbExclusivePlaybackFlow
         .collectAsStateWithLifecycle(initialValue = null)
     val usbExclusivePlayback = storedUsbExclusivePlayback
@@ -471,17 +502,24 @@ private fun NeriAppContent(
     val homeUsageSnapshot by rememberHomeUsageSnapshot(context) {
         AppContainer.playlistUsageRepo
     }
-    HomeContinueDiagnostics(showHomeContinueCard, homeUsageSnapshot)
-    val showHomeTab =
-        shouldShowHomeContinueSection(
-            showContinueCard = showHomeContinueCard,
-            usageLoaded = homeUsageSnapshot.isLoaded,
-            hasUsage = homeUsageSnapshot.entries.isNotEmpty()
-        ) ||
-            showHomeTrendingCard ||
-            showHomeRadarCard ||
-            showHomeRecommendedCard ||
-            showHomeBilibiliCard
+    val activeInternationalLayout = internationalHomeLayout.takeIf { internationalizationEnabled == true }
+    val showActiveContinue = activeInternationalLayout?.let { InternationalHomeSectionIds.CONTINUE !in it.hidden }
+        ?: showHomeContinueCard
+    HomeContinueDiagnostics(showActiveContinue, homeUsageSnapshot)
+    val homeHasRecentUsage = !homeUsageSnapshot.isLoaded || homeUsageSnapshot.entries.isNotEmpty()
+    val domesticHomeAvailable = isSettingsHomeStartAvailable(
+        showTrending = showHomeTrendingCard,
+        showRadar = showHomeRadarCard,
+        showRecommended = showHomeRecommendedCard,
+        showContinue = showHomeContinueCard,
+        hasRecentUsage = homeHasRecentUsage,
+        showBilibili = showHomeBilibiliCard
+    )
+    val homeAvailable = startupHomeAvailability(
+        internationalizationEnabled, activeInternationalLayout,
+        homeHasRecentUsage.takeIf { homeUsageSnapshot.isLoaded }, domesticHomeAvailable
+    )
+    val showHomeTab = homeAvailable != false
     var pendingFollowSystemDark by remember { mutableStateOf<Boolean?>(null) }
     var pendingForceDark by remember { mutableStateOf<Boolean?>(null) }
     var themeRevealSnapshot by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -858,17 +896,13 @@ private fun NeriAppContent(
         mode = themeMode,
         systemDark = systemDark
     )
-    val initialMainStartDestination = resolveMainStartDestination(
-        preferredRoute = defaultStartDestination,
-        showHomeTab = showHomeTab,
-        devModeEnabled = devModeEnabled
-    )
-    val currentDefaultStartDestination =
-        defaultStartDestination ?: initialMainStartDestination
     val backgroundGlassBackdrop = rememberAdvancedGlassBackdrop()
     val contentGlassBackdrop = rememberAdvancedGlassBackdrop()
-    val liquidGlassDeviceAllowed = rememberLiquidGlassDeviceAllowed(advancedBlurQuality)
-    val liquidGlassRequested = uiStyle == UiStyle.Clean && liquidGlassEnabled && liquidGlassDeviceAllowed
+    val visualEffectsDeviceProfile = rememberVisualEffectsDeviceProfile()
+    val liquidGlassRequested = uiStyle == UiStyle.Clean && liquidGlassEnabled &&
+        visualEffectsDeviceProfile.liquidGlassAllowed(advancedBlurQuality)
+    val enhancedVisualEffectsActive = uiStyle == UiStyle.Clean && enhancedVisualEffectsEnabled &&
+        visualEffectsDeviceProfile.enhancedVisualEffectsAllowed
     val advancedGlassController = remember(
         advancedBlurEnabled,
         enhancedAdvancedBlurEnabled,
@@ -1195,11 +1229,15 @@ private fun NeriAppContent(
             systemDark = systemDark,
             uiStyle = uiStyle,
             liquidGlass = advancedGlassController.isLiquidGlassEnabled,
+            enhancedEffects = enhancedVisualEffectsActive,
             // 揭示快照完全遮住界面，颜色直接落到目标值，避免与扩散动画争抢帧
             animateColors = themeRevealSnapshot == null
     ) {
-            // changing NavHost's start destination rebuilds its graph and clears the live stack
-            val navHostStartDestination = remember { initialMainStartDestination }
+            // 恢复导航栈时保留原起点，避免启动页偏好变化后 popUpTo 找不到栈内目标
+            val routes = rememberStartupNavigationRoutes(defaultStartDestination, initialStartDestinationSnapshot, homeAvailable, devModeEnabled)
+                ?: return@NeriTheme
+            val navHostStartDestination = routes.graphRoot
+            val currentDefaultStartDestination = routes.preferred
             val navController = rememberNavController()
             val navigationVisibility = rememberAppNavigationVisibility(navController, lifecycleOwner)
             val currentRoute = navigationVisibility.currentRoute
@@ -1305,6 +1343,22 @@ private fun NeriAppContent(
                     launchSingleTop = true
                     restoreState = true
                 }
+            }
+            val mainTabReselectDispatcher = remember { MainTabReselectDispatcher() }
+            // 只有底栏/侧栏点击才区分重复点击，快捷方式等程序化跳转保持原有切换语义
+            fun onMainTabClicked(route: String) {
+                if (
+                    isMainTabReselect(
+                        selectedRoute = selectedMainTabRoute,
+                        currentRoute = currentRoute,
+                        pendingRoute = pendingMainTabRoute,
+                        targetRoute = route
+                    )
+                ) {
+                    mainTabReselectDispatcher.dispatch(route)
+                    return
+                }
+                navigateToMainTab(route)
             }
             fun showLauncherShortcutToast(messageRes: Int) {
                 AppFeedback.showToast(
@@ -1449,6 +1503,7 @@ private fun NeriAppContent(
 
             val snackbarHostState = remember { SnackbarHostState() }
             val homeHostRuntimeState = rememberHomeHostRuntimeState()
+            var homeSettingsPage by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
 
             val navigationSceneRenderer = AppNavigationSceneRenderer(
                 advancedGlassController = advancedGlassController,
@@ -1464,10 +1519,12 @@ private fun NeriAppContent(
             @Composable
             fun RenderMainTabRoute(route: String) {
                 val homeContent: @Composable () -> Unit = {
-                    CompositionLocalProvider(
-                        LocalHomeOpenSearch provides { navigateToMainTab(Destinations.Explore.route) }
-                    ) {
                     HomeHostScreen(
+                        onOpenHomeSettings = { page ->
+                            homeSettingsPage = page
+                            navigateToMainTab(Destinations.Settings.route)
+                        },
+                        onYouTubeCreatorClick = ::navigateToYouTubeMusicCreator,
                         showContinueCard = showHomeContinueCard,
                         showTrendingCard = showHomeTrendingCard,
                         showRadarCard = showHomeRadarCard,
@@ -1477,6 +1534,7 @@ private fun NeriAppContent(
                         homeUsageLoaded = homeUsageSnapshot.isLoaded,
                         offlineMode = offlineMode,
                         runtimeState = homeHostRuntimeState,
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Home.route),
                         onSongClick = ::playSongsAndOpenNowPlaying,
                         onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
                         onPlayBiliAudioWithSourceRoute = ::playBiliAudioAndOpenNowPlayingWithSource,
@@ -1486,20 +1544,16 @@ private fun NeriAppContent(
                         biliPlaylistSourceRoute = ::biliPlaylistSourceRoute,
                         localPlaylistSourceRoute = ::localPlaylistSourceRoute,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
-                            navigationSceneRenderer.RenderMainTabNavigationScene(
-                                revealTop,
-                                translationY,
-                                scale,
-                                sceneDepth = sceneDepth,
-                                content = sceneContent
-                            )
+                        renderScene = { sceneMotion, sceneDepth, sceneContent ->
+                            navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
                         }
                     )
                 }
-                }
                 val exploreContent: @Composable () -> Unit = {
                     ExploreHostScreen(
+                        onOpenYouTubePlaylist = ::navigateToYouTubeMusicPlaylist,
+                        onOpenYouTubeCreator = ::navigateToYouTubeMusicCreator,
+                        onBiliUploaderClick = ::navigateToBiliUploader,
                         offlineMode = offlineMode,
                         onSongClick = ::playSongsAndOpenNowPlaying,
                         onSongClickWithSourceRoute = ::playSongsAndOpenNowPlaying,
@@ -1509,15 +1563,10 @@ private fun NeriAppContent(
                         onSongPlayNext = ::addSongToQueueNextFromSearch,
                         onSongAddToQueueEnd = ::addSongToQueueEndFromSearch,
                         onPlayParts = ::playBiliPartsAndOpenNowPlaying,
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Explore.route),
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
-                            navigationSceneRenderer.RenderMainTabNavigationScene(
-                                revealTop,
-                                translationY,
-                                scale,
-                                sceneDepth = sceneDepth,
-                                content = sceneContent
-                            )
+                        renderScene = { sceneMotion, sceneDepth, sceneContent ->
+                            navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
                         }
                     )
                 }
@@ -1537,16 +1586,11 @@ private fun NeriAppContent(
                         onOpenStats = {
                             navController.navigate(Destinations.PlaybackStats.route)
                         },
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Library.route),
                         offlineMode = offlineMode,
                         coherentFeedbackEnabled = coherentFeedbackEnabled,
-                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
-                            navigationSceneRenderer.RenderMainTabNavigationScene(
-                                revealTop,
-                                translationY,
-                                scale,
-                                sceneDepth = sceneDepth,
-                                content = sceneContent
-                            )
+                        renderScene = { sceneMotion, sceneDepth, sceneContent ->
+                            navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
                         }
                     )
                 }
@@ -1563,25 +1607,30 @@ private fun NeriAppContent(
                             onThemeModeRequest = ::requestThemeModeChange,
                             backgroundImageAlpha = effectiveBackgroundImageAlpha,
                             defaultStartDestination = currentDefaultStartDestination,
-                            homeHasRecentUsage = homeUsageSnapshot.entries.isNotEmpty(),
+                            homeHasRecentUsage = homeHasRecentUsage,
                             onBeforeLanguageRestart = clearThemeRevealState,
                             onLanguageChanged = onLanguageChanged,
                             coherentFeedbackEnabled = coherentFeedbackEnabled,
+                            requestedPage = homeSettingsPage,
+                            onPageRequestConsumed = { homeSettingsPage = null },
+                            onReturnFromHomeShortcut = { navigateToMainTab(if (showHomeTab) Destinations.Home.route else Destinations.Explore.route) },
                             settingsVisible = isAppSettingsVisible(selectedMainTabRoute, showNowPlaying)
                         ),
                         onBackgroundImageAlphaPreview = { pendingBackgroundImageAlpha = it },
                         snackbarHostState = snackbarHostState,
-                        renderScene = { revealTop, translationY, scale, sceneDepth, sceneContent ->
-                            navigationSceneRenderer.RenderMainTabNavigationScene(
-                                revealTop, translationY, scale,
-                                sceneDepth = sceneDepth,
-                                content = sceneContent
-                            )
+                        reselectRequests = mainTabReselectDispatcher.requestsFor(Destinations.Settings.route),
+                        renderScene = { sceneMotion, sceneDepth, sceneContent ->
+                            navigationSceneRenderer.RenderMainTabNavigationScene(sceneMotion, sceneDepth, sceneContent)
                         }
                     )
                 }
                 val debugContent: @Composable () -> Unit = {
                         val debugHomeScrollState = rememberScrollState()
+                        MainTabReselectEffect(
+                            mainTabReselectDispatcher.requestsFor(Destinations.Debug.route)
+                        ) {
+                            debugHomeScrollState.scrollToTopForReselect()
+                        }
                         val crashActionOwner = remember(context, composeResources) {
                             appDebugCrashActionOwner(context) {
                                 composeResources.getString(AppR.string.test_exception_message)
@@ -1730,7 +1779,7 @@ private fun NeriAppContent(
                         ),
                         baseBlurRequested = advancedGlassController.isBaseBlurRequested,
                         snackbarHostState = snackbarHostState,
-                        onMainTabSelected = ::navigateToMainTab,
+                        onMainTabSelected = ::onMainTabClicked,
                         onExpandNowPlaying = {
                             showNowPlaying = true
                         },
@@ -1839,7 +1888,8 @@ private fun NeriAppContent(
                             paletteStyle = themePaletteStyle,
                             colorSpec = themeColorSpec,
                             uiStyle = uiStyle,
-                            liquidGlass = advancedGlassController.isLiquidGlassEnabled
+                            liquidGlass = advancedGlassController.isLiquidGlassEnabled,
+                            enhancedEffects = enhancedVisualEffectsActive
                         ),
                         background = NowPlayingOverlayBackground(
                             blurEnabled = nowPlayingCoverBlurBackgroundEnabled,

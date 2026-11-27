@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.backup
 
+import java.io.ByteArrayOutputStream
 import java.io.StringReader
 import java.io.FilterReader
 import java.io.IOException
@@ -10,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.data.sync.dataset.disk.FileSyncPlaybackDatasetStore
 import moe.ouom.neriplayer.data.model.sync.SyncSong
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
@@ -21,9 +23,91 @@ import org.junit.rules.TemporaryFolder
 class BackupJsonReaderTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun disabledMetadataSizeBudgetPreservesLyricsAndKeepsTokenLimitsActive() = runBlocking {
+        val lyric = "原词🎵".repeat(64)
+        val json = """{"version":"2.3","legacyLyricCandidates":[{"id":7,"originalLyric":"$lyric"}]}"""
+        val limited = BackupJsonLimits(maxMetadataBytes = 16)
+        assertRejectedMetadata(json, limited)
+        val unlimited = limited.copy(maxMetadataBytes = null)
+        val output = StringWriter()
+        output.withBackupJsonBudget(unlimited) { }.use { it.write(json) }
+        assertEquals(json, output.toString())
+        val directory = temporary.newFolder()
+        BackupJsonReader(FileSyncPlaybackDatasetStore(directory)).read(output.toString().reader()).use { content ->
+            assertEquals(lyric, content.data.legacyLyricCandidates.orEmpty().single().originalLyric)
+        }
+        assertRejectedMetadata(json, unlimited.copy(maxTokenCharacters = 32))
+        assertTrue(directory.walkTopDown().none { it.isFile })
+    }
+
+    @Test fun metadataUtf8ByteBudgetPreservesExactBoundariesAcrossReadAndWriteChunks() = runBlocking {
+        val names = listOf("中é" to "中é", "🎵🎵中aé" to "🎵🎵中aé", "\\u4e2d\\ud83c\\udfb5" to "中🎵")
+        for ((rawName, expectedName) in names) {
+            val records = """[{"id":7,"name":"$rawName"}]"""
+            val bytes = 5L + records.toByteArray(Charsets.UTF_8).size + 4L
+            val limits = BackupJsonLimits(maxMetadataBytes = bytes)
+            for (field in listOf("legacyLyricCandidates", "legacyLyricCandid\\u0061tes")) {
+                val json = """{"version":"2.3","$field":$records,"recentPlays":null}"""
+                val directory = temporary.newFolder()
+                val input = object : FilterReader(StringReader(json)) {
+                    override fun read(buffer: CharArray, offset: Int, length: Int): Int =
+                        super.read(buffer, offset, minOf(length, 1))
+                }
+                BackupJsonReader(FileSyncPlaybackDatasetStore(directory), limits = limits).read(input).use { content ->
+                    assertEquals(expectedName, content.data.legacyLyricCandidates.orEmpty().single().name)
+                    assertEquals(null, content.data.recentPlays)
+                }
+                val output = StringWriter()
+                output.withBackupJsonBudget(limits) { }.use { writer -> json.forEach { writer.write(it.code) } }
+                assertEquals(json, output.toString())
+                val tooSmall = limits.copy(maxMetadataBytes = bytes - 1)
+                assertRejectedMetadata(json, tooSmall)
+                val rejected = StringWriter()
+                val failure = runCatching {
+                    rejected.withBackupJsonBudget(tooSmall) { }.use { it.write(json) }
+                }.exceptionOrNull()
+                assertTrue("Expected the same UTF-8 byte boundary on export, got $failure", failure is IOException)
+                assertEquals("Backup metadata byte budget exceeded", failure?.message)
+                assertEquals("", rejected.toString())
+                assertTrue(directory.walkTopDown().none { it.isFile })
+            }
+        }
+    }
+
+    @Test fun utf8BudgetsMatchWriterReplacementForIsolatedSurrogatesAcrossChunks() {
+        fun encode(value: String): ByteArray = ByteArrayOutputStream().apply {
+            writer(Charsets.UTF_8).use { it.write(value) }
+        }.toByteArray()
+
+        val name = "\uDC00中é🎵\uD800a\uD800🎵\\ud800Z\\udc00\uDC00"
+        val record = """{"identityKey":"netease:7","id":7,"name":"$name"}"""
+        val recordBytes = encode(record).size.toLong()
+        val metadataBytes = recordBytes + 2L
+        val cases = listOf(
+            Triple("legacyLyricCandidates", BackupJsonLimits(maxMetadataBytes = metadataBytes),
+                BackupJsonLimits(maxMetadataBytes = metadataBytes - 1)),
+            Triple("playbackStats", BackupJsonLimits(maxStatisticsRecordBytes = recordBytes),
+                BackupJsonLimits(maxStatisticsRecordBytes = recordBytes - 1))
+        )
+        for ((field, exact, tooSmall) in cases) {
+            val json = """{"$field":[$record]}"""
+            val expected = encode(json)
+            val output = ByteArrayOutputStream()
+            output.writer(Charsets.UTF_8).withBackupJsonBudget(exact) { }.use { writer ->
+                json.forEach { writer.write(it.code) }
+            }
+            assertArrayEquals(expected, output.toByteArray())
+
+            val failure = runCatching {
+                ByteArrayOutputStream().writer(Charsets.UTF_8).withBackupJsonBudget(tooSmall) { }.use { it.write(json) }
+            }.exceptionOrNull()
+            assertTrue("Expected the UTF-8 budget to reject $field one byte past the limit, got $failure", failure is IOException)
+        }
+    }
+
     @Test fun nonPositiveBudgetsAreRejectedByName() {
         val failures = listOf(
-            { BackupJsonLimits(maxMetadataCharacters = 0) },
+            { BackupJsonLimits(maxMetadataBytes = 0) },
             { BackupJsonLimits(maxMetadataObjects = -1) },
             { BackupJsonLimits(maxTokenCharacters = 0) },
             { BackupJsonLimits(maxStatisticsRecordCharacters = 0) },
@@ -31,7 +115,7 @@ class BackupJsonReaderTest {
             { BackupJsonLimits(maxStatisticsRecordBytes = 0) }
         ).map { create -> runCatching(create).exceptionOrNull()?.let { it::class to it.message } }
         val expected = listOf(
-            "metadata character", "metadata object", "token character",
+            "metadata byte", "metadata object", "token character",
             "statistics record character", "statistics record object", "statistics record byte"
         ).map { IllegalArgumentException::class to "Backup $it budget must be positive" }
         assertEquals(expected, failures)
@@ -297,33 +381,36 @@ class BackupJsonReaderTest {
         assertTrue(directory.walkTopDown().none { it.isFile })
     }
 
-    @Test fun defaultMetadataBudgetRejectsLargeHistoryBeforeFullConsumptionAndCleansStagedStatistics() = runBlocking {
-        val file = temporary.newFile()
-        file.bufferedWriter().use { writer ->
-            writer.write("{\"version\":\"2.3\",\"playbackStats\":[")
-            repeat(300) { index ->
-                if (index != 0) writer.write(",")
-                writer.write("{\"identityKey\":\"netease:$index\",\"id\":$index}")
-            }
-            writer.write("],\"recentPlays\":[")
-            val name = "n".repeat(128)
-            val lyric = "l".repeat(384)
-            repeat(40_000) { index ->
-                if (index != 0) writer.write(",")
-                writer.write("{\"songId\":$index,\"song\":{\"id\":$index,\"name\":\"$name\",\"originalLyric\":\"$lyric\"},\"playedAt\":$index}")
-            }
-            writer.write("]}")
-        }
-        assertTrue(file.length() > 20L * 1024 * 1024)
+    @Test fun configuredMetadataBudgetRejectsLargeHistoryBeforeFullConsumptionAndCleansStagedStatistics() = runBlocking {
         val directory = temporary.newFolder()
-        val input = object : FilterReader(file.reader()) {
-            var consumed = 0L
-            override fun read(buffer: CharArray, offset: Int, length: Int): Int =
-                super.read(buffer, offset, length).also { if (it > 0) consumed += it }
-        }
-        val failure = runCatching { BackupJsonReader(FileSyncPlaybackDatasetStore(directory)).read(input).use { } }.exceptionOrNull()
+        var stagedPrefix = false
+        val pieces = sequence {
+            yield("{\"version\":\"2.3\",\"playbackStats\":[" to 1)
+            repeat(300) { index ->
+                if (index != 0) yield("," to 1)
+                yield("{\"identityKey\":\"netease:$index\",\"id\":$index}" to 1)
+            }
+            stagedPrefix = directory.walkTopDown().any {
+                it.isFile && it.name.startsWith("tracks-") && it.extension == "bin" && it.length() > 0
+            }
+            yield("],\"recentPlays\":[" to 1)
+            repeat(80) { index ->
+                if (index != 0) yield("," to 1)
+                yield("{\"songId\":$index,\"song\":{\"id\":$index,\"originalLyric\":\"" to 1)
+                yield("l" to (1024 * 1024))
+                yield("\"},\"playedAt\":$index}" to 1)
+            }
+            yield("]}" to 1)
+        }.iterator()
+        val input = RepeatedPiecesReader(pieces)
+        val limits = BackupJsonLimits(maxMetadataBytes = 64L * 1024 * 1024)
+        val failure = runCatching {
+            BackupJsonReader(FileSyncPlaybackDatasetStore(directory), limits = limits).read(input).use { }
+        }.exceptionOrNull()
         assertTrue("Expected metadata budget rejection, got $failure", failure is IOException)
-        assertTrue(input.consumed < file.length())
+        assertEquals("Backup metadata byte budget exceeded", failure?.message)
+        assertTrue("The accepted prefix must have reached the real disk sink", stagedPrefix)
+        assertTrue("The oversized metadata was fully consumed", input.consumed < 80L * 1024 * 1024)
         assertTrue(directory.walkTopDown().none { it.isFile })
     }
 
@@ -354,7 +441,7 @@ class BackupJsonReaderTest {
               "recentPlays" : null
             }
         """.trimIndent()
-        BackupJsonReader(FileSyncPlaybackDatasetStore(temporary.newFolder()), limits = BackupJsonLimits(maxMetadataCharacters = 11))
+        BackupJsonReader(FileSyncPlaybackDatasetStore(temporary.newFolder()), limits = BackupJsonLimits(maxMetadataBytes = 11))
             .read(StringReader(json)).use {
                 assertEquals("2.3", it.data.version)
                 assertEquals(emptyList<Any>(), it.data.playlists)
@@ -363,7 +450,7 @@ class BackupJsonReaderTest {
     }
 
     @Test fun guardedIoEntriesCountOnlyWrittenSlicesAndRejectBeforePublishingAnOversizedChunk() {
-        val limits = BackupJsonLimits(maxMetadataCharacters = 5)
+        val limits = BackupJsonLimits(maxMetadataBytes = 5)
         val expected = """{"version":"2.3"}"""
         val output = StringWriter()
         output.withBackupJsonBudget(limits) { }.use { writer ->
@@ -383,21 +470,21 @@ class BackupJsonReaderTest {
         }
         val rejected = StringWriter()
         val failure = runCatching {
-            rejected.withBackupJsonBudget(BackupJsonLimits(maxMetadataCharacters = 4)) { }.use { it.write(expected) }
+            rejected.withBackupJsonBudget(BackupJsonLimits(maxMetadataBytes = 4)) { }.use { it.write(expected) }
         }.exceptionOrNull()
         assertTrue(failure is IOException)
         assertEquals("", rejected.toString())
     }
 
-    @Test fun retainedMetadataCharacterBudgetRejectsAfterStagedStatisticsWithoutPublishing() = runBlocking {
+    @Test fun retainedMetadataByteBudgetRejectsAfterStagedStatisticsWithoutPublishing() = runBlocking {
         val tracks = (1..300).joinToString(",") { "{\"identityKey\":\"netease:$it\",\"id\":$it}" }
         val json = "{\"version\":\"2.3\",\"playbackStats\":[$tracks],\"recentPlays\":[{\"song\":{\"name\":\"${"x".repeat(128)}\"}}]}"
-        assertRejectedMetadata(json, BackupJsonLimits(maxMetadataCharacters = 64))
+        assertRejectedMetadata(json, BackupJsonLimits(maxMetadataBytes = 64))
     }
 
-    @Test fun escapedRootMetadataNamesCannotBypassTheCharacterBudget() = runBlocking {
+    @Test fun escapedRootMetadataNamesCannotBypassTheByteBudget() = runBlocking {
         val json = "{\"version\":\"2.3\",\"recent\\u0050lays\":[{\"song\":{\"name\":\"${"x".repeat(128)}\"}}]}"
-        assertRejectedMetadata(json, BackupJsonLimits(maxMetadataCharacters = 64))
+        assertRejectedMetadata(json, BackupJsonLimits(maxMetadataBytes = 64))
     }
 
     @Test fun metadataObjectBudgetIncludesSongsNestedInsideAPlaylist() = runBlocking {
@@ -408,15 +495,15 @@ class BackupJsonReaderTest {
         assertRejectedMetadata(json, BackupJsonLimits(maxMetadataObjects = 2))
     }
 
-    @Test fun nullableMetadataValuesUseTheirExactCharacterBoundaryAndUnknownValuesStaySkipped() = runBlocking {
+    @Test fun nullableMetadataValuesUseTheirExactByteBoundaryAndUnknownValuesStaySkipped() = runBlocking {
         val json = """{"unknown":{"large":"${"ignored".repeat(100)}"},"version":"2.3","playlists":[],"recentPlays":null}"""
         val directory = temporary.newFolder()
-        BackupJsonReader(FileSyncPlaybackDatasetStore(directory), limits = BackupJsonLimits(maxMetadataCharacters = 11))
+        BackupJsonReader(FileSyncPlaybackDatasetStore(directory), limits = BackupJsonLimits(maxMetadataBytes = 11))
             .read(StringReader(json)).use {
                 assertEquals("2.3", it.data.version)
                 assertEquals(null, it.data.recentPlays)
             }
-        assertRejectedMetadata(json, BackupJsonLimits(maxMetadataCharacters = 10))
+        assertRejectedMetadata(json, BackupJsonLimits(maxMetadataBytes = 10))
     }
 
     @Test fun oversizedNamesStringsAndScalarsStopInputBeforeTheEntireTokenIsRead() = runBlocking {

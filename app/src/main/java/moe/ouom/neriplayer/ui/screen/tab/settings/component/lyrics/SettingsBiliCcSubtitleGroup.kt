@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.bilibili.subtitle.BILI_SUBTITLE_LANGUAGE_AUTO
@@ -213,7 +214,7 @@ internal fun SettingsBiliCcSubtitleGroup(
                 Text(stringResource(AppR.string.bili_cc_subtitle_language_dialog_title))
             },
             text = {
-                Column {
+                ScrollableDialogColumn {
                     BILI_CC_SUBTITLE_LANGUAGE_OPTIONS.forEach { option ->
                         val optionLabel = biliCcSubtitleLanguageLabelRes(option)
                             ?.let { stringResource(it) }

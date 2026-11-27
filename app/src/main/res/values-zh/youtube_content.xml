@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="youtube_content_language">默认内容语言</string>
+    <string name="youtube_content_country">默认内容国家或地区</string>
+    <string name="youtube_content_automatic">自动（%1$s）</string>
+    <string name="youtube_content_hide_explicit">隐藏露骨内容</string>
+    <string name="youtube_content_hide_videos">隐藏音乐视频</string>
+</resources>

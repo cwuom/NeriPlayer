@@ -7,6 +7,8 @@ import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoStats
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
+import moe.ouom.neriplayer.platform.bilibili.api.client.biliClientTest
+import moe.ouom.neriplayer.platform.bilibili.api.client.json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -49,6 +51,38 @@ class BiliSongResolverFallbackTest {
         assertEquals(chorus, resolved?.pageInfo)
         verify(client).getVideoBasicInfoByBvid("BV1abc")
         verifyNoMoreInteractions(client)
+    }
+
+    @Test
+    fun `desktop favorites with a BV source and no cid resolve the first part`() = biliClientTest(
+        route = { request -> json(DESKTOP_VIDEO).takeIf { request.url.encodedPath == VIEW_PATH } }
+    ) { http, client ->
+        val favorite = desktopSong()
+
+        val resolved = resolveBiliSong(favorite, client)
+
+        assertEquals(116_516_876_124_856L, resolved?.avid)
+        assertEquals(116_516_876_124_856L, favorite.biliAvidOrNull())
+        assertEquals(42_903_669_033L, resolved?.cid)
+        assertEquals(230, resolved?.pageInfo?.durationSec)
+        val request = http.requestsTo(VIEW_PATH).single()
+        assertEquals("BV1uVRiBXETe", request.url.queryParameter("bvid"))
+        assertNull(request.url.queryParameter("aid"))
+    }
+
+    @Test
+    fun `desktop BV source honors a stored cid without falling back to another part or video`() = biliClientTest(
+        route = { request -> json(DESKTOP_VIDEO).takeIf { request.url.encodedPath == VIEW_PATH } }
+    ) { http, client ->
+        val favorite = desktopSong()
+
+        val resolved = resolveBiliSong(favorite.copy(subAudioId = "42903667400"), client)
+        assertEquals(42_903_667_400L, resolved?.cid)
+        assertNull(resolveBiliSong(favorite.copy(album = "Bilibili", subAudioId = "999"), client))
+        assertEquals(
+            listOf("BV1uVRiBXETe", "BV1uVRiBXETe"),
+            http.requestsTo(VIEW_PATH).map { it.url.queryParameter("bvid") }
+        )
     }
 
     @Test
@@ -142,6 +176,12 @@ class BiliSongResolverFallbackTest {
         subAudioId = subAudioId
     )
 
+    private fun desktopSong() = song(
+        id = 3_078_922_585_826_408_280L,
+        album = "",
+        audioId = "BV1uVRiBXETe"
+    ).copy(name = "Whole video title", durationMs = 41_255_000L)
+
     private fun video(
         aid: Long,
         bvid: String = "BV1test",
@@ -161,4 +201,18 @@ class BiliSongResolverFallbackTest {
         stats = VideoStats(0L, 0L, 0L, 0L, 0L, 0L, 0L),
         pages = pages
     )
+
+    private companion object {
+        const val VIEW_PATH = "/x/web-interface/wbi/view"
+        val DESKTOP_VIDEO = """
+            {"code":0,"data":{
+              "aid":116516876124856,"bvid":"BV1uVRiBXETe","title":"Whole video title","duration":41255,
+              "owner":{"name":"Uploader"},
+              "pages":[
+                {"cid":42903669033,"page":1,"part":"First track","duration":230},
+                {"cid":42903667400,"page":2,"part":"Second track","duration":292}
+              ]
+            }}
+        """.trimIndent()
+    }
 }

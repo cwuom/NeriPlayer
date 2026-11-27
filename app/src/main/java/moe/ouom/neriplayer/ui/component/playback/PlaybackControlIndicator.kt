@@ -11,6 +11,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -51,8 +54,11 @@ internal fun PlaybackControlIndicator(
     restoreVolumeContentDescription: String = playContentDescription,
     color: Color = LocalContentColor.current,
     progressIndicatorSize: Dp = 24.dp,
-    progressStrokeWidth: Dp = 2.5.dp
+    progressStrokeWidth: Dp = 2.5.dp,
+    iconSize: Dp = 24.dp
 ) {
+    // Clean 用实心圆角字形, 与无底座的主键更协调; Material 保持描边字形
+    val clean = NeriDesign.isClean
     val delayedPlaybackWaiting = rememberDelayedPlaybackWaiting(isPlaybackWaiting)
     val visualState = resolvePlaybackControlVisualState(
         isPlaying = isPlaying,
@@ -79,21 +85,24 @@ internal fun PlaybackControlIndicator(
     ) { state ->
         when (state) {
             PlaybackControlVisualState.PLAY -> Icon(
-                imageVector = Icons.Outlined.PlayArrow,
+                imageVector = if (clean) Icons.Rounded.PlayArrow else Icons.Outlined.PlayArrow,
                 contentDescription = resolvedContentDescription,
-                tint = color
+                tint = color,
+                modifier = Modifier.size(iconSize)
             )
 
             PlaybackControlVisualState.PAUSE -> Icon(
-                imageVector = Icons.Outlined.Pause,
+                imageVector = if (clean) Icons.Rounded.Pause else Icons.Outlined.Pause,
                 contentDescription = resolvedContentDescription,
-                tint = color
+                tint = color,
+                modifier = Modifier.size(iconSize)
             )
 
             PlaybackControlVisualState.RESTORE_VOLUME -> Icon(
                 imageVector = Icons.AutoMirrored.Outlined.VolumeUp,
                 contentDescription = resolvedContentDescription,
-                tint = color
+                tint = color,
+                modifier = Modifier.size(iconSize)
             )
 
             PlaybackControlVisualState.WAITING -> CircularProgressIndicator(
@@ -165,7 +174,8 @@ internal fun resolvePlaybackControlContentDescription(
 internal fun resolvePlaybackWaiting(
     playbackRequested: Boolean,
     isPlaying: Boolean,
-    usbPlaybackPreparing: Boolean
+    usbPlaybackPreparing: Boolean,
+    lanPreparing: Boolean = false
 ): Boolean {
-    return playbackRequested && (!isPlaying || usbPlaybackPreparing)
+    return lanPreparing || (playbackRequested && (!isPlaying || usbPlaybackPreparing))
 }

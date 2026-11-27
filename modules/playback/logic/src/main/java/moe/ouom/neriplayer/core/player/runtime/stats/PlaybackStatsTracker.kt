@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.runtime.stats
 
 import android.os.SystemClock
 import moe.ouom.neriplayer.data.model.SongItem
+import java.time.ZoneId
 import java.util.UUID
 
 const val PLAYBACK_STATS_PERIODIC_FLUSH_MS = 15_000L
@@ -16,7 +17,8 @@ data class PlaybackStatsSnapshot(
     val localPlaylistId: Long? = null,
     val eventId: String = UUID.randomUUID().toString(),
     val playedAt: Long = System.currentTimeMillis(),
-    val observedClearedAt: Long = 0L
+    val observedClearedAt: Long = 0L,
+    val playedZone: String? = ZoneId.systemDefault().id
 )
 
 class PlaybackStatsTracker(

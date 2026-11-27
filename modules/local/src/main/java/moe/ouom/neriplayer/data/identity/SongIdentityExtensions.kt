@@ -42,7 +42,7 @@ import moe.ouom.neriplayer.data.sync.CoverUrlMapper
 import moe.ouom.neriplayer.data.sync.mapping.sanitizeCoverUrlForSync
 import java.util.Locale
 
-private const val YOUTUBE_MUSIC_IDENTITY_ALBUM = "youtube_music"
+internal const val YOUTUBE_MUSIC_IDENTITY_ALBUM = "youtube_music"
 
 fun SongItem.identity(): SongIdentity {
     ServerSongRef.from(this)?.let { return SongIdentity(it.numericId, ServerSongRef.CHANNEL, it.mediaUri) }

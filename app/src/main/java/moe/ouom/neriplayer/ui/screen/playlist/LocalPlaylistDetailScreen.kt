@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.playlist
  * Updated: 2026/3/23
  */
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.data.identity.identity
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -140,6 +143,7 @@ import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalPlaylistDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.playlist.LocalMetadataProcessingState
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.util.format.formatTotalDuration
@@ -325,7 +329,8 @@ fun LocalPlaylistDetailScreen(
     onBack: () -> Unit,
     onDeleted: () -> Unit = onBack,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
-    offlineMode: Boolean = false
+    offlineMode: Boolean = false,
+    onPlayBiliParts: (VideoBasicInfo, Int, String) -> Unit = PlayerManager::playBiliVideoParts
 ) {
     val context = LocalContext.current
     val vm: LocalPlaylistDetailViewModel = viewModel()
@@ -1084,6 +1089,13 @@ fun LocalPlaylistDetailScreen(
             } else {
                 LocalFilesSongTab.MANUALLY_ADDED
             }
+            val unfilteredQueue by remember(localSongs) {
+                derivedStateOf { snapshotDisplayOrderList(localSongs) }
+            }
+            val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+            val baseQueue = remember(unfilteredQueue, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos) {
+                contentPreferences.visiblePlaylistSongs(unfilteredQueue)
+            }
             val canReorderCurrentSongs = !isLocalFilesPlaylist ||
                 selectedLocalFilesTab == LocalFilesSongTab.MANUALLY_ADDED
             val canReorderCurrentSongsState = rememberUpdatedState(canReorderCurrentSongs)
@@ -1093,13 +1105,23 @@ fun LocalPlaylistDetailScreen(
                     if (!canReorderCurrentSongsState.value) {
                         return@rememberLocalPlaylistReorderState
                     }
-                    if (!blockSync) blockSync = true
                     val fromKey = from.key as? String ?: return@rememberLocalPlaylistReorderState
                     val toKey = to.key as? String ?: return@rememberLocalPlaylistReorderState
-                    val fromIdx = localSongs.indexOfFirst { it.stableKey() == fromKey }
-                    val toIdx = localSongs.indexOfFirst { it.stableKey() == toKey }
-                    if (fromIdx != -1 && toIdx != -1 && fromIdx != toIdx) {
+                    val visible = YouTubeContentSettings.preferences.value.visiblePlaylistSongs(localSongs)
+                    val fromIdx = visible.indexOfFirst { it.stableKey() == fromKey }
+                    val toIdx = visible.indexOfFirst { it.stableKey() == toKey }
+                    if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) return@rememberLocalPlaylistReorderState
+                    if (visible.size == localSongs.size) {
+                        blockSync = true
                         localSongs.add(toIdx, localSongs.removeAt(fromIdx))
+                    } else {
+                        val keys = visible.mapTo(ArrayList(visible.size)) { it.stableKey() }
+                        keys.add(toIdx, keys.removeAt(fromIdx))
+                        val merged = reorderVisiblePlaylistSlots(localSongs, keys) { it.stableKey() }
+                            ?: return@rememberLocalPlaylistReorderState
+                        blockSync = true
+                        localSongs.clear()
+                        localSongs.addAll(merged)
                     }
                 },
                 canDragOver = localPlaylistCanDragOver {
@@ -1130,9 +1152,6 @@ fun LocalPlaylistDetailScreen(
                 sessionKey = playlistId to selectedLocalFilesTab,
                 isScrollInProgress = isListScrolling
             )
-            val baseQueue by remember(localSongs) {
-                derivedStateOf { snapshotDisplayOrderList(localSongs) }
-            }
             val downloadedPlaybackSongs = remember(downloadedSongs) {
                 downloadedSongs.map { it.toPlaybackSongItem() }
             }
@@ -1153,10 +1172,13 @@ fun LocalPlaylistDetailScreen(
                     }
                 }
             }
+            val visibleDownloads = remember(downloadedPlaybackSongs, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos) {
+                contentPreferences.visiblePlaylistSongs(downloadedPlaybackSongs)
+            }
             val tabSongs = if (isLocalFilesPlaylist) {
                 localFilesSongsForTab(
                     manuallyAddedSongs = baseQueue,
-                    downloadedSongs = downloadedPlaybackSongs,
+                    downloadedSongs = visibleDownloads,
                     tab = selectedLocalFilesTab
                 )
             } else {
@@ -1539,6 +1561,9 @@ fun LocalPlaylistDetailScreen(
                 return@Surface
             }
 
+            var requestedBiliParts by remember(playlistId, offlineMode) {
+                mutableStateOf<Pair<SongItem, String>?>(null)
+            }
             val modernContentScope = LocalPlaylistDetailModernContentScope(
                 context = context,
                 composeResources = composeResources,
@@ -1546,7 +1571,16 @@ fun LocalPlaylistDetailScreen(
                 playlist = playlist,
                 playlistId = playlistId,
                 onBack = onBack,
-                onSongClick = onSongClick,
+                onSongClick = { songs, index ->
+                    val song = songs.getOrNull(index)
+                    val bvid = if (offlineMode) null else song?.biliPartsPickerBvidOrNull()
+                    if (song != null && bvid != null) {
+                        requestedBiliParts = song to bvid
+                    } else {
+                        requestedBiliParts = null
+                        onSongClick(songs, index)
+                    }
+                },
                 offlineMode = offlineMode,
                 isFavorites = isFavorites,
                 isLocalFilesPlaylist = isLocalFilesPlaylist,
@@ -1600,7 +1634,10 @@ fun LocalPlaylistDetailScreen(
                 handleLocalSongDeleteResult = ::handleLocalSongDeleteResult,
                 launchWithLocalSyncWarningAction = ::launchWithLocalSyncWarning,
                 openNeteaseSyncPreview = ::openNeteaseSyncPreview,
-                playPlaylistAction = ::playPlaylist,
+                playPlaylistAction = { shuffle ->
+                    requestedBiliParts = null
+                    playPlaylist(shuffle)
+                },
                 copyText = { text ->
                     scope.launch {
                         clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("text", text)))
@@ -1689,6 +1726,25 @@ fun LocalPlaylistDetailScreen(
                 )
             )
             LocalPlaylistDetailModernContent(modernContentScope)
+            requestedBiliParts?.takeIf { detailVisibilityState.targetState }?.let { (song, bvid) ->
+                LocalPlaylistBiliPartsPicker(
+                    bvid = bvid,
+                    title = song.name,
+                    loadVideo = { AppContainer.biliClient.getVideoBasicInfoByBvid(it) },
+                    onDismiss = { requestedBiliParts = null },
+                    onPlayOriginal = playOriginal@{
+                        val (pendingSong, pendingBvid) = requestedBiliParts ?: return@playOriginal
+                        if (pendingBvid != bvid || !detailVisibilityState.targetState) return@playOriginal
+                        requestedBiliParts = null
+                        val index = tabSongs.indexOfFirst { it.sameIdentityAs(pendingSong) }
+                        if (index >= 0) onSongClick(tabSongs, index)
+                    },
+                    onPlayPart = { info, index ->
+                        val coverUrl = song.coverUrl?.takeIf { it.isNotBlank() } ?: info.coverUrl
+                        onPlayBiliParts(info, index, coverUrl)
+                    }
+                )
+            }
         }
     }
 }

@@ -31,7 +31,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w600dp-h800dp")
@@ -43,7 +42,7 @@ class NeriTabletMiniPlayerProgressRenderTest {
     private lateinit var hostView: View
 
     @Test
-    fun thumbAndTrackShareAStableCenterAtRestAndWhileDragging() {
+    fun progressLineHugsTheTopEdgeAndThickensWhileDragging() {
         val position = mutableStateOf(30_000L)
         composeRule.setContent {
             hostView = LocalView.current
@@ -72,7 +71,7 @@ class NeriTabletMiniPlayerProgressRenderTest {
 
         listOf(0f, 0.25f, 1f).forEach { progress ->
             composeRule.runOnIdle { position.value = (progress * 120_000L).toLong() }
-            assertThumbCentered(progress, dragging = false)
+            assertProgressLine(progress, dragging = false)
         }
         val node = composeRule.onNodeWithTag("miniPlayerProgress")
         listOf(0f, 0.5f, 1f).forEach { progress ->
@@ -80,12 +79,12 @@ class NeriTabletMiniPlayerProgressRenderTest {
                 down(Offset(width * 0.25f, centerY))
                 moveTo(Offset(width * progress, centerY), delayMillis = 100L)
             }
-            assertThumbCentered(progress, dragging = true)
+            assertProgressLine(progress, dragging = true)
             node.performTouchInput { up() }
         }
     }
 
-    private fun assertThumbCentered(progress: Float, dragging: Boolean) {
+    private fun assertProgressLine(progress: Float, dragging: Boolean) {
         val bounds = composeRule.onNodeWithTag("miniPlayerProgress").fetchSemanticsNode().boundsInRoot
         val pixels = composeRule.runOnIdle {
             val bitmap = Bitmap.createBitmap(hostView.width, hostView.height, Bitmap.Config.ARGB_8888)
@@ -93,19 +92,26 @@ class NeriTabletMiniPlayerProgressRenderTest {
             Bitmap.createBitmap(bitmap, bounds.left.toInt(), bounds.top.toInt(),
                 bounds.width.toInt(), bounds.height.toInt()).asImageBitmap().toPixelMap()
         }
-        val radius = if (dragging) 10f else 6f
-        val thumbX = (progress * pixels.width).coerceIn(radius, pixels.width - radius)
-            .roundToInt().coerceIn(0, pixels.width - 1)
-        val trackX = (pixels.width * 0.7f).toInt()
-        val trackRows = (0 until pixels.height).filter { y -> pixels[trackX, y].red > 0.03f }
-        val thumbRows = (0 until pixels.height).filter { y -> pixels[thumbX, y].red > 0.5f }
-        assertTrue("进度线未绘制", trackRows.isNotEmpty())
-        assertTrue("进度圆点未绘制", thumbRows.isNotEmpty())
-        val trackCenter = (trackRows.first() + trackRows.last() + 1) / 2f
-        val thumbCenter = (thumbRows.first() + thumbRows.last() + 1) / 2f
         val state = "progress=$progress dragging=$dragging"
-        assertEquals("圆点与轨道中心不对齐: $state", trackCenter, thumbCenter, 1f)
-        assertEquals("拖动时轨道应保持固定: $state", pixels.height / 2f, trackCenter, 1f)
-        assertEquals("圆点被裁切: $state", radius * 2f, thumbRows.size.toFloat(), 1f)
+        // density 2: 粗细跟随静止和拖动两个常量
+        val thicknessDp = if (dragging) {
+            NeriMiniPlayerDefaults.TabletProgressDragThickness
+        } else {
+            NeriMiniPlayerDefaults.TabletProgressThickness
+        }
+        val expectedThickness = thicknessDp.value * 2f
+        val trackX = (pixels.width * 0.9f).toInt()
+        val trackRows = (0 until pixels.height).filter { y -> pixels[trackX, y].red > 0.03f }
+        assertTrue("进度线未绘制: $state", trackRows.isNotEmpty())
+        assertEquals("进度线应贴住顶边: $state", 0, trackRows.first())
+        assertEquals("进度线粗细不对: $state", expectedThickness, trackRows.size.toFloat(), 1f)
+        if (progress > 0.05f) {
+            val playedX = (pixels.width * progress * 0.5f).toInt()
+            assertTrue("已播放部分未着色: $state", pixels[playedX, 0].red > 0.5f && pixels[playedX, 0].blue > 0.5f)
+        }
+        if (progress < 0.95f) {
+            val remainingX = (pixels.width * (progress + (1f - progress) * 0.5f)).toInt()
+            assertTrue("未播放部分不应着色: $state", pixels[remainingX, 0].blue < 0.5f || pixels[remainingX, 0].green > 0.5f)
+        }
     }
 }

@@ -48,12 +48,11 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -243,9 +242,7 @@ internal fun YouTubeMusicPlaylistList(
             }
             Card(
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -283,14 +280,17 @@ internal fun YouTubeMusicPlaylistList(
                     ),
                     leadingContent = {
                         if (playlist.coverUrl.isNotEmpty()) {
-                            AsyncImage(
-                                model = offlineCachedImageRequest(
+                            val coverRequest = remember(context, playlist.coverUrl, offlineMode) {
+                                offlineCachedImageRequest(
                                     context = context,
                                     data = playlist.coverUrl,
                                     sizePx = 192,
-                                    allowHardware = false,
+                                    allowHardware = true,
                                     offlineMode = offlineMode
-                                ),
+                                )
+                            }
+                            AsyncImage(
+                                model = coverRequest,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -298,12 +298,7 @@ internal fun YouTubeMusicPlaylistList(
                                     .clip(neriRoundedShape(8.dp))
                             )
                         } else {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(56.dp)
-                            )
+                            LibraryCoverPlaceholder()
                         }
                     }
                 )
@@ -426,7 +421,7 @@ internal fun BiliPlaylistList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-                shape = neriSearchFieldShape(LibrarySearchFieldShape)
+                shape = neriSearchFieldShape()
             ) {
             OutlinedTextField(
                 value = searchQuery,
@@ -434,7 +429,7 @@ internal fun BiliPlaylistList(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(stringResource(CoreCommonR.string.library_bili_search_hint)) },
                 singleLine = true,
-                shape = neriSearchFieldShape(LibrarySearchFieldShape),
+                shape = neriSearchFieldShape(),
 
                 colors = neriSearchFieldColors()
             )
@@ -465,12 +460,7 @@ internal fun BiliPlaylistList(
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(56.dp)
-                            )
+                            LibraryCoverPlaceholder()
                         }
                     )
                 }
@@ -504,12 +494,7 @@ internal fun BiliPlaylistList(
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         leadingContent = {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(56.dp)
-                            )
+                            LibraryCoverPlaceholder()
                         }
                     )
                 }
@@ -527,9 +512,7 @@ internal fun BiliPlaylistList(
             }
             Card(
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -553,14 +536,17 @@ internal fun BiliPlaylistList(
                     ),
                     leadingContent = {
                         if (pl.coverUrl.isNotEmpty()) {
-                            AsyncImage(
-                                model = offlineCachedImageRequest(
+                            val coverRequest = remember(context, pl.coverUrl, offlineMode) {
+                                offlineCachedImageRequest(
                                     context = context,
                                     data = pl.coverUrl,
                                     sizePx = 192,
-                                    allowHardware = false,
+                                    allowHardware = true,
                                     offlineMode = offlineMode
-                                ),
+                                )
+                            }
+                            AsyncImage(
+                                model = coverRequest,
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -568,12 +554,7 @@ internal fun BiliPlaylistList(
                                     .clip(neriRoundedShape(8.dp))
                             )
                         } else {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(56.dp)
-                            )
+                            LibraryCoverPlaceholder()
                         }
                     }
                 )

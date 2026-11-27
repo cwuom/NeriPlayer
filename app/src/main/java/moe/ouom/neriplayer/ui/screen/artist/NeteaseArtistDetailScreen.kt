@@ -1,9 +1,13 @@
 package moe.ouom.neriplayer.ui.screen.artist
 
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.runtime.remember
+import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,9 +45,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -61,8 +63,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +77,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.viewmodel.artist.NeteaseArtistDetailUiState
@@ -88,6 +90,8 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.component.common.CleanSegmentedTabs
 import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.haptic.HapticButton
+import androidx.compose.material3.LocalContentColor
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
 import moe.ouom.neriplayer.R as AppR
 
@@ -141,6 +145,7 @@ fun NeteaseArtistDetailScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
@@ -272,7 +277,12 @@ internal fun NeteaseArtistDetailContent(
                         header = ui.header,
                         followUpdating = ui.followUpdating,
                         offlineMode = offlineMode,
-                        onToggleFollow = onToggleFollow
+                        onToggleFollow = onToggleFollow,
+                        onPlayTopSongs = if (ui.songs.isNotEmpty()) {
+                            { onSongClick(ui.songs, 0) }
+                        } else {
+                            null
+                        }
                     )
                 }
                 artistWorks(
@@ -446,113 +456,80 @@ internal fun NeteaseArtistHeader?.toNeteaseArtistHero(): NeteaseArtistHero {
     )
 }
 
+/**
+ * 手机端歌手头部: 大幅封面铺满卡片, 名字和作品数压在底部暗角上, 右侧一枚播放热门歌曲的圆钮;
+ * 关注和简介放在封面下方, 不再套第二层卡片
+ */
 @Composable
 private fun ArtistHeaderCard(
     header: NeteaseArtistHeader?,
     followUpdating: Boolean,
     offlineMode: Boolean,
-    onToggleFollow: () -> Unit
+    onToggleFollow: () -> Unit,
+    onPlayTopSongs: (() -> Unit)?
 ) {
     val context = LocalContext.current
     val hero = header.toNeteaseArtistHero()
-    val heroHeight = 240.dp
-    val avatarSize = 64.dp
-    ElevatedCard(
+    val coverRequest = remember(context, hero.coverUrl, offlineMode) {
+        offlineCachedImageRequest(context = context, data = hero.coverUrl, offlineMode = offlineMode)
+    }
+    val songCount = header?.musicSize ?: 0
+    val albumCount = header?.albumSize ?: 0
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        shape = neriRoundedShape(28.dp)
+            .padding(top = 8.dp, bottom = 4.dp)
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            AsyncImage(
-                model = offlineCachedImageRequest(
-                    context = context,
-                    data = hero.coverUrl,
-                    offlineMode = offlineMode
-                ),
-                contentDescription = hero.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(heroHeight)
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(heroHeight)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.55f)
-                            )
+        CreatorHeroBanner(
+            title = hero.name.orEmpty(),
+            subtitle = hero.alias,
+            summaryItems = listOf(
+                pluralStringResource(AppR.plurals.artist_song_count, songCount, songCount),
+                pluralStringResource(AppR.plurals.artist_album_count, albumCount, albumCount)
+            ),
+            trailing = onPlayTopSongs?.let { onPlay ->
+                {
+                    HapticFilledIconButton(
+                        onClick = onPlay,
+                        modifier = Modifier.size(56.dp),
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
-                    )
-            )
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(20.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(
-                        model = offlineCachedImageRequest(
-                            context = context,
-                            data = hero.avatarUrl,
-                            offlineMode = offlineMode
-                        ),
-                        contentDescription = hero.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(avatarSize)
-                            .clip(CircleShape)
-                    )
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = hero.name.orEmpty(),
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = stringResource(CoreCommonR.string.player_play_all),
+                            modifier = Modifier.size(30.dp)
                         )
-                        hero.alias?.let { alias ->
-                            Text(
-                                text = alias,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.82f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
                     }
                 }
             }
+        ) {
+            AsyncImage(
+                model = coverRequest,
+                contentDescription = hero.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
         }
-
-        ArtistHeaderDetails(
-            header = header,
-            followUpdating = followUpdating,
-            onToggleFollow = onToggleFollow,
-            modifier = Modifier.padding(20.dp)
-        )
+        Spacer(Modifier.height(14.dp))
+        ArtistFollowButton(header, followUpdating, onToggleFollow)
+        ArtistBriefDescription(header, maxLines = 3)
     }
 }
 
+/** 平板侧栏的歌手资料; 手机端由 [ArtistHeaderCard] 自己排版 */
 @Composable
 internal fun ArtistHeaderDetails(
     header: NeteaseArtistHeader?,
     followUpdating: Boolean,
     onToggleFollow: () -> Unit,
-    modifier: Modifier = Modifier,
-    tabletProfile: Boolean = false
+    modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        if (tabletProfile) {
-            ArtistTabletHeaderDetails(header, followUpdating, onToggleFollow)
-        } else {
-            ArtistPhoneHeaderDetails(header, followUpdating, onToggleFollow)
-        }
+        ArtistTabletHeaderDetails(header, followUpdating, onToggleFollow)
     }
 }
 
@@ -589,31 +566,11 @@ private fun ArtistTabletHeaderDetails(
 }
 
 @Composable
-private fun ArtistPhoneHeaderDetails(
-    header: NeteaseArtistHeader?,
-    followUpdating: Boolean,
-    onToggleFollow: () -> Unit
-) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ArtistReleaseCounts(header)
-    }
-    ArtistBriefDescription(header, maxLines = 3)
-    Spacer(Modifier.height(14.dp))
-    ArtistFollowButton(header, followUpdating, onToggleFollow)
-}
-
-@Composable
 private fun ArtistBriefDescription(header: NeteaseArtistHeader?, maxLines: Int) {
     val briefDesc = header?.briefDesc
     if (briefDesc.isNullOrBlank()) return
     Spacer(Modifier.height(10.dp))
-    Text(
-        text = briefDesc,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = maxLines,
-        overflow = TextOverflow.Ellipsis
-    )
+    CreatorExpandableText(text = briefDesc, collapsedMaxLines = maxLines)
 }
 
 @Composable
@@ -624,27 +581,36 @@ private fun ArtistFollowButton(
     modifier: Modifier = Modifier
 ) {
     val followed = header?.followed == true
-    FilledTonalButton(
-        enabled = header != null && !followUpdating,
+    val content: @Composable RowScope.() -> Unit = {
+        ArtistFollowButtonContent(followed, followUpdating)
+    }
+    val enabled = header != null && !followUpdating
+    HapticButton(
+        enabled = enabled,
         onClick = onToggleFollow,
-        modifier = modifier
-    ) {
-        if (followUpdating) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp
-            )
-        } else {
-            Icon(
-                imageVector = if (followed) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
-                contentDescription = null
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            stringResource(if (followed) CoreCommonR.string.artist_followed else CoreCommonR.string.artist_follow)
+        colors = creatorFollowButtonColors(followed),
+        border = creatorFollowButtonBorder(followed, enabled),
+        modifier = modifier,
+        content = content
+    )
+}
+
+@Composable
+private fun RowScope.ArtistFollowButtonContent(followed: Boolean, followUpdating: Boolean) {
+    if (followUpdating) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            color = LocalContentColor.current,
+            strokeWidth = 2.dp
+        )
+    } else {
+        Icon(
+            imageVector = if (followed) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder,
+            contentDescription = null
         )
     }
+    Spacer(Modifier.width(8.dp))
+    Text(stringResource(if (followed) CoreCommonR.string.artist_followed else CoreCommonR.string.artist_follow))
 }
 
 @Composable

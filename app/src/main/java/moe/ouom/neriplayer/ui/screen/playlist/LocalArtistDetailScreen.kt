@@ -1,5 +1,9 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.stableKey
 
@@ -90,6 +94,8 @@ import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailAdaptiveLayout
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailProfileCard
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
@@ -123,10 +129,10 @@ internal fun shouldRemoveMissingLocalArtistUsage(
     artistFound: Boolean
 ): Boolean = localPlaylistsReady && !artistFound
 
-private data class LocalArtistDetailSnapshot(
-    val artist: LocalArtistSummary?,
-    val totalDurationMs: Long
-)
+internal class LocalArtistDetailSnapshot(val artist: LocalArtistSummary?, preferences: YouTubeContentPreferences) {
+    val songs = preferences.visiblePlaylistSongs(artist?.songs.orEmpty())
+    val totalDurationMs = songs.sumOf { it.durationMs }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,11 +194,9 @@ fun LocalArtistDetailScreen(
     val localPlaylistsReady by repo.initializationReadyFlow.collectAsState()
     val artistKey = remember(artistName) { localArtistStableKey(artistName) }
     val unknownArtist = stringResource(CoreCommonR.string.music_unknown_artist)
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
     val artistSnapshot by produceState<LocalArtistDetailSnapshot?>(
-        initialValue = null,
-        key1 = playlists,
-        key2 = artistKey,
-        key3 = unknownArtist
+        null, playlists, artistKey, unknownArtist, contentPreferences.hideExplicit, contentPreferences.hideMusicVideos
     ) {
         value = null
         value = withContext(Dispatchers.Default) {
@@ -201,10 +205,7 @@ fun LocalArtistDetailScreen(
                 artistKey = artistKey,
                 unknownArtist = unknownArtist
             )
-            LocalArtistDetailSnapshot(
-                artist = artist,
-                totalDurationMs = artist?.songs?.sumOf { song -> song.durationMs } ?: 0L
-            )
+            LocalArtistDetailSnapshot(artist, contentPreferences)
         }
     }
     val resolvedArtistSnapshot = artistSnapshot
@@ -214,7 +215,7 @@ fun LocalArtistDetailScreen(
     }
 
     val artist = resolvedArtistSnapshot.artist
-    val songs = artist?.songs.orEmpty()
+    val songs = resolvedArtistSnapshot.songs
     val baseSongs = remember(songs) { songs.toList() }
     val headerCover = rememberLocalArtistDisplayCoverUrl(artist)
     val title = artist?.name ?: artistName
@@ -329,6 +330,9 @@ fun LocalArtistDetailScreen(
             topBar = {
                 if (!selectionMode) {
                     TopAppBar(
+                        modifier = Modifier.scrollToTopOnTitleBarTap {
+                            listState.scrollToTopForReselect()
+                        },
                         title = {
                             Text(
                                 text = title,

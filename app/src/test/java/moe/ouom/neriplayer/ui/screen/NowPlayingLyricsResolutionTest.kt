@@ -265,6 +265,35 @@ class NowPlayingLyricsResolutionTest {
         assertFalse(shouldDelayNowPlayingOnlineLyrics(inputs.copy(currentMediaUrl = "https://audio.example/stream")))
     }
 
+    @Test
+    fun `lan session local song resolves all variants through the shared presentation online path`() = runTest {
+        // 副机的 LAN 会话歌：本地 channel + 缓存文件 URI，无任何本机扫描/下载记录。
+        // 歌词必须走 online*（命中 PlayerManager 的共享 presentation 钩子），而不是被本地短路成空。
+        val lanSong = song.copy(
+            channelId = "local",
+            audioId = "a".repeat(64),
+            mediaUri = "file:///data/user/0/app/cache/lan/aac",
+            sourceStableKey = "lan-session:local:" + "a".repeat(64)
+        )
+        val seen = mutableListOf<String>()
+        val sources = object : FakeNowPlayingLyricsSources() {
+            override suspend fun onlineOriginal(song: SongItem): List<LyricEntry> {
+                seen += "original"; return listOf(LyricEntry("shared", 0L, 1000L))
+            }
+            override suspend fun onlineTranslated(song: SongItem): List<LyricEntry> {
+                seen += "translated"; return listOf(LyricEntry("shared 翻译", 0L, 1000L))
+            }
+            override suspend fun onlineRomanized(song: SongItem): List<LyricEntry> {
+                seen += "romanized"; return listOf(LyricEntry("shared romaji", 0L, 1000L))
+            }
+        }
+        val input = inputs(lanSong)
+        assertEquals(listOf("shared"), resolveBackgroundOriginal(input, NowPlayingBackgroundRawLyrics(null, null, null), sources).map { it.text })
+        assertEquals(listOf("shared 翻译"), resolveBackgroundTranslated(input, NowPlayingBackgroundRawLyrics(null, null, null), sources).map { it.text })
+        assertEquals(listOf("shared romaji"), resolveBackgroundPhonetic(input, NowPlayingNeteaseFallback("", ""), sources).map { it.text })
+        assertTrue(seen.containsAll(listOf("original", "translated", "romanized")))
+    }
+
     private fun inputs(
         song: SongItem,
         local: LocalLyricsScanMetadata? = null,

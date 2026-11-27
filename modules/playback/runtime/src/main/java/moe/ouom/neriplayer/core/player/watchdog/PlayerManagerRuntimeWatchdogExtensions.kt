@@ -72,6 +72,8 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
     val requestToken = playbackRequestToken
     val watchdogToken = playbackRuntimeWatchdogToken + 1L
     playbackRuntimeWatchdogToken = watchdogToken
+    val refill = PlaybackBufferingProgress()
+    refill.observe(player.playbackState, watchdogBufferedDurationMs(), playbackPositionGeneration)
     playbackRuntimeWatchdogJob = mainScope.launch {
         try {
             while (isActive) {
@@ -80,6 +82,8 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
                 if (requestToken != playbackRequestToken) return@launch
                 if (!shouldWatchRuntimePlayback()) return@launch
 
+                val bufferedMs = watchdogBufferedDurationMs()
+                refill.observe(player.playbackState, bufferedMs, playbackPositionGeneration)
                 val positionMs = player.currentPositionMsOr(playbackRuntimeLastProgressPositionMs)
                 if (
                     PlaybackRuntimeStallPolicy.hasPositionAdvanced(
@@ -91,8 +95,9 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
                     continue
                 }
 
+                // 上游回填可以延后恢复，只有播放位置前进才能清零重试次数
                 val elapsedSinceProgressMs = SystemClock.elapsedRealtime() -
-                    playbackRuntimeLastProgressAtElapsedRealtimeMs
+                    maxOf(playbackRuntimeLastProgressAtElapsedRealtimeMs, refill.lastGrowthAtMs)
                 when (
                     PlaybackRuntimeStallPolicy.decide(
                         initialized = initialized,
@@ -102,9 +107,7 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
                         playWhenReady = player.playWhenReady,
                         isPlaying = player.isPlaying,
                         playbackState = player.playbackState,
-                        bufferedDurationMs = runCatching {
-                            player.totalBufferedDuration
-                        }.getOrDefault(0L),
+                        bufferedDurationMs = bufferedMs,
                         playbackSuppressionReason = player.playbackSuppressionReason,
                         audioRouteMuteSuppressed = audioRouteMuteSuppressedFlow.value,
                         pendingPause = pendingPauseJob?.isActive == true,

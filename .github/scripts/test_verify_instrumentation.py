@@ -50,7 +50,12 @@ class InstrumentationReportsTest(unittest.TestCase):
     def test_accepts_complete_disjoint_test_routes(self):
         inventory = verification.validate_reports(self.root)
         self.assertEqual(len(inventory["app"]), 12)
-        self.assertEqual(len(inventory["libraries"]), 3)
+        self.assertEqual(len(inventory["libraries"]), 4)
+
+    def test_requires_lan_library_cases_on_shard_zero(self):
+        self.write(0, "modules/ltwlan", [])
+        with self.assertRaisesRegex(ValueError, "Missing library tests:.*modules/ltwlan"):
+            verification.validate_reports(self.root)
 
     def test_counts_agp_assumption_failures_without_type_as_skipped(self):
         self.write(0, "app", [("ExampleTest", "case0")], result_tag="failure",
@@ -60,7 +65,7 @@ class InstrumentationReportsTest(unittest.TestCase):
         inventory = verification.validate_reports(self.root)
         self.assertEqual(inventory["skipped"], {"ExampleTest#case0", "modules/local:LocalTest#case"})
         self.assertEqual(len(inventory["app"]), 12)
-        self.assertEqual(len(inventory["libraries"]), 3)
+        self.assertEqual(len(inventory["libraries"]), 4)
 
     def test_explicit_assumption_type_is_authoritative(self):
         self.write(0, "app", [("ExampleTest", "case0")], result_tag="failure",

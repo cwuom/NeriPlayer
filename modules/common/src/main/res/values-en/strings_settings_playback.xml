@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="notification_channel_live_lyrics">Live Lyrics</string>
-    <string name="notification_channel_live_lyrics_description">Android Live Updates notification for the current song lyrics</string>
+    <string name="notification_channel_live_lyrics">Live now playing</string>
+    <string name="notification_channel_live_lyrics_description">Android Live Update showing the current song, lyrics, progress and playback controls</string>
     <!-- Settings / Playback & Lyrics -->
     <string name="settings_haptic">Haptic Feedback</string>
     <string name="settings_haptic_desc">Vibrate on button press</string>
@@ -152,8 +152,14 @@
     <string name="settings_lyrics_offset_bili_cc_subtitle_desc">Default offset applied when loading Bilibili CC subtitle lyrics</string>
     <string name="settings_lyrics_offset_reset">Reset</string>
     <string name="settings_lyrics_offset_reset_all">Reset all</string>
-    <string name="settings_live_update_lyric_enabled">Live lyric notification</string>
-    <string name="settings_live_update_lyric_enabled_desc">Show the current lyric in an Android 16 Live Update notification</string>
+    <string name="settings_live_update_lyric_enabled">Live Update</string>
+    <string name="settings_live_update_lyric_enabled_desc">Show lyrics, artwork, progress and playback controls in the Android 16 status bar chip, lock screen and always-on display</string>
+    <string name="settings_live_update_status_unsupported">Requires Android 16 or later</string>
+    <string name="settings_live_update_status_notifications_off">Notifications are off. Tap to turn them on</string>
+    <string name="settings_live_update_status_channel_off">The \"Live now playing\" category is off. Tap to turn it on</string>
+    <string name="settings_live_update_status_promotion_off">Live Updates are not allowed for this app. Tap to allow them</string>
+    <string name="settings_live_update_status_declined">Allowed, but the system did not show it as a Live Update. Your system version or vendor may not support it</string>
+    <string name="settings_live_update_status_ready">Ready: appears during playback. The system hides the status bar chip while the app is open</string>
     <string name="settings_status_bar_lyrics_title">Status Bar Lyrics</string>
     <string name="settings_status_bar_lyrics_summary">Enable Meizu status bar lyrics</string>
     <string name="settings_floating_lyrics_title">Floating Lyrics</string>

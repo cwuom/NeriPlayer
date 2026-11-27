@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="youtube_session_disabled">YouTube Music 已关闭，后台登录续期已暂停。</string>
+    <string name="youtube_session_incomplete">已保存的登录信息不足以后台续期。请使用浏览器重新登录。</string>
+    <string name="youtube_session_waiting">自动续期已启用，等待首次后台检查。</string>
+    <string name="youtube_session_checked">自动续期已启用。最近一次检查成功（%1$s）。</string>
+    <string name="youtube_session_failed">最近一次续期检查失败（%1$s）。应用会自动重试。如果持续失败，请重新登录。</string>
+</resources>

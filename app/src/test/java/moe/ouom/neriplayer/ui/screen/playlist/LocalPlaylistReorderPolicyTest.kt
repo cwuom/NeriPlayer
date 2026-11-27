@@ -2,11 +2,31 @@ package moe.ouom.neriplayer.ui.screen.playlist
 
 import org.burnoutcrew.reorderable.ItemPosition
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LocalPlaylistReorderPolicyTest {
+
+    @Test
+    fun `filtered drag and insertion replace only visible slots and can be undone with the original order`() {
+        val full = listOf("hidden-first", "one", "hidden-middle", "two", "three", "hidden-last")
+        val dragged = reorderVisiblePlaylistSlots(full, listOf("two", "three", "one")) { it }
+        assertEquals(listOf("hidden-first", "two", "hidden-middle", "three", "one", "hidden-last"), dragged)
+        val inserted = reorderVisiblePlaylistSlots(full, listOf("three", "one", "two")) { it }
+        assertEquals(listOf("hidden-first", "three", "hidden-middle", "one", "two", "hidden-last"), inserted)
+        assertEquals(full, reorderVisiblePlaylistSlots(requireNotNull(inserted), listOf("one", "two", "three")) { it })
+        assertEquals(listOf("hidden-first", "one", "hidden-middle", "two", "three", "hidden-last"), full)
+    }
+
+    @Test
+    fun `missing and duplicated visible identities cannot overwrite stored positions`() {
+        val full = listOf("one", "hidden", "two")
+        assertNull(reorderVisiblePlaylistSlots(full, listOf("new", "one")) { it })
+        assertNull(reorderVisiblePlaylistSlots(full, listOf("one", "one")) { it })
+        assertNull(reorderVisiblePlaylistSlots(listOf("one", "one"), listOf("one", "two")) { it })
+    }
 
     @Test
     fun `handle inside the visible top band requests backward scrolling`() {

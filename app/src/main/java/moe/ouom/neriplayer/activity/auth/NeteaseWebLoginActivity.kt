@@ -89,6 +89,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installLoginRoute()
         if (finishIfWebViewUnavailable()) return
         lockPortraitIfPhone()
         enableNeriEdgeToEdge()
@@ -183,7 +184,7 @@ class NeteaseWebLoginActivity : ComponentActivity() {
             webView.clearHistory()
             initialCookies = readCookieMap()
             loginCompletionWatcher.start()
-            webView.loadUrl(webLoginSettings.url)
+            webView.loadLoginUrl(webLoginSettings.url)
         }
     }
 

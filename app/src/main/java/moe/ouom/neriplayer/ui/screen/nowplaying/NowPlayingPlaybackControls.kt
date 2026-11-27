@@ -1,7 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -45,12 +49,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackQualityOption
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricSeekHapticFeedback
 import moe.ouom.neriplayer.ui.component.lyrics.rememberLyricSeekHapticFeedback
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import moe.ouom.neriplayer.ui.component.playback.WaveformSlider
 import moe.ouom.neriplayer.ui.component.playback.rememberDelayedPlaybackWaiting
@@ -333,7 +337,7 @@ fun NowPlayingQualityOptionsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 options.forEach { option ->
                     ListItem(
                         headlineContent = { Text(option.label) },
@@ -373,6 +377,17 @@ fun VolumeControlSheetContent() {
 
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
     var currentVolume by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
+    DisposableEffect(context, audioManager) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            }
+        }
+        ContextCompat.registerReceiver(context, receiver, IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
+            ContextCompat.RECEIVER_NOT_EXPORTED)
+        currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
 
     val audioDeviceInfo = rememberAudioDeviceInfo()
 
@@ -423,10 +438,11 @@ internal fun NowPlayingProgressSection(
     tabletLandscape: Boolean = false,
     progressRowModifier: Modifier = Modifier
 ) {
+    val playbackSource = LocalNowPlayingPlaybackSource.current
     val owner = remember(songKey) {
-        NowPlayingProgressOwner(PlayerManager.playbackPositionFlow.value)
+        NowPlayingProgressOwner(playbackSource.playbackPositionFlow.value)
     }
-    val currentPosition by PlayerManager.playbackPositionFlow.collectAsStateWithLifecycle()
+    val currentPosition by playbackSource.playbackPositionFlow.collectAsStateWithLifecycle()
     val effectivePreviewPositionMs = owner.previewPositionMs(currentPosition)
     val previewOverridePositionMs = owner.previewOverrideMs(currentPosition)
     val latestOnPreviewPositionChange by rememberUpdatedState(onPreviewPositionChange)
@@ -491,16 +507,7 @@ private fun NowPlayingProgressRow(
     lyricSeekHaptic: LyricSeekHapticFeedback,
     modifier: Modifier
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            text = formatDuration(effectivePreviewPositionMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    val slider: @Composable (Modifier) -> Unit = { sliderModifier ->
         NowPlayingSeekSlider(
             owner = owner,
             currentPosition = currentPosition,
@@ -514,15 +521,74 @@ private fun NowPlayingProgressRow(
             seekEnabled = seekEnabled,
             activeContentColor = activeContentColor,
             lyricSeekHaptic = lyricSeekHaptic,
-            modifier = Modifier.weight(1f)
+            modifier = sliderModifier
         )
+    }
+    if (NeriDesign.isClean) {
+        CleanNowPlayingProgressRow(effectivePreviewPositionMs, durationMs, owner.isDragging, modifier, slider)
+    } else {
+        MaterialNowPlayingProgressRow(effectivePreviewPositionMs, durationMs, modifier, slider)
+    }
+}
+
+/** Clean: 进度条占满整行, 时间收到下方两端, 拖动时已播放时间跟随强调 */
+@Composable
+private fun CleanNowPlayingProgressRow(
+    positionMs: Long,
+    durationMs: Long,
+    dragging: Boolean,
+    modifier: Modifier,
+    slider: @Composable (Modifier) -> Unit
+) {
+    Column(modifier = modifier) {
+        slider(Modifier.fillMaxWidth().height(CleanProgressTouchHeight))
+        Row(
+            modifier = Modifier.fillMaxWidth().offset(y = (-6).dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            val timeStyle = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum")
+            Text(
+                text = formatDuration(positionMs),
+                style = timeStyle,
+                color = if (dragging) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "-" + formatDuration((durationMs - positionMs).coerceAtLeast(0L)),
+                style = timeStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun MaterialNowPlayingProgressRow(
+    positionMs: Long,
+    durationMs: Long,
+    modifier: Modifier,
+    slider: @Composable (Modifier) -> Unit
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val timeStyle = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum")
+        Text(
+            text = formatDuration(positionMs),
+            style = timeStyle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        slider(Modifier.weight(1f))
         Text(
             text = formatDuration(durationMs),
-            style = MaterialTheme.typography.bodySmall,
+            style = timeStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
+
+private val CleanProgressTouchHeight = 32.dp
 
 internal fun nowPlayingProgressFraction(positionMs: Long, durationMs: Long): Float =
     if (durationMs > 0) positionMs.toFloat() / durationMs else 0f
@@ -532,18 +598,19 @@ private fun rememberNowPlayingSeekActions(
     owner: NowPlayingProgressOwner,
     lyricSeekHaptic: LyricSeekHapticFeedback
 ): NowPlayingSeekActionOwner {
-    return bindNowPlayingSeekActions(owner, lyricSeekHaptic, LocalContext.current)
+    return bindNowPlayingSeekActions(owner, lyricSeekHaptic, LocalContext.current, LocalNowPlayingPlaybackSource.current)
 }
 
 private fun bindNowPlayingSeekActions(
     owner: NowPlayingProgressOwner,
     lyricSeekHaptic: LyricSeekHapticFeedback,
-    context: Context
+    context: Context,
+    playbackSource: NowPlayingPlaybackSource
 ): NowPlayingSeekActionOwner = owner.bindSeekActions(
     lyricSeekHaptic::onSeekStart,
     lyricSeekHaptic::onSeekMove,
     lyricSeekHaptic::onSeekEnd,
-    { PlayerManager.seekTo(it) },
+    { playbackSource.seekTo(it) },
     context::performHapticFeedback
 )
 

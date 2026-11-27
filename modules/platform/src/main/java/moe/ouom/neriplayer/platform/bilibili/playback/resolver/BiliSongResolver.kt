@@ -26,6 +26,7 @@ package moe.ouom.neriplayer.platform.bilibili.playback.resolver
 import moe.ouom.neriplayer.data.model.bilibili.playback.ResolvedBiliSong
 import kotlinx.coroutines.CancellationException
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
+import moe.ouom.neriplayer.platform.bilibili.api.client.BiliVideoIdCodec
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoBasicInfo
 import moe.ouom.neriplayer.data.model.bilibili.video.VideoPage
 import moe.ouom.neriplayer.data.model.SongItem
@@ -33,6 +34,7 @@ import moe.ouom.neriplayer.data.model.SongSourceTags
 
 private val biliPartPrefixRegex = Regex("^\\d+\\.\\s*")
 private val biliPartSeparatorRegex = Regex("\\s[-\\u2013\\u2014]\\s")
+private val biliBvidRegex = Regex("BV[0-9A-Za-z]{10}")
 
 fun buildBiliSongAlbum(
     cid: Long? = null,
@@ -93,6 +95,12 @@ private fun parseBiliPartMetadata(part: String, fallbackArtist: String): Pair<St
 }
 
 suspend fun resolveBiliSong(song: SongItem, client: BiliClient): ResolvedBiliSong? {
+    val sourceBvid = song.biliBvidFromAudioIdOrNull()
+    if (sourceBvid != null) {
+        // 桌面同步的 id 是收藏记录的稳定键, 不能作为 avid 或旧版分 P 编码查询
+        return resolveByBvid(song, client, sourceBvid, preferredCid = song.biliCidOrNull())
+    }
+
     val resolutionSong = song.toBiliResolutionSongOrNull() ?: return null
 
     val storedCid = resolutionSong.biliCidOrNull()
@@ -144,6 +152,9 @@ fun SongItem.biliAvidOrNull(): Long? {
         album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)
     if (!isBiliSong) return null
 
+    biliBvidFromAudioIdOrNull()?.let { bvid ->
+        return BiliVideoIdCodec.bvidToAid(bvid).takeIf { it > 0L }
+    }
     return audioId
         ?.trim()
         ?.toLongOrNull()
@@ -173,11 +184,13 @@ fun SongItem.biliBvidOrNull(): String? {
         album.startsWith(SongSourceTags.BILIBILI, ignoreCase = true)
     if (!isBiliSong) return null
 
-    return album
-        .split('|')
-        .getOrNull(2)
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() }
+    return biliBvidFromAudioIdOrNull()
+        ?: album.split('|').getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+fun SongItem.biliBvidFromAudioIdOrNull(): String? {
+    if (!channelId.equals("bilibili", ignoreCase = true)) return null
+    return audioId?.trim()?.takeIf(biliBvidRegex::matches)
 }
 
 internal fun selectBiliPlaybackPage(

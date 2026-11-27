@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.stats
 
+import java.time.Instant
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatBucketEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatCounterShardEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatDailyCounterShardEntity
@@ -8,8 +9,9 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsDeltaRows
 import moe.ouom.neriplayer.data.local.database.store.stats.toDomain
 import moe.ouom.neriplayer.data.model.stats.TrackStat
-import moe.ouom.neriplayer.data.model.stats.playbackStatsDayStartAt
+import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatEntity
 import moe.ouom.neriplayer.data.sync.merge.stats.SyncPlaybackCounterArithmetic
+import moe.ouom.neriplayer.data.model.sync.mergeRecordedPlaybackDates
 
 internal object PlaybackStatsDeltaPolicy {
     private const val MIN_LISTEN_MS_FOR_PLAY_COUNT = 30_000L
@@ -28,26 +30,53 @@ internal object PlaybackStatsDeltaPolicy {
             firstPlayedAt = trackTotals.firstPlayedAt,
             lastPlayedAt = trackTotals.lastPlayedAt
         ).toEntity()
-        val day = playbackStatsDayStartAt(delta.playedAt)
-        val bucketTotals = currentBucket(rows, delta.epochStartedAt).totals() + session
-        val bucket = PlaybackStatBucketEntity(day, track.identityKey, track.id, track.name, track.artist, track.album,
-            track.albumId, track.coverUrl, track.durationMs, bucketTotals.listenMs, bucketTotals.playCount,
-            bucketTotals.lastPlayedAt, bucketTotals.firstPlayedAt,
-            track.mediaUri, track.localFilePath, track.localFileName, track.customName, track.customArtist, track.customCoverUrl)
+        val zone = delta.recordedZone()
+        val day = listeningDayStart(delta.playedAt, zone)
+        val endDayDuration = if (zone == null) delta.listenedMs else minOf(delta.listenedMs, delta.playedAt - day)
+        val (bucket, daily) = dailyRows(delta, track, day, endDayDuration, increment, delta.playedAt, rows.bucket, rows.dailyCounter)
         val counterTotals = rows.counter.totals() + session
         val counter = PlaybackStatCounterShardEntity(track.identityKey, delta.deviceId, delta.epochStartedAt,
             counterTotals.listenMs, counterTotals.playCount, counterTotals.firstPlayedAt, counterTotals.lastPlayedAt)
-        val dailyTotals = rows.dailyCounter.totals() + session
-        val daily = PlaybackStatDailyCounterShardEntity(day, track.identityKey, delta.deviceId, delta.epochStartedAt,
-            dailyTotals.listenMs, dailyTotals.playCount, dailyTotals.firstPlayedAt, dailyTotals.lastPlayedAt)
         return PlaybackStatsDeltaRows(track, bucket, counter, daily)
     }
 
+    fun dailyRows(
+        delta: PlaybackStatsPendingDeltaEntity,
+        track: PlaybackStatEntity,
+        day: Long,
+        listenedMs: Long,
+        playCount: Int,
+        playedAt: Long,
+        previousBucket: PlaybackStatBucketEntity?,
+        previousDaily: PlaybackStatDailyCounterShardEntity?
+    ): Pair<PlaybackStatBucketEntity, PlaybackStatDailyCounterShardEntity> {
+        val session = DeltaTotals(listenedMs, playCount, playedAt.coerceAtLeast(delta.epochStartedAt))
+        val prior = previousBucket?.takeIf { it.firstPlayedAt >= delta.epochStartedAt }
+        val zone = delta.recordedZone()
+        val recordedDate = zone?.let { Instant.ofEpochMilli(day).atZone(it).toLocalDate().toString() }
+        val increments = delta.hourIncrements(day, listenedMs, zone)
+        val hours = prior?.hourlyTotals.orEmpty().addHourIncrements(increments)
+        val covered = prior?.localHourlyTotals.orEmpty()
+        val localHours = if (covered == prior?.hourlyTotals.orEmpty()) hours else covered.addHourIncrements(increments)
+        val bucketTotals = prior.totals() + session
+        val bucket = PlaybackStatBucketEntity(day, track.identityKey, track.id, track.name, track.artist, track.album,
+            track.albumId, track.coverUrl, track.durationMs, bucketTotals.listenMs, bucketTotals.playCount,
+            bucketTotals.lastPlayedAt, bucketTotals.firstPlayedAt,
+            track.mediaUri, track.localFilePath, track.localFileName, track.customName, track.customArtist, track.customCoverUrl,
+            recordedDateAfterAppend(prior != null, prior?.recordedLocalDate, recordedDate), hours, localHours)
+        val dailyTotals = previousDaily.totals() + session
+        val daily = PlaybackStatDailyCounterShardEntity(day, track.identityKey, delta.deviceId, delta.epochStartedAt,
+            dailyTotals.listenMs, dailyTotals.playCount, dailyTotals.firstPlayedAt, dailyTotals.lastPlayedAt,
+            recordedDateAfterAppend(previousDaily != null, previousDaily?.recordedLocalDate, recordedDate))
+        return bucket to daily
+    }
+
+    // 已有计数缺少录制地时，新事件不能证明整段历史的日期
+    private fun recordedDateAfterAppend(hasPrevious: Boolean, previous: String?, recorded: String?): String? =
+        if (hasPrevious && previous == null) null else mergeRecordedPlaybackDates(previous, recorded)
+
     private fun previousTrack(rows: PlaybackStatsDeltaRows, epochStartedAt: Long): TrackStat? =
         rows.track?.toDomain()?.takeUnless { shouldStartNewStatsEpoch(it, epochStartedAt) }
-
-    private fun currentBucket(rows: PlaybackStatsDeltaRows, epochStartedAt: Long): PlaybackStatBucketEntity? =
-        rows.bucket?.takeIf { it.firstPlayedAt >= epochStartedAt }
 
     private fun resolvedDuration(metadata: TrackStat, previous: TrackStat?): Long =
         if (metadata.durationMs > 0) metadata.durationMs else previous?.durationMs ?: 0

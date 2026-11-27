@@ -170,6 +170,19 @@ class NowPlayingUnderlayOcclusionTest {
     }
 
     @Test
+    fun morphFramesReuseTheRecordedUnderlayWhileItStaysExposed() {
+        openPlayer()
+        composeRule.runOnIdle { visible = false }
+        advance(16L)
+        val exposed = composeRule.runOnIdle { draws.get() }
+        repeat(8) { advance(16L) }
+        composeRule.runOnIdle {
+            assertTrue("关闭动画应仍在进行", morph.progress.value in 0.001f..0.999f)
+            assertEquals("形变逐帧推进时应复用已录制的下层", exposed, draws.get())
+        }
+    }
+
+    @Test
     fun removingTheMorphBindingKeepsTheUnboundLayoutDrawing() {
         openPlayer()
         composeRule.runOnIdle { attachMorph = false }

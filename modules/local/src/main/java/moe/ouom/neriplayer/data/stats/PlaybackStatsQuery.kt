@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.data.stats
 
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
+import moe.ouom.neriplayer.data.model.stats.PlaybackStatsTimeRange
+import moe.ouom.neriplayer.data.model.stats.resolvePlaybackStatsTimeRange
 import moe.ouom.neriplayer.data.model.stats.TrackStat
 
 enum class PlaybackStatsSort { PLAY_COUNT, LISTEN_TIME, RECENT, FIRST_PLAYED }
@@ -10,8 +12,11 @@ data class PlaybackStatsQuery(
     val sort: PlaybackStatsSort = PlaybackStatsSort.PLAY_COUNT,
     val minimumListenMs: Long = 0,
     val requirePlayCount: Boolean = false,
-    val nowMillis: Long = System.currentTimeMillis()
-)
+    val nowMillis: Long = System.currentTimeMillis(),
+    val range: PlaybackStatsTimeRange? = null
+) {
+    val resolvedRange: PlaybackStatsTimeRange get() = range ?: period.resolvePlaybackStatsTimeRange(nowMillis)
+}
 
 data class PlaybackStatsSummary(
     val trackCount: Long = 0,

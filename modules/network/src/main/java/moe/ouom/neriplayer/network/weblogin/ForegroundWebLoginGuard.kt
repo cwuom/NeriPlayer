@@ -20,6 +20,26 @@ object ForegroundWebLoginGuard {
         return Token(normalizedOwner)
     }
 
+    class Launcher(private val owner: String) : AutoCloseable {
+        private var token: AutoCloseable? = null
+
+        fun launch(start: () -> Unit) {
+            if (token != null) return
+            token = enter(owner)
+            try {
+                start()
+            } catch (error: RuntimeException) {
+                close()
+                throw error
+            }
+        }
+
+        override fun close() {
+            token?.close()
+            token = null
+        }
+    }
+
     private class Token(
         private val owner: String
     ) : AutoCloseable {

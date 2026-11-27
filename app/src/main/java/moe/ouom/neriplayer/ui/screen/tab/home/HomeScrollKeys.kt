@@ -22,15 +22,13 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2026/10/16
  */
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import java.util.Locale
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
-import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 
 /**
  * 首页滚动锚点 key。LazyGrid item 的 key 需要在重组之间保持稳定，
@@ -42,18 +40,56 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 
 internal const val HomeScrollKeyContinueHeader = "home:continue:header"
 internal const val HomeScrollKeyContinueContent = "home:continue:content"
-internal const val HomeScrollKeyYtGuess = "home:ytmusic:guess"
-internal const val HomeScrollKeyYtDaily = "home:ytmusic:daily"
-internal const val HomeScrollKeyYtMoreHeader = "home:ytmusic:more:header"
-internal const val HomeScrollKeyYtMoreLoading = "home:ytmusic:more:loading"
-internal const val HomeScrollKeyYtMoreError = "home:ytmusic:more:error"
-internal const val HomeScrollKeyYtShelvesLoading = "home:ytmusic:shelves:loading"
-internal const val HomeScrollKeyYtShelvesError = "home:ytmusic:shelves:error"
-internal const val HomeScrollKeyYtEmptyFeedLoading = "home:ytmusic:empty-feed:loading"
-internal const val HomeScrollKeyYtEmptyFeedError = "home:ytmusic:empty-feed:error"
 internal const val HomeScrollKeyNeteaseRadarPlaylists = "home:netease:radar-playlists"
 internal const val HomeScrollKeyNeteaseRadarPlaylistsHeader = "$HomeScrollKeyNeteaseRadarPlaylists:header"
 internal const val HomeScrollKeyNeteaseRadarPlaylistsContent = "$HomeScrollKeyNeteaseRadarPlaylists:content"
+
+internal const val HomeContentTypeHeader = "home:header"
+internal const val HomeContentTypeContinue = "home:continue"
+internal const val HomeContentTypeSongPager = "home:song-pager"
+internal const val HomeContentTypeRadarPlaylists = "home:radar-playlists"
+internal const val HomeContentTypeRadarPlaylistCard = "home:radar-playlist-card"
+internal const val HomeContentTypeBiliHeader = "home:bili-header"
+internal const val HomeContentTypeBiliRankHeader = "home:bili-rank-header"
+internal const val HomeContentTypeBiliRankStrip = "home:bili-rank-strip"
+internal const val HomeContentTypeBiliRankCard = "home:bili-rank-card"
+internal const val HomeContentTypeBiliHotStrip = "home:bili-hot-strip"
+internal const val HomeContentTypeBiliHotCard = "home:bili-hot-card"
+internal const val HomeContentTypePlaylistCard = "home:playlist-card"
+internal const val HomeContentTypeLoading = "home:loading"
+internal const val HomeContentTypeError = "home:error"
+
+/** 首页及其"更多"二级页共用的网格尺寸, 保证两处卡片大小与间距一致 */
+internal data class HomeGridSpec(
+    val pageHorizontalPadding: Dp,
+    val contentPadding: Dp,
+    val spacing: Dp,
+    val minCellSize: Dp,
+    val twoColumnPhone: Boolean
+) {
+    val columns: GridCells
+        get() = if (twoColumnPhone) HomePhoneGridCells(minCellSize) else GridCells.Adaptive(minCellSize)
+}
+
+// clean style trades a little density for calmer rhythm: wider gutters, larger tablet tiles
+internal fun homeGridSpec(tabletLayout: Boolean, clean: Boolean): HomeGridSpec = HomeGridSpec(
+    pageHorizontalPadding = if (tabletLayout) 28.dp else 16.dp,
+    contentPadding = if (tabletLayout) 14.dp else 8.dp,
+    spacing = when {
+        tabletLayout && clean -> 18.dp
+        tabletLayout -> 14.dp
+        clean -> 14.dp
+        else -> 10.dp
+    },
+    minCellSize = when {
+        tabletLayout && clean -> 172.dp
+        tabletLayout -> 156.dp
+        // two large tiles per row on phones reads calmer than three thumbnails
+        clean -> 150.dp
+        else -> 120.dp
+    },
+    twoColumnPhone = clean && !tabletLayout
+)
 
 /**
  * 首页 Clean 风格的手机网格：至少两列，避免 20dp 页边距下自适应格只剩一列。
@@ -98,24 +134,4 @@ internal fun homeNeteasePlaylistScrollKey(
 
 internal fun homeNeteaseRadarPlaylistScrollKey(id: Long): String {
     return "$HomeScrollKeyNeteaseRadarPlaylists:playlist:$id"
-}
-
-internal fun homeYtMusicPlaylistScrollKey(playlist: YouTubeMusicPlaylist): String {
-    return "home:ytmusic:playlist:${playlist.favoriteId()}"
-}
-
-internal fun homeYtMusicShelfScrollKey(
-    shelfIndex: Int,
-    title: String
-): String {
-    return "home:ytmusic:shelf:$shelfIndex:${title.hashCode()}"
-}
-
-internal fun homeYtMusicHomeItemScrollKey(
-    shelfKey: String,
-    itemIndex: Int,
-    item: YouTubeMusicHomeItem
-): String {
-    val stableId = item.browseId.ifBlank { item.videoId }.ifBlank { item.title }
-    return "$shelfKey:item:$itemIndex:${stableId.hashCode()}"
 }

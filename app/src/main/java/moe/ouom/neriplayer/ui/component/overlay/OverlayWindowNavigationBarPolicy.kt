@@ -67,7 +67,7 @@ internal fun ApplyOverlayWindowNavigationBarPolicy() {
     }
 }
 
-private fun View.findOverlayDialogWindow(): Window? {
+internal fun View.findOverlayDialogWindow(): Window? {
     var current: View? = this
     while (current != null) {
         if (current is DialogWindowProvider) return current.window

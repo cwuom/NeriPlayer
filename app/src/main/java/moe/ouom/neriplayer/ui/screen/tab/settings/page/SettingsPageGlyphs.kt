@@ -36,7 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /** Clean-style section glyph: a rounded white symbol on its own hue, as in system settings. */
 internal data class SettingsPageGlyph(val icon: ImageVector, val tint: Color)
@@ -60,7 +60,7 @@ internal fun SettingsPage.cleanGlyph(): SettingsPageGlyph = when (this) {
     SettingsPage.Accounts -> SettingsPageGlyph(Icons.Rounded.AccountCircle, Indigo)
     SettingsPage.MusicServers -> SettingsPageGlyph(Icons.Rounded.Storage, Indigo)
     SettingsPage.General -> SettingsPageGlyph(Icons.Rounded.Settings, Graphite)
-    SettingsPage.Language -> SettingsPageGlyph(Icons.Rounded.Translate, Blue)
+    SettingsPage.Language, SettingsPage.Content -> SettingsPageGlyph(Icons.Rounded.Translate, Blue)
     SettingsPage.Playback -> SettingsPageGlyph(Icons.Rounded.PlayCircle, Red)
     SettingsPage.AudioQuality -> SettingsPageGlyph(Icons.Rounded.HighQuality, Orange)
     SettingsPage.AudioEffects -> SettingsPageGlyph(Icons.Rounded.GraphicEq, Pink)
@@ -94,7 +94,7 @@ internal fun SettingsPageGlyphTile(
     Box(
         modifier = modifier
             .size(size)
-            .clip(ContinuousRoundedCornerShape(size * 0.28f))
+            .clip(RoundedCornerShape(size * 0.28f))
             .background(glyph.tint),
         contentAlignment = Alignment.Center
     ) {

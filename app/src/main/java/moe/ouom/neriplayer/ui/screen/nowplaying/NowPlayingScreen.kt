@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
  * Updated: 2026/3/23
  */
 
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -42,7 +45,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,12 +54,14 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -110,8 +114,6 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
-import moe.ouom.neriplayer.core.player.heartbeat.cycleHeartbeatMode
-import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeFlow
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -142,6 +144,7 @@ import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.lyrics.LyricShareSheet
 import moe.ouom.neriplayer.ui.component.comment.CommentSheet
+import moe.ouom.neriplayer.ui.component.comment.clampCommentTimestampPosition
 import moe.ouom.neriplayer.ui.component.playback.PlaybackControlIndicator
 import moe.ouom.neriplayer.ui.component.playback.scaleButtonSize
 import moe.ouom.neriplayer.ui.component.playback.scaleIconSize
@@ -149,7 +152,7 @@ import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
-import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
+import moe.ouom.neriplayer.ui.screen.nowplaying.actions.NeteaseCollectionFeedbackHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
@@ -159,10 +162,10 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
-import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
+import moe.ouom.neriplayer.ui.component.playback.NeriPlayPauseButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
-import moe.ouom.neriplayer.ui.screen.lyrics.isSystemPowerSaveMode
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsSecondaryLineMode
 import moe.ouom.neriplayer.ui.screen.lyrics.hasDisplayableLyricTranslation
 import moe.ouom.neriplayer.ui.screen.lyrics.resolveEffectivePhoneticLyrics
@@ -194,7 +197,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricPlayb
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingTrailingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingSyncedLyricContent
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingCoverPanelModifier
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingParentSizedCover
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.rememberNowPlayingCoverOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwnerKey
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
@@ -413,15 +416,6 @@ internal fun hasCachedLocalDownload(song: SongItem): Boolean {
     return hasPublishedManagedDownload(song)
 }
 
-private fun seekToLyricSafely(
-    positionMs: Long,
-    playbackDurationMs: Long,
-    songDurationMs: Long
-) {
-    val knownDurationMs = maxOf(playbackDurationMs, songDurationMs)
-    resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(PlayerManager::seekTo)
-}
-
 @Composable
 private fun NowPlayingImmersivePortraitLayout(
     modifier: Modifier,
@@ -432,10 +426,10 @@ private fun NowPlayingImmersivePortraitLayout(
     trailingContent: @Composable ColumnScope.() -> Unit
 ) {
     Layout(
-        modifier = modifier,
+        modifier = modifier.testTag("nowPlayingImmersivePortraitLayout"),
         content = {
             Box { topBar() }
-            Box { cover() }
+            Box(Modifier.testTag("nowPlayingImmersiveCover")) { cover() }
             Column(horizontalAlignment = Alignment.CenterHorizontally, content = leadingContent)
             Column(horizontalAlignment = Alignment.CenterHorizontally, content = trailingContent)
         }
@@ -496,34 +490,37 @@ fun NowPlayingScreen(
 ) {
     val coverLyricFontScale = lyricFontScales.coverLyric
     val coverTranslationFontScale = lyricFontScales.coverTranslation
-    val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
-    val isPlaying by PlayerManager.isPlayingFlow.collectAsStateWithLifecycle()
-    val isPlaybackControlPlaying by PlayerManager.playbackControlPlayingFlow.collectAsStateWithLifecycle()
-    val isAudioRouteMuted by PlayerManager.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
-    val usbPlaybackPreparing by PlayerManager.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
+    val playbackSource = LocalNowPlayingPlaybackSource.current
+    val currentSong by playbackSource.currentSongFlow.collectAsStateWithLifecycle()
+    val isPlaying by playbackSource.isPlayingFlow.collectAsStateWithLifecycle()
+    val isPlaybackControlPlaying by playbackSource.playbackControlPlayingFlow.collectAsStateWithLifecycle()
+    val lanControls = moe.ouom.neriplayer.ui.component.playback.lan.rememberLanPlaybackControls()
+    val isAudioRouteMuted by playbackSource.audioRouteMuteSuppressedFlow.collectAsStateWithLifecycle()
+    val usbPlaybackPreparing by playbackSource.usbExclusivePlaybackPreparingFlow.collectAsStateWithLifecycle()
     val isPlaybackWaiting = resolvePlaybackWaiting(
         playbackRequested = isPlaybackControlPlaying,
         isPlaying = isPlaying,
-        usbPlaybackPreparing = usbPlaybackPreparing
+        usbPlaybackPreparing = usbPlaybackPreparing,
+        lanPreparing = lanControls.preparing
     )
-    val shuffleEnabled by PlayerManager.shuffleModeFlow.collectAsStateWithLifecycle()
-    val repeatMode by PlayerManager.repeatModeFlow.collectAsStateWithLifecycle()
-    val heartbeatMode by PlayerManager.heartbeatModeFlow.collectAsStateWithLifecycle()
+    val shuffleEnabled by playbackSource.shuffleModeFlow.collectAsStateWithLifecycle()
+    val repeatMode by playbackSource.repeatModeFlow.collectAsStateWithLifecycle()
+    val heartbeatMode by playbackSource.heartbeatModeFlow.collectAsStateWithLifecycle()
     val heartbeatEnabled = heartbeatMode == HeartbeatMode.ON
-    val durationMs by PlayerManager.playbackDurationFlow.collectAsStateWithLifecycle()
-    val sleepTimerState by PlayerManager.sleepTimerManager.timerState.collectAsStateWithLifecycle()
-    val currentPlaybackAudioInfo by PlayerManager.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
-    val preferredQualityKeys by PlayerManager.preferredQualityKeys.collectAsStateWithLifecycle()
-    val playbackSoundState by PlayerManager.playbackSoundStateFlow.collectAsStateWithLifecycle()
+    val durationMs by playbackSource.playbackDurationFlow.collectAsStateWithLifecycle()
+    val sleepTimerState by playbackSource.sleepTimerStateFlow.collectAsStateWithLifecycle()
+    val currentPlaybackAudioInfo by playbackSource.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
+    val preferredQualityKeys by playbackSource.preferredQualityKeys.collectAsStateWithLifecycle()
+    val playbackSoundState by playbackSource.playbackSoundStateFlow.collectAsStateWithLifecycle()
     val settingsRepo = remember { AppContainer.settingsRepo }
     val themeSeedColorHex by settingsRepo.themeSeedColorFlow.collectAsStateWithLifecycle(
         initialValue = ThemeDefaults.DEFAULT_SEED_COLOR_HEX
     )
     val preferWordTimedLyrics by settingsRepo.preferWordTimedLyricsFlow
-        .collectAsStateWithLifecycle(initialValue = PlayerManager.preferWordTimedLyrics)
+        .collectAsStateWithLifecycle(initialValue = playbackSource.preferWordTimedLyrics)
     val defaultLyricSource by settingsRepo.defaultLyricSourceFlow
-        .collectAsStateWithLifecycle(initialValue = PlayerManager.defaultLyricSource)
-    val lyricsPreferenceRevision by PlayerManager.lyricsPreferenceRevisionFlow
+        .collectAsStateWithLifecycle(initialValue = playbackSource.defaultLyricSource)
+    val lyricsPreferenceRevision by playbackSource.lyricsPreferenceRevisionFlow
         .collectAsStateWithLifecycle()
     val targetNowPlayingColorScheme = LocalNeriTargetColorScheme.current
     val targetNowPlayingActiveIconColor = resolveNowPlayingActiveIconColor(
@@ -538,7 +535,7 @@ fun NowPlayingScreen(
     val listenTogetherSessionManager = remember { AppContainer.listenTogetherSessionManager }
     val listenTogetherSessionState by listenTogetherSessionManager.sessionState.collectAsStateWithLifecycle()
     val listenTogetherRoomState by listenTogetherSessionManager.roomState.collectAsStateWithLifecycle()
-    val playbackProgressSeekEnabled = resolveListenTogetherProgressSeekEnabled(
+    val playbackProgressSeekEnabled = lanControls.permissions.seek && resolveListenTogetherProgressSeekEnabled(
         sessionUserUuid = listenTogetherSessionState.userUuid,
         fallbackRole = listenTogetherSessionState.role,
         roomId = listenTogetherSessionState.roomId,
@@ -546,6 +543,12 @@ fun NowPlayingScreen(
         controllerUserId = listenTogetherRoomState?.controllerUserId,
         allowMemberControl = listenTogetherRoomState?.settings?.allowMemberControl
     )
+    val onLyricSeek: (Long) -> Unit = { positionMs ->
+        if (lanControls.permissions.seek) {
+            val knownDurationMs = maxOf(durationMs, currentSong?.durationMs ?: 0L)
+            resolveLyricSeekPosition(positionMs, knownDurationMs)?.let(playbackSource::seekTo)
+        }
+    }
     val showProgressQualitySwitch by settingsRepo
         .nowPlayingProgressShowQualitySwitchFlow
         .collectAsStateWithLifecycle(initialValue = true)
@@ -578,7 +581,7 @@ fun NowPlayingScreen(
         .collectAsStateWithLifecycle(initialValue = false)
 
     // 订阅当前播放链接
-    val currentMediaUrl by PlayerManager.currentMediaUrlFlow.collectAsStateWithLifecycle()
+    val currentMediaUrl by playbackSource.currentMediaUrlFlow.collectAsStateWithLifecycle()
     val isFromNeteaseTag =
         currentSong?.album?.startsWith(PlayerManager.NETEASE_SOURCE_TAG) == true
     val isFromBiliTag =
@@ -598,8 +601,8 @@ fun NowPlayingScreen(
     }
     var playbackSourceType by remember { mutableStateOf<PlaybackSourceType?>(null) }
 
-    val playlists by PlayerManager.playlistsFlow.collectAsStateWithLifecycle()
-    val localPlaylistsReady by PlayerManager.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
+    val playlists by playbackSource.playlistsFlow.collectAsStateWithLifecycle()
+    val localPlaylistsReady by playbackSource.localPlaylistsReadyFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val composeResources = LocalResources.current
     val downloadPresenceVersion by GlobalDownloadManager.downloadPresenceVersion.collectAsStateWithLifecycle()
@@ -664,8 +667,8 @@ fun NowPlayingScreen(
     }
     val isFavorite = favOverride ?: isFavoriteComputed
 
-    val queue by PlayerManager.currentQueueFlow.collectAsStateWithLifecycle()
-    val queueDisplayRevision by PlayerManager.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
+    val queue by playbackSource.currentQueueFlow.collectAsStateWithLifecycle()
+    val queueDisplayRevision by playbackSource.currentQueueDisplayRevisionFlow.collectAsStateWithLifecycle()
 
     var showAddSheet by remember { mutableStateOf(false) }
     var showQueueSheet by remember { mutableStateOf(false) }
@@ -771,14 +774,14 @@ fun NowPlayingScreen(
 
     // 控制音量弹窗的显示
     var showVolumeSheet by remember { mutableStateOf(false) }
-    val volumeSheetState = rememberModalBottomSheetState()
 
     val currentLyricSourceKey = currentSong?.stableKey()
     val lyricsLoadOwner = rememberNowPlayingLyricsLoadOwner(
         request = NowPlayingLyricsLoadRequest(context, currentSong, currentMediaUrl,
             preferWordTimedLyrics, defaultLyricSource, cachedPreferredLyrics = null),
         versions = NowPlayingLyricsRefreshVersions(lyricsPreferenceRevision,
-            downloadPresenceVersion, downloadedLyricsRefreshVersion)
+            downloadPresenceVersion, downloadedLyricsRefreshVersion),
+        stages = playbackSource.lyricsStages
     )
     val loadedLyricsState = lyricsLoadOwner.state
     val secondaryLyricsResolved = lyricsLoadOwner.secondaryResolved
@@ -973,7 +976,7 @@ fun NowPlayingScreen(
     }
     val queueDisplayState = if (showQueueSheet || showMoreOptions || lyricShareInitialLine != null) {
         remember(queue, currentSong, shuffleEnabled, queueDisplayRevision) {
-            PlayerManager.currentQueueDisplaySnapshot()
+            playbackSource.currentQueueDisplaySnapshot()
         }
     } else {
         PlayerQueueDisplayState.EMPTY
@@ -1074,14 +1077,14 @@ fun NowPlayingScreen(
         compactWideLayout = windowWidthDp < 720.dp,
         compactPortrait = useCompactPortraitLayout
     )
-    val lowPowerLyricsRendering = remember(context, effectiveShowLyricsScreen) { context.isSystemPowerSaveMode() }
+    val lowPowerLyricsRendering = rememberSystemPowerPressure().reduceOptionalEffects
 
     // 歌词偏移 (平台 + 用户自定义)
     val totalOffset = rememberNowPlayingLyricOffset(
         repository = settingsRepo,
         song = currentSong,
         preferredSource = loadedPreferredLyricSource,
-        isBiliCcSubtitleLyrics = PlayerManager.isBiliCcSubtitleLyricsActive(currentSong)
+        isBiliCcSubtitleLyrics = playbackSource.isBiliCcSubtitleLyricsActive(currentSong)
     )
     val progressInfoPresentation = remember(
         currentPlaybackAudioInfo,
@@ -1187,13 +1190,7 @@ fun NowPlayingScreen(
                                 onLyricFontScaleChange = onLyricFontScaleChange,
                                 onExitNowPlaying = onNavigateUp,
                                 onNavigateBack = { onShowLyricsScreenChange(false) },
-                                onSeekTo = { position ->
-                                    seekToLyricSafely(
-                                        positionMs = position,
-                                        playbackDurationMs = durationMs,
-                                        songDurationMs = currentSong?.durationMs ?: 0L
-                                    )
-                                },
+                                onSeekTo = onLyricSeek,
                                 progressSeekEnabled = playbackProgressSeekEnabled,
                                 advancedLyricsEnabled = advancedLyricsEnabled,
                                 translatedLyrics = translatedLyrics,
@@ -1269,25 +1266,19 @@ fun NowPlayingScreen(
 
                             // 手机横屏仍可左右切页，平板分栏不再切换隐藏的歌词子页
                             if (phoneLandscape && (isLyricsMode || lyrics.isNotEmpty())) {
-                                contentModifier = contentModifier.pointerInput(isLyricsMode, lyrics) {
-                                    var horizontalDragDistance = 0f
-                                    detectHorizontalDragGestures(
-                                        onDragStart = { horizontalDragDistance = 0f }
-                                    ) { _, dragAmount ->
-                                        horizontalDragDistance += dragAmount
-                                        if (isLyricsMode && horizontalDragDistance > 60f) {
-                                            onShowLyricsScreenChange(false)
-                                        } else if (!isLyricsMode && horizontalDragDistance < -60f) {
-                                            onShowLyricsScreenChange(true)
-                                        }
+                                contentModifier = contentModifier.nowPlayingPageSwipe(
+                                    key = lyrics,
+                                    direction = if (isLyricsMode) {
+                                        NowPlayingPageSwipeDirection.Right
+                                    } else {
+                                        NowPlayingPageSwipeDirection.Left
                                     }
-                                }
+                                ) { onShowLyricsScreenChange(!isLyricsMode) }
                             } else if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
-                                contentModifier = contentModifier.pointerInput(lyrics) {
-                                    detectHorizontalDragGestures { _, dragAmount ->
-                                        if (dragAmount < -20) onShowLyricsScreenChange(true)
-                                    }
-                                }
+                                contentModifier = contentModifier.nowPlayingPageSwipe(
+                                    key = lyrics,
+                                    direction = NowPlayingPageSwipeDirection.Left
+                                ) { onShowLyricsScreenChange(true) }
                             }
 
                             val mainPlaybackControls: @Composable () -> Unit = {
@@ -1306,17 +1297,17 @@ fun NowPlayingScreen(
                                                     (controlsLayout.secondaryButtonSize.value /
                                                             secondaryControlButtonSize.value)
                                             ).coerceAtLeast(18.dp)
-                                    val primaryIconSize = (
-                                            nowPlayingMainControlIconSize *
-                                                    (controlsLayout.primaryButtonSize.value /
-                                                            primaryControlButtonSize.value)
-                                            ).coerceAtLeast(18.dp)
+                                    // Clean 的上一首/下一首也没有底座, 字形放大一档与主键呼应
+                                    val skipIconSize = if (NeriDesign.isClean) secondaryIconSize * 1.25f else secondaryIconSize
+                                    // 主键按自身尺寸给字形, Clean 没有底座所以字形更大
+                                    val primaryIconSize = (controlsLayout.primaryButtonSize *
+                                            nowPlayingPrimaryGlyphRatio(NeriDesign.isClean)).coerceAtLeast(20.dp)
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(controlsLayout.spacing),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         HapticIconButton(
-                                            onClick = { PlayerManager.setShuffle(!shuffleEnabled) },
+                                            onClick = { playbackSource.setShuffle(!shuffleEnabled) },
                                             modifier = Modifier.size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
@@ -1332,7 +1323,8 @@ fun NowPlayingScreen(
                                         }
 
                                         HapticIconButton(
-                                            onClick = { PlayerManager.previous() },
+                                            onClick = { playbackSource.previous() },
+                                            enabled = lanControls.permissions.seek,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1344,15 +1336,16 @@ fun NowPlayingScreen(
                                                 .size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
-                                                Icons.Outlined.SkipPrevious,
+                                                if (NeriDesign.isClean) Icons.Rounded.SkipPrevious else Icons.Outlined.SkipPrevious,
                                                 contentDescription = stringResource(CoreCommonR.string.player_previous),
-                                                modifier = Modifier.size(secondaryIconSize)
+                                                modifier = Modifier.size(skipIconSize)
                                             )
                                         }
 
-                                        HapticFilledIconButton(
-                                            onClick = { PlayerManager.togglePlayPause() },
-                                            enabled = !usbPlaybackPreparing,
+                                        NeriPlayPauseButton(
+                                            isPlaying = isPlaybackControlPlaying,
+                                            onClick = { playbackSource.togglePlayPause() },
+                                            enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                                             modifier = Modifier
                                                 .nowPlayingLongPress(toggleImmersiveMode)
                                                 .sharedElement(
@@ -1373,12 +1366,14 @@ fun NowPlayingScreen(
                                                 restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                                                 waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                                                 modifier = Modifier.size(primaryIconSize),
-                                                progressIndicatorSize = primaryIconSize
+                                                progressIndicatorSize = nowPlayingWaitingIndicatorSize(controlsLayout.primaryButtonSize),
+                                                iconSize = primaryIconSize
                                             )
                                         }
 
                                         HapticIconButton(
-                                            onClick = { PlayerManager.next() },
+                                            onClick = { playbackSource.next() },
+                                            enabled = lanControls.permissions.seek,
                                             modifier = Modifier
                                                 .sharedElement(
                                                     rememberSharedContentState(
@@ -1390,14 +1385,14 @@ fun NowPlayingScreen(
                                                 .size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
-                                                Icons.Outlined.SkipNext,
+                                                if (NeriDesign.isClean) Icons.Rounded.SkipNext else Icons.Outlined.SkipNext,
                                                 contentDescription = stringResource(CoreCommonR.string.player_next),
-                                                modifier = Modifier.size(secondaryIconSize)
+                                                modifier = Modifier.size(skipIconSize)
                                             )
                                         }
 
                                         HapticIconButton(
-                                            onClick = { PlayerManager.cycleRepeatMode() },
+                                            onClick = { playbackSource.cycleRepeatMode() },
                                             modifier = Modifier.size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
@@ -1462,7 +1457,7 @@ fun NowPlayingScreen(
                                         warnForLocalSync = shouldConfirmFavoriteSync(song, willFav, context)
                                     ) {
                                         favOverride = willFav
-                                        PlayerManager.toggleCurrentFavorite()
+                                        playbackSource.toggleCurrentFavorite()
                                     }
                                 }
                             }
@@ -1474,36 +1469,36 @@ fun NowPlayingScreen(
                                 }
                             }
                             val onEmbeddedLyricClick: (LyricEntry) -> Unit = { entry ->
-                                seekToLyricSafely(
-                                    positionMs = entry.startTimeMs,
-                                    playbackDurationMs = durationMs,
-                                    songDurationMs = currentSong?.durationMs ?: 0L
-                                )
+                                onLyricSeek(entry.startTimeMs)
                             }
+                            // 引导预览不开放会改动真实数据的二级入口
+                            val secondaryActionsEnabled = playbackSource.secondaryActionsEnabled
+                            fun secondaryAction(action: () -> Unit): () -> Unit =
+                                if (secondaryActionsEnabled) action else ({})
                             val onEmbeddedLyricLongClick: (LyricEntry) -> Unit = { entry ->
-                                lyricShareInitialLine = entry
+                                if (secondaryActionsEnabled) lyricShareInitialLine = entry
                             }
-                            val onCoverComment: () -> Unit = { showCommentSheet = true }
-                            val onCoverMoreOptions: () -> Unit = {
+                            val onCoverComment: () -> Unit = secondaryAction { showCommentSheet = true }
+                            val onCoverMoreOptions: () -> Unit = secondaryAction {
                                 startMoreOptionsWithLyricBehavior = false
                                 showMoreOptions = true
                             }
                             val coverToolbarActions = NowPlayingCoverToolbarActions(
-                                onQueue = { showQueueSheet = true },
-                                onSleepTimer = { showSleepTimerDialog = true },
-                                onVolume = { showVolumeSheet = true },
+                                onQueue = secondaryAction { showQueueSheet = true },
+                                onSleepTimer = secondaryAction { showSleepTimerDialog = true },
+                                onVolume = secondaryAction { showVolumeSheet = true },
                                 onLyrics = if (immersiveMode && !tabletLandscape) {
                                     { onShowLyricsScreenChange(!showLyricsScreen) }
                                 } else resolveNowPlayingLyricsToolbarAction(
                                     lyricsAdjustBehavior = lyricsAdjustBehavior,
-                                    onAdjust = {
+                                    onAdjust = secondaryAction {
                                         startMoreOptionsWithLyricBehavior = true
                                         showMoreOptions = true
                                     },
                                     onSwitchPage = { onShowLyricsScreenChange(!showLyricsScreen) }
                                 ),
-                                onAddToPlaylist = { showAddSheet = true },
-                                onHeartbeat = { PlayerManager.cycleHeartbeatMode() }
+                                onAddToPlaylist = secondaryAction { showAddSheet = true },
+                                onHeartbeat = secondaryAction { playbackSource.cycleHeartbeatMode() }
                             )
 
                             val coverTopBar: @Composable () -> Unit = {
@@ -1644,7 +1639,7 @@ fun NowPlayingScreen(
                                 blurAmount = lyricBlurAmount
                             )
                             val embeddedLyricPlayback = NowPlayingSyncedLyricPlayback(
-                                positionFlow = PlayerManager.playbackPositionFlow,
+                                positionFlow = playbackSource.playbackPositionFlow,
                                 previewPositionMs = previewPositionOverrideMs,
                                 isPlaying = isPlaying,
                                 speed = playbackSoundState.speed
@@ -1678,19 +1673,13 @@ fun NowPlayingScreen(
                                     nowPlayingProgressSection,
                                     mainPlaybackControls
                                 )
+                                // 竖屏平板只有沉浸模式会走到这里, 底部工具栏和控件之间留出呼吸空间
+                                if (tabletPortrait) Spacer(Modifier.height(NowPlayingTabletImmersiveToolbarSpacing))
                                 coverToolbar(false)
                             }
 
                             // 手机竖屏保留原来的控件顺序和封面歌词
-                            val mainColumnContent: @Composable ColumnScope.() -> Unit = {
-                                coverTopBar()
-                                Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
-                                coverPanel(
-                                    Modifier.nowPlayingCoverPanelModifier(false, this),
-                                    coverPagePresentation.preferredCoverSize
-                                )
-                                portraitLeadingContent()
-
+                            val portraitMiddleContent: @Composable ColumnScope.() -> Unit = {
                                 NowPlayingEmbeddedLyrics(
                                     visible = embeddedLyricsVisible,
                                     content = embeddedLyricContent,
@@ -1701,8 +1690,6 @@ fun NowPlayingScreen(
 
                                 // 置底偏好始终以可用内容区的底部为准
                                 Spacer(modifier = Modifier.weight(1f))
-
-                                portraitTrailingContent()
                             }
 
                             if (useWideLandscapeLayout) {
@@ -1732,13 +1719,7 @@ fun NowPlayingScreen(
                                         playback = embeddedLyricPlayback,
                                         lowPowerRendering = lowPowerLyricsRendering,
                                         actions = embeddedLyricActions,
-                                        onSeekTo = { position ->
-                                            seekToLyricSafely(
-                                                positionMs = position,
-                                                playbackDurationMs = durationMs,
-                                                songDurationMs = currentSong?.durationMs ?: 0L
-                                            )
-                                        }
+                                        onSeekTo = onLyricSeek
                                     )
                                 }
                                 Box(modifier = contentModifier) {
@@ -1757,7 +1738,7 @@ fun NowPlayingScreen(
                                         phoneTopActions = coverTopActions
                                     )
                                 }
-                            } else if (tabletPortrait) {
+                            } else if (shouldUseNowPlayingTabletPortraitLayout(tabletPortrait, immersiveMode)) {
                                 Box(modifier = contentModifier) {
                                     NowPlayingTabletPortraitLayout(
                                         controlsAtBottom = nowPlayingControlsAtBottom,
@@ -1782,19 +1763,37 @@ fun NowPlayingScreen(
                                     )
                                 }
                             } else if (immersiveMode || useCompactPortraitLayout) {
-                                NowPlayingImmersivePortraitLayout(
+                                val immersiveLayout: @Composable (Modifier) -> Unit = { modifier ->
+                                    NowPlayingImmersivePortraitLayout(
+                                        modifier = modifier,
+                                        beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
+                                        topBar = coverTopBar,
+                                        cover = { coverPanel(Modifier, coverPagePresentation.preferredCoverSize) },
+                                        leadingContent = portraitLeadingContent,
+                                        trailingContent = portraitTrailingContent
+                                    )
+                                }
+                                if (tabletPortrait) {
+                                    // 封面和控件按手机比例铺满整个平板宽度会过大, 收在由封面边长决定的宽度里居中
+                                    BoxWithConstraints(modifier = contentModifier, contentAlignment = Alignment.TopCenter) {
+                                        immersiveLayout(
+                                            Modifier
+                                                .width(resolveNowPlayingTabletImmersiveContentWidth(maxWidth, maxHeight))
+                                                .fillMaxHeight()
+                                        )
+                                    }
+                                } else {
+                                    immersiveLayout(contentModifier)
+                                }
+                            } else {
+                                NowPlayingPhonePortraitLayout(
                                     modifier = contentModifier,
                                     beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
                                     topBar = coverTopBar,
-                                    cover = { coverPanel(Modifier, coverPagePresentation.preferredCoverSize) },
+                                    cover = { coverPanel(Modifier, NowPlayingParentSizedCover) },
                                     leadingContent = portraitLeadingContent,
+                                    middleContent = portraitMiddleContent,
                                     trailingContent = portraitTrailingContent
-                                )
-                            } else {
-                                Column(
-                                    modifier = contentModifier,
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    content = mainColumnContent
                                 )
                             }
 
@@ -1835,15 +1834,8 @@ fun NowPlayingScreen(
                             }
                         }
 
-                        // 音量控制弹窗
                         if (showVolumeSheet) {
-                            ModalBottomSheet(
-                                onDismissRequest = { showVolumeSheet = false },
-                                sheetState = volumeSheetState,
-                                sheetGesturesEnabled = false
-                            ) {
-                                VolumeControlSheetContent()
-                            }
+                            PlaybackOutputSheet(onDismiss = { showVolumeSheet = false })
                         }
 
                         if (artistPickerCandidates.isNotEmpty()) {
@@ -1885,7 +1877,14 @@ fun NowPlayingScreen(
                             CommentSheet(
                                 source = commentSource,
                                 offlineMode = offlineMode,
-                                onDismissRequest = { showCommentSheet = false }
+                                onDismissRequest = { showCommentSheet = false },
+                                onTimestampClick = { positionMs ->
+                                    // 评论坐标可能超出当前曲目时长, 先夹到有效范围再交给歌词跳转:
+                                    // 越界值会被歌词入口的越界拒绝策略丢弃, 表现为点了没反应。
+                                    // 暂停态只跳不播、播放态跳后继续播 (seekTo 不改变 playWhenReady)
+                                    val knownDurationMs = maxOf(durationMs, currentSong?.durationMs ?: 0L)
+                                    onLyricSeek(clampCommentTimestampPosition(positionMs, knownDurationMs))
+                                }
                             )
                         }
 
@@ -1899,7 +1898,7 @@ fun NowPlayingScreen(
                                 options = currentPlaybackAudioInfo?.qualityOptions.orEmpty(),
                                 onDismiss = { showQualitySwitchDialog = false },
                                 onSelect = { option ->
-                                    PlayerManager.changeCurrentPlaybackQuality(option.key)
+                                    playbackSource.changeCurrentPlaybackQuality(option.key)
                                     showQualitySwitchDialog = false
                                 }
                             )
@@ -1930,7 +1929,7 @@ fun NowPlayingScreen(
                                                         warnForLocalSync = !FavoritesPlaylist.isSystemPlaylist(pl, context) ||
                                                             shouldConfirmFavoriteSync(currentSong, adding = true, context = context)
                                                     ) {
-                                                        PlayerManager.addCurrentToPlaylist(pl.id)
+                                                        playbackSource.addCurrentToPlaylist(pl.id)
                                                         showAddSheet = false
                                                     }
                                                 }
@@ -1981,10 +1980,7 @@ fun NowPlayingScreen(
                             )
                         }
                     }
-                    // 本页自己的 Snackbar 挂载点：更多面板打开时由面板的 host 渲染，避免同一 hostState 两处同画。
-                    if (!showMoreOptions) {
-                        NeriOverlaySnackbarHost(hostState = snackbarHostState)
-                    }
+                    NeteaseCollectionFeedbackHost(nowPlayingViewModel.neteaseCollectionFeedback, snackbarHostState, showMoreOptions)
                     // 心动模式的失败与切换提示（成功切歌不提示），停留 3 秒。
                     NowPlayingHeartbeatFeedback(snackbarHostState, screenScope)
                     if (coverFlight != null) {

@@ -8,6 +8,7 @@ import android.content.ContextWrapper
 import android.content.res.Resources
 import androidx.annotation.StringRes
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +48,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,10 +103,9 @@ import moe.ouom.neriplayer.data.ltw.validation.validateListenTogetherUserUuid
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.component.playback.PlaybackSheetTextField
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -151,7 +150,7 @@ fun ListenTogetherRoomPanel(
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
-    val activity = remember(context) { context.findComponentActivity() }
+    val activity = rememberListenTogetherHostActivity()
     val clipboard = LocalClipboard.current
     val clipboardScope = rememberCoroutineScope()
     val sessionManager = remember { AppContainer.listenTogetherSessionManager }
@@ -424,38 +423,31 @@ fun ListenTogetherRoomPanel(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (showBaseUrlEditor) {
-                    OutlinedTextField(
+                    PlaybackSheetTextField(
                         value = baseUrl,
                         onValueChange = { baseUrl = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp),
-                        label = { Text(stringResource(CoreCommonR.string.listen_together_worker_base_url)) },
-                        singleLine = true
+                        label = stringResource(CoreCommonR.string.listen_together_worker_base_url)
                     )
                 }
-                OutlinedTextField(
+                PlaybackSheetTextField(
                     value = nickname,
                     onValueChange = { nickname = it.trim().take(24) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp),
-                    shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
-                    colors = neriSearchFieldColors(),
-                    label = { Text(stringResource(CoreCommonR.string.listen_together_nickname)) },
-                    singleLine = true
+                    label = stringResource(CoreCommonR.string.listen_together_nickname)
                 )
                 if (isInRoom) {
-                    OutlinedTextField(
+                    PlaybackSheetTextField(
                         value = roomIdInput,
                         onValueChange = {},
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp),
-                        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
-                        colors = neriSearchFieldColors(),
-                        label = { Text(stringResource(CoreCommonR.string.listen_together_room_id)) },
-                        singleLine = true,
+                        label = stringResource(CoreCommonR.string.listen_together_room_id),
                         readOnly = true
                     )
                 }
@@ -918,6 +910,16 @@ internal fun Context.findComponentActivity(): ComponentActivity? = when (this) {
     is ComponentActivity -> this
     is ContextWrapper -> baseContext.findComponentActivity()
     else -> null
+}
+
+@Composable
+internal fun rememberListenTogetherHostActivity(): ComponentActivity? {
+    val hostActivity = LocalActivity.current
+    val context = LocalContext.current
+    return remember(hostActivity, context) {
+        // 应用语言 Context 由 createConfigurationContext 生成且会被 Sheet 窗口沿用，无法从包装链回溯到宿主
+        hostActivity as? ComponentActivity ?: context.findComponentActivity()
+    }
 }
 
 private fun Clipboard.copyText(

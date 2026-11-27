@@ -42,6 +42,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadFileNameTemplate
 import moe.ouom.neriplayer.data.model.settings.download.DEFAULT_DOWNLOAD_PARALLELISM
 import moe.ouom.neriplayer.core.download.policy.settings.normalizeDownloadParallelism
@@ -61,6 +63,7 @@ private const val BOOTSTRAP_DOWNLOAD_PARALLELISM_KEY = "download_parallelism"
 private val bootstrapSnapshotWarmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private val bootstrapSnapshotWarmupRunning = AtomicBoolean(false)
 private val bootstrapSnapshotPersistenceLock = Any()
+private val bootstrapSnapshotRefreshMutex = Mutex()
 
 fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapshot {
     readCachedBootstrapSettingsSnapshot(context)?.let { snapshot ->
@@ -80,12 +83,10 @@ fun readBootstrapSettingsSnapshotSync(context: Context): BootstrapSettingsSnapsh
 
     return runCatching {
         runBlocking {
-            context.dataStore.data.first().toBootstrapSettingsSnapshot()
+            synchronizeBootstrapSettingsSnapshot(context)
         }
     }.getOrElse {
         BootstrapSettingsSnapshot()
-    }.also { snapshot ->
-        persistBootstrapSettingsSnapshot(context, snapshot)
     }
 }
 
@@ -120,15 +121,13 @@ internal fun persistWarmedBootstrapSettingsSnapshot(
     }
 }
 
-internal suspend fun updateBootstrapSettingsSnapshot(
-    context: Context,
-    transform: (BootstrapSettingsSnapshot) -> BootstrapSettingsSnapshot
-) {
-    val currentSnapshot = readCachedBootstrapSettingsSnapshot(context)
-        ?.takeIf { hasCompleteBootstrapSettingsSnapshot(context) }
-        ?: context.dataStore.data.first().toBootstrapSettingsSnapshot()
-    persistBootstrapSettingsSnapshot(context, transform(currentSnapshot))
-}
+/** 在同一个锁内读取并发布当前设置，延迟恢复的写入者也会拿到最新值 */
+suspend fun synchronizeBootstrapSettingsSnapshot(context: Context): BootstrapSettingsSnapshot =
+    bootstrapSnapshotRefreshMutex.withLock {
+        val snapshot = context.dataStore.data.first().toBootstrapSettingsSnapshot()
+        persistBootstrapSettingsSnapshot(context, snapshot)
+        snapshot
+    }
 
 fun persistBootstrapSettingsSnapshot(
     context: Context,
@@ -145,6 +144,8 @@ fun persistBootstrapSettingsSnapshot(
             .edit {
                 putBoolean(BOOTSTRAP_SNAPSHOT_READY_KEY, true)
                     .putBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, normalizedSnapshot.bypassProxy)
+                    .putString(AutoSettingsSchema.network.proxyEndpoint.key, normalizedSnapshot.proxyEndpoint)
+                    .putString(AutoSettingsSchema.network.dohEndpoint.key, normalizedSnapshot.dohEndpoint)
                     .putBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, normalizedSnapshot.youtubeEnabled)
                     .putBoolean(
                         BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,
@@ -196,6 +197,8 @@ internal fun updateBootstrapDownloadFollowPlaybackAudioQuality(
 fun Preferences.toBootstrapSettingsSnapshot(): BootstrapSettingsSnapshot {
     return BootstrapSettingsSnapshot(
         bypassProxy = this[SettingsKeys.BYPASS_PROXY] ?: true,
+        proxyEndpoint = valueOf(AutoSettingsSchema.network.proxyEndpoint),
+        dohEndpoint = valueOf(AutoSettingsSchema.network.dohEndpoint),
         youtubeEnabled = this[SettingsKeys.YOUTUBE_ENABLED] ?: true,
         preferHighRefreshRate = valueOf(AutoSettingsSchema.general.preferHighRefreshRate),
         downloadDirectoryUri = this[SettingsKeys.DOWNLOAD_DIRECTORY_URI],
@@ -250,6 +253,8 @@ private fun readCachedBootstrapSettingsSnapshot(context: Context): BootstrapSett
         ?: DEFAULT_DOWNLOAD_PARALLELISM
     return BootstrapSettingsSnapshot(
         bypassProxy = prefs.getBoolean(BOOTSTRAP_BYPASS_PROXY_KEY, true),
+        proxyEndpoint = prefs.getString(AutoSettingsSchema.network.proxyEndpoint.key, "").orEmpty(),
+        dohEndpoint = prefs.getString(AutoSettingsSchema.network.dohEndpoint.key, "").orEmpty(),
         youtubeEnabled = prefs.getBoolean(BOOTSTRAP_YOUTUBE_ENABLED_KEY, true),
         preferHighRefreshRate = prefs.getBoolean(
             BOOTSTRAP_PREFER_HIGH_REFRESH_RATE_KEY,

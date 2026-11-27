@@ -78,7 +78,10 @@ class PlaylistModernDetailFrameTest {
                     val focus = remember { FocusRequester() }
                     Box(Modifier.width(340.dp).fillMaxSize()) {
                         PlaylistModernDetailFrame(
-                            header = PlaylistModernDetailHeader("album", "header", "Album", null, "2 min · 1", true, false),
+                            header = PlaylistModernDetailHeader(
+                                "album", "header", "Album", null, "2 min · 1", true, false,
+                                metaItems = listOf(PlaylistHeroMeta("7", contentDescription = "meta-plays"))
+                            ),
                             search = PlaylistModernDetailSearch(
                                 showSearch, { showSearch = it }, query, { query = it }, input, focus,
                                 false, headerFocus, { headerFocus = it }, dockedFocus, { dockedFocus = it }
@@ -109,6 +112,9 @@ class PlaylistModernDetailFrameTest {
             }
         }
         composeRule.onNodeWithText(SONG, useUnmergedTree = true).assertIsDisplayed()
+        // 结构化胶囊必须透传到头部, 不能退回按分隔点拆的纯文本
+        composeRule.onNodeWithContentDescription("meta-plays").assertExists()
+        composeRule.onNodeWithText("2 min", useUnmergedTree = true).assertDoesNotExist()
         val localRow = composeRule.onNodeWithTag("song-row").getUnclippedBoundsInRoot()
         val localTitle = composeRule.onNodeWithText(SONG, useUnmergedTree = true).getUnclippedBoundsInRoot()
         composeRule.runOnIdle { useServerSong.value = true }

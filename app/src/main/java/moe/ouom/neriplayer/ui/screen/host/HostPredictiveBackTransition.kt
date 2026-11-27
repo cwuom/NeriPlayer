@@ -10,6 +10,7 @@ import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,11 +22,25 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
 import moe.ouom.neriplayer.ui.navigation.LocalPredictiveBackPreviewEnabled
+import moe.ouom.neriplayer.ui.effect.glass.IOS_PUSH_GESTURE_EASING
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+/** Host navigation uses the iOS push when enhanced effects are on and coherent feedback is off. */
+@Composable
+@ReadOnlyComposable
+internal fun iosPushNavigationActive(coherentFeedbackEnabled: Boolean): Boolean =
+    NeriDesign.tokens.enhancedEffects && !coherentFeedbackEnabled
+
+/** With the iOS push, gesture progress is pre-mapped so the seeked page tracks the finger. */
+@Composable
+@ReadOnlyComposable
+internal fun hostBackPreviewEasing(coherentFeedbackEnabled: Boolean): Easing =
+    if (iosPushNavigationActive(coherentFeedbackEnabled)) IOS_PUSH_GESTURE_EASING else LinearEasing
 
 private data class HostBackGesture<S>(
     val targetState: S,

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Explore & Tags -->
-    <string name="explore_bili_desc">Discover more exciting videos on Bilibili</string>
+    <string name="explore_bili_desc">Search Bilibili for songs, videos, or creators</string>
     <string name="explore_offline_disabled">Explore requires a network connection and will be re-enabled automatically when the network is restored.</string>
     <string name="explore_tag_youtube_music">YouTube Music</string>
     <string name="tag_all">All</string>

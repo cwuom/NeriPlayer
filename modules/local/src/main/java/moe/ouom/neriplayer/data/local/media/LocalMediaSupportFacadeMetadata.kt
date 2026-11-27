@@ -1,11 +1,13 @@
 package moe.ouom.neriplayer.data.local.media
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.data.model.local.LocalMediaDetails
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport.ContentSidecarReferences
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaCompanionTransaction
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
-import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaUriCandidates
+import moe.ouom.neriplayer.data.local.media.metadata.editableLocalMediaTargets
 import moe.ouom.neriplayer.data.local.media.metadata.resolveEditableSidecarFile
+import moe.ouom.neriplayer.data.local.media.metadata.sidecarDisplayName
 import moe.ouom.neriplayer.data.local.media.metadata.writeLocalCoverSidecar
 
 import android.content.Context
@@ -33,20 +35,18 @@ internal suspend fun LocalMediaSupport.writeLocalMetadataSidecarImpl(
     coverReference: String? = null,
     clearCoverReference: Boolean = false
 ): Boolean = withContext(Dispatchers.IO) {
-    val candidates = editableLocalMediaUriCandidates(context, song)
+    val (candidates, recoveryReferences) = editableLocalMediaTargets(context, song, sidecarsOnly = true)
     if (candidates.isEmpty()) return@withContext false
     val writesCover = coverReference != null || clearCoverReference
     LocalMediaMetadataRecoveryStore.withRecoveredTargets(
         context = context.applicationContext,
-        targetReferences = candidates.map(Uri::toString),
+        targetReferences = recoveryReferences,
         blockedResult = false
     ) {
         candidates.any { sourceUri ->
             currentCoroutineContext().ensureActive()
             val file = resolveEditableSidecarFile(context, sourceUri)
-            val displayName = song.localFileName
-                ?.takeIf(String::isNotBlank)
-                ?: sourceUri.lastPathSegment.orEmpty()
+            val displayName = song.sidecarDisplayName(sourceUri)
             val transaction = LocalMediaCompanionTransaction(context, sourceUri.toString())
             var committed = false
             var rollbackSucceeded = true
@@ -398,6 +398,7 @@ internal fun LocalMediaSupport.parseLocalMetadataSidecarImpl(
             channelId = root.optPresentLocalMetadataString("channelId"),
             audioId = root.optPresentLocalMetadataString("audioId"),
             subAudioId = root.optPresentLocalMetadataString("subAudioId"),
+            youtubeContentLabel = YouTubeContentLabel.fromName(root.optPresentLocalMetadataString("youtubeContentLabel")),
             playlistContextId = root.optPresentLocalMetadataString("playlistContextId"),
             coverPath = root.optPresentLocalMetadataString("coverPath"),
             coverUrl = root.optPresentLocalMetadataString("coverUrl"),
@@ -506,7 +507,11 @@ internal fun LocalMediaSupport.buildEditableLocalMetadataJsonImpl(
     putValue("originalCoverUrl", song.originalCoverUrl)
     putValue("mediaUri", song.mediaUri)
     putValue("localFilePath", song.localFilePath)
-    putValue("stableKey", song.songStableKey())
+    val stableKey = song.songStableKey()
+    if (song.youtubeContentLabel != null || root.optPresentLocalMetadataString("stableKey") != stableKey) {
+        putValue("youtubeContentLabel", song.youtubeContentLabel?.name)
+    }
+    putValue("stableKey", stableKey)
     putValue("songId", song.id)
     putValue("channelId", song.channelId)
     putValue("audioId", song.audioId)

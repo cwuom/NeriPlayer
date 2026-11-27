@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.playback
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.LazyAnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -448,7 +449,7 @@ internal fun QualityOptionsDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 options.forEach { (level, label) ->
                     MiuixSettingsChoiceRow(
                         title = label,

@@ -24,6 +24,10 @@ package moe.ouom.neriplayer.ui.screen.host
  */
 
 import androidx.compose.animation.AnimatedContent
+import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.PassThroughHostSceneRenderer
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
@@ -57,6 +61,7 @@ import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliSongAlbu
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
@@ -147,7 +152,10 @@ internal fun resolveExploreSelectedDetailBackTarget(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExploreHostScreen(
+internal fun ExploreHostScreen(
+    onOpenYouTubePlaylist: (YouTubeMusicPlaylist) -> Unit,
+    onOpenYouTubeCreator: (YouTubeMusicCreatorSummary) -> Unit,
+    onBiliUploaderClick: (BiliUploaderSummary) -> Unit,
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     onSongClickWithSourceRoute: (List<SongItem>, Int, String?) -> Unit = { songs, index, _ ->
@@ -158,16 +166,9 @@ fun ExploreHostScreen(
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
     onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    reselectRequests: MainTabReselectRequests? = null,
     coherentFeedbackEnabled: Boolean = false,
-    renderScene: @Composable (
-        revealTopFraction: Float,
-        contentTranslationYFraction: Float,
-        contentScale: Float,
-        sceneDepth: Int,
-        content: @Composable () -> Unit
-    ) -> Unit = { _, _, _, _, content ->
-        content()
-    }
+    renderScene: HostSceneRenderer = PassThroughHostSceneRenderer
 ) {
     var selected by remember { mutableStateOf<ExploreSelectedItem?>(null) }
     val context = LocalContext.current
@@ -221,6 +222,17 @@ fun ExploreHostScreen(
         if (offlineMode) {
             cancelPendingNeteaseCoverWarmup()
             selected = null
+        }
+    }
+
+    // 根页面才知道当前展示的是哪条列表（歌单网格 / YouTube 网格 / 搜索结果），回顶交给它处理
+    val exploreRootReselectRequests = remember { MainTabReselectRequests() }
+    MainTabReselectEffect(reselectRequests) {
+        cancelPendingNeteaseCoverWarmup()
+        if (selected != null) {
+            selected = null
+        } else {
+            exploreRootReselectRequests.dispatch()
         }
     }
 
@@ -327,12 +339,7 @@ fun ExploreHostScreen(
                     label = "explore_host_scene"
                 )
             }
-            renderScene(
-                sceneMotion.revealTopFraction,
-                sceneMotion.contentTranslationYFraction,
-                sceneMotion.contentScale,
-                current.navigationDepth
-            ) {
+            renderScene(sceneMotion, current.navigationDepth) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {
                         Box(
@@ -345,6 +352,7 @@ fun ExploreHostScreen(
                             ExploreScreen(
                                 gridState = gridState,
                                 topAppBarState = topAppBarState,
+                                reselectRequests = exploreRootReselectRequests,
                                 searchQuery = searchQuery,
                                 onSearchQueryChange = { searchQuery = it },
                                 searchListState = searchListState,
@@ -406,6 +414,7 @@ fun ExploreHostScreen(
                                         ExploreSelectedItem.YouTubeMusicCreator(creator)
                                     )
                                 },
+                                onBiliUploaderClick = onBiliUploaderClick,
                                 onNeteaseArtistClick = { artist ->
                                     captureExploreScrollPosition()
                                     openExploreSelectedItem(ExploreSelectedItem.NeteaseArtist(artist))
@@ -530,6 +539,8 @@ fun ExploreHostScreen(
                                 YouTubeMusicCreatorItemsScreen(
                                     section = current.section,
                                     creatorName = current.creator.title,
+                                    onPlaylistClick = onOpenYouTubePlaylist,
+                                    onCreatorClick = onOpenYouTubeCreator,
                                     onBack = ::closeSelectedDetail,
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode

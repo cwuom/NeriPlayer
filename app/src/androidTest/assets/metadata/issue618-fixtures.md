@@ -1,7 +1,6 @@
 # Issue 618 embedded artwork fixtures
 
-`issue618-silent.opus` is synthetic mono silence generated locally with FFmpeg.
-It contains no copyrighted recording or artwork.
+`issue618-silent.opus` is 0.1 s of mono silence generated locally with FFmpeg. It contains no copyrighted recording or artwork.
 
 ```sh
 ffmpeg -hide_banner -loglevel error \
@@ -10,8 +9,9 @@ ffmpeg -hide_banner -loglevel error \
   -fflags +bitexact -flags:a +bitexact -f opus issue618-silent.opus
 ```
 
-`DownloadedCoverOfflineRenderingTest` also reuses the existing
-`synthetic-free-first-8.m4a`. Each test copies its audio fixture into an
-isolated directory and embeds a generated 32 x 32 PNG through TagLib at runtime.
-The test writes no companion artwork and disables image caches. HTTP requests
-fail inside a local interceptor, without changing the device network state.
+`DownloadedCoverOfflineRenderingTest` also uses the existing `synthetic-free-first-8.m4a`.
+
+- Each test copies its audio fixture into an isolated directory
+- TagLib embeds a generated 32 x 32 PNG at runtime
+- The test writes no companion artwork and disables image caches
+- A local interceptor fails HTTP requests; the device network state is untouched

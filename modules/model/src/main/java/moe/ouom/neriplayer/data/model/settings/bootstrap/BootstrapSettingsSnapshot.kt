@@ -10,5 +10,7 @@ data class BootstrapSettingsSnapshot(
     val downloadDirectoryLabel: String? = null,
     val downloadFileNameTemplate: String? = null,
     val downloadFollowPlaybackAudioQuality: Boolean = true,
-    val downloadParallelism: Int = DEFAULT_DOWNLOAD_PARALLELISM
+    val downloadParallelism: Int = DEFAULT_DOWNLOAD_PARALLELISM,
+    val proxyEndpoint: String = "",
+    val dohEndpoint: String = ""
 )

@@ -1,0 +1,4 @@
+<resources>
+    <string name="youtube_tracks_filtered">Your content preferences hide all tracks in this collection.</string>
+    <string name="youtube_tracks_empty">No tracks in this collection</string>
+</resources>

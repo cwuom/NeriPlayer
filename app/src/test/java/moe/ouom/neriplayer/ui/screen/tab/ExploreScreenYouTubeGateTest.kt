@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.ui.screen.tab.explore.exploreSearchSourceDisplayOrder
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldClearExploreSearchQuery
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldRenderExploreSearchResults
 import moe.ouom.neriplayer.ui.screen.tab.explore.shouldResetExploreSearchScroll
+import moe.ouom.neriplayer.ui.viewmodel.tab.BilibiliExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseExploreSearchType
 import moe.ouom.neriplayer.ui.viewmodel.tab.SearchSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeExploreSearchType
@@ -124,6 +125,21 @@ class ExploreScreenYouTubeGateTest {
         assertEquals("YOUTUBE_MUSIC|SONG|demo", songs)
         assertEquals("YOUTUBE_MUSIC|CREATOR|demo", creators)
         assertTrue(shouldResetExploreSearchScroll(songs, creators))
+    }
+
+    @Test
+    fun `switching Bilibili category resets the result list for the same keyword`() {
+        val contexts = BilibiliExploreSearchType.entries.map { type ->
+            exploreSearchScrollContextKey(
+                keyword = "demo",
+                source = SearchSource.BILIBILI,
+                neteaseSearchType = NeteaseExploreSearchType.SONG,
+                bilibiliSearchType = type
+            )
+        }
+
+        assertEquals(listOf("BILIBILI|SONG|demo", "BILIBILI|VIDEO|demo", "BILIBILI|CREATOR|demo"), contexts)
+        assertTrue(contexts.zipWithNext().all { (from, to) -> shouldResetExploreSearchScroll(from, to) })
     }
 
     @Test

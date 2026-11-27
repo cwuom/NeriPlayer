@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Home -->
+    <string name="international_home_spotlight">Spotlight</string>
+    <string name="international_home_feed">Your recommendations</string>
+    <string name="international_home_sections_desc">Reorder or hide international Home sections. Spotlight and recommendations require YouTube.</string>
     <string name="recommend_for_you">For You</string>
     <string name="recommend_refresh">Refresh</string>
     <string name="recommend_trending">Trending</string>
@@ -36,6 +39,14 @@
     <string name="home_title_brand_loud">NeriPlayer!</string>
     <string name="home_title_brand_wave">NeriPlayer~</string>
     <string name="home_title_brand_call">Hey, NeriPlayer</string>
+    <string name="home_greeting_morning">Good morning</string>
+    <string name="home_greeting_noon">Good day</string>
+    <string name="home_greeting_afternoon">Good afternoon</string>
+    <string name="home_greeting_evening">Good evening</string>
+    <string name="home_greeting_tone_bright">!</string>
+    <string name="home_greeting_tone_soft">~</string>
+    <string name="home_greeting_midnight">It\'s late, get some rest soon</string>
+    <string name="home_greeting_night">It\'s getting late</string>
     <string name="home_all_cards_hidden">All home cards are hidden. Re-enable them in Settings.</string>
     <string name="home_offline_no_continue">Offline mode only shows Continue Playing. Nothing is available yet.</string>
     <string name="offline_mode_title">Offline Mode</string>
@@ -57,4 +68,10 @@
     <string name="home_bili_music_source_upload">Uploaded video · %1$s</string>
     <string name="home_bili_music_source_note">The chart lists the original artists; playback prefers the official MV and falls back to the chart\'s authorized upload</string>
     <string name="home_bili_music_open_original">Open original video</string>
+    <!-- 首页模块二级页 -->
+    <string name="home_section_empty">Nothing here yet</string>
+    <string name="home_section_load_failed">Failed to load: %s</string>
+    <string name="home_section_more_playlists">More playlists</string>
+    <string name="home_section_refresh_hint">Pull down or tap refresh in the upper right to reload</string>
+    <string name="home_section_offline_unavailable">Online content cannot be loaded in offline mode</string>
 </resources>

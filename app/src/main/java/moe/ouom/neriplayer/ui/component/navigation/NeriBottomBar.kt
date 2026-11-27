@@ -23,14 +23,9 @@ package moe.ouom.neriplayer.ui.component.navigation
  * Created: 2025/8/8
  */
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.animation.core.Animatable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BugReport
@@ -42,7 +37,6 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.graphicsLayer
-import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.NeriMotion
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -104,31 +98,24 @@ fun NeriBottomBar(
         selectAlpha = selectAlpha,
         baseBlurRequested = baseBlurRequested
     )
-    val clean = NeriDesign.isClean
-    val fallbackColor = when {
-        clean -> MaterialTheme.colorScheme.surfaceContainerLow.copy(
-            alpha = if (LocalHasCustomBackground.current) 0.62f else 0.94f
-        )
-        fallbackScrimAlpha > 0f -> MaterialTheme.colorScheme.background.copy(alpha = fallbackScrimAlpha)
-        else -> Color.Transparent
+    val fallbackColor = if (fallbackScrimAlpha > 0f) {
+        MaterialTheme.colorScheme.background.copy(alpha = fallbackScrimAlpha)
+    } else {
+        Color.Transparent
     }
 
     AdvancedGlassSurface(
         role = AdvancedGlassRole.BottomNavigation,
         modifier = modifier,
-        fallbackColor = fallbackColor,
-        tintColor = if (clean) MaterialTheme.colorScheme.surfaceContainerLow else Color.Unspecified
+        fallbackColor = fallbackColor
     ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
         NavigationBar(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Transparent),
+            modifier = Modifier.fillMaxWidth(),
             containerColor = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 0.dp,
         ) {
-            items.forEachIndexed { index, (dest, icon) ->
+            items.forEach { (dest, icon) ->
                 val selected = isNeriNavigationDestinationSelected(currentDestination, dest)
                 val label = stringResource(dest.labelResId)
                 NavigationBarItem(
@@ -138,23 +125,21 @@ fun NeriBottomBar(
                         onItemSelected(dest)
                     },
                     icon = {
-                        if (clean) {
-                            CleanTabIcon(dest, icon, selected, label)
-                        } else {
-                            Icon(icon, contentDescription = label)
-                        }
+                        // 选中态换填充字形, 与 M3 指示器一起表达层级
+                        MaterialTabIcon(dest, icon, selected, label)
                     },
                     label = {
                         Text(
                             text = label,
-                            style = if (clean) MaterialTheme.typography.labelSmall else LocalTextStyle.current,
+                            style = LocalTextStyle.current,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                             maxLines = 1,
                             softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                     },
-                    alwaysShowLabel = alwaysShowLabel || clean,
-                    colors = if (clean) cleanNavigationBarItemColors() else NavigationBarItemDefaults.colors(
+                    alwaysShowLabel = alwaysShowLabel,
+                    colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                         selectedTextColor = MaterialTheme.colorScheme.onSurface,
                         indicatorColor = MaterialTheme.colorScheme.secondaryContainer.copy(
@@ -166,18 +151,27 @@ fun NeriBottomBar(
                 )
             }
         }
-        }
     }
 }
 
 @Composable
-private fun cleanNavigationBarItemColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = MaterialTheme.colorScheme.primary,
-    selectedTextColor = MaterialTheme.colorScheme.primary,
-    indicatorColor = Color.Transparent,
-    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-)
+private fun MaterialTabIcon(
+    destination: Destinations,
+    outlinedIcon: ImageVector,
+    selected: Boolean,
+    contentDescription: String
+) {
+    Crossfade(
+        targetState = selected,
+        animationSpec = tween(durationMillis = 180),
+        label = "material-tab-icon"
+    ) { isSelected ->
+        Icon(
+            imageVector = if (isSelected) cleanSelectedTabIcon(destination) ?: outlinedIcon else outlinedIcon,
+            contentDescription = contentDescription
+        )
+    }
+}
 
 /** Filled rounded glyph for the active tab, outlined for the rest, with a small spring pop. */
 @Composable

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.ui.screen.tab.settings.component.backup
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.settings.SettingRowIcon
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ExpandableHeader
@@ -71,7 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -1079,7 +1080,7 @@ internal fun SettingsBackupRestoreSection(
                 onDismissRequest = { pendingDataSaverMode = null },
                 title = { Text(stringResource(CoreCommonR.string.sync_data_saver_warning_title)) },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(stringResource(CoreCommonR.string.sync_data_saver_warning_message))
                         if (dataSaverSaveFailed) MiuixSettingsInlineMessage(
                             message = stringResource(CoreCommonR.string.sync_secure_storage_unavailable),
@@ -1273,7 +1274,7 @@ private fun PlayHistoryModeDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(CoreCommonR.string.sync_history_frequency)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 Text(
                     text = stringResource(CoreCommonR.string.sync_frequency_desc),
                     style = MaterialTheme.typography.bodyMedium
@@ -1375,8 +1376,8 @@ private fun PlayHistoryModeOption(
     )
 }
 
-private val BackupGlyphShape = ContinuousRoundedCornerShape(9.dp)
-private val BackupActionShape = ContinuousRoundedCornerShape(16.dp)
+private val BackupGlyphShape = RoundedCornerShape(9.dp)
+private val BackupActionShape = RoundedCornerShape(16.dp)
 
 /**
  * One backup subject with its two directions side by side. Export always points out of the

@@ -177,20 +177,115 @@ class ManagedDownloadSnapshotCacheStoreTest {
         assertEquals(listOf("root-a"), persistedKeys)
     }
 
-    private fun snapshot(vararg audioEntries: ManagedDownloadStorage.StoredEntry) =
+    @Test
+    fun `cover revision ignores unchanged publications and unrelated lyrics`() {
+        val audio = audio()
+        val lyric = storedEntry("song.lrc")
+        val cover = storedEntry("song.png")
+        val metadata = DownloadedAudioMetadata(stableKey = "stable", coverPath = cover.reference)
+        val initial = snapshot(audio, metadata = metadata, covers = listOf(cover))
+        assertEquals(0L, cache.coverRevision.value)
+        cache.putSnapshot(context, "root-a", initial)
+        val coverRevision = cache.coverRevision.value
+        val snapshotRevision = cache.snapshotRevision()
+        assertTrue(coverRevision > 0L)
+
+        cache.putSnapshot(context, "root-a", initial)
+        cache.updateAfterStoredEntryWrite(context, lyric, ManagedDownloadStorage.SnapshotEntryBucket.LYRIC)
+        val refreshed = snapshot(
+            audio,
+            metadata = metadata.copy(lyricPath = lyric.reference),
+            covers = listOf(cover),
+            lyrics = listOf(lyric)
+        )
+        assertTrue(
+            cache.publishSnapshotIfUnchanged(context, "root-a", refreshed, cache.snapshotRevision()).published
+        )
+
+        assertEquals(coverRevision, cache.coverRevision.value)
+        assertTrue(cache.snapshotRevision() > snapshotRevision)
+    }
+
+    @Test
+    fun `cover revision advances when a cover is written and deleted`() {
+        cache.putSnapshot(context, "root-a", snapshot(audio()))
+        val cover = storedEntry("song.png")
+        val beforeWrite = cache.coverRevision.value
+
+        assertTrue(cache.updateAfterStoredEntryWrite(context, cover, ManagedDownloadStorage.SnapshotEntryBucket.COVER))
+        val afterWrite = cache.coverRevision.value
+        assertTrue(afterWrite > beforeWrite)
+
+        assertTrue(cache.updateAfterDelete(context, setOf(cover.reference)))
+        assertTrue(cache.coverRevision.value > afterWrite)
+    }
+
+    @Test
+    fun `cover revision follows a legacy metadata reference resolved from another bucket`() {
+        val legacyCover = storedEntry("legacy.png")
+        val metadata = DownloadedAudioMetadata(stableKey = "stable", coverPath = legacyCover.mediaUri)
+        cache.putSnapshot(context, "root-a", snapshot(audio(), metadata = metadata))
+        val beforeWrite = cache.coverRevision.value
+
+        cache.updateAfterStoredEntryWrite(context, legacyCover, ManagedDownloadStorage.SnapshotEntryBucket.LYRIC)
+
+        assertTrue(cache.coverRevision.value > beforeWrite)
+    }
+
+    @Test
+    fun `cover revision advances when reordered aliases change the resolved legacy reference`() {
+        val first = "content://fixture/document/music%3Acover.png"
+        val second = "content://fixture/tree/music%3Afirst/document/music%3Acover.png"
+        val source = "content://fixture/tree/music%3Asecond/document/music%3Acover.png"
+        val aliases = listOf(
+            storedEntry("first.png").copy(reference = first, mediaUri = first),
+            storedEntry("second.png").copy(reference = second, mediaUri = second)
+        )
+        val metadata = DownloadedAudioMetadata(stableKey = "stable", coverPath = source)
+        cache.putSnapshot(context, "root-a", snapshot(audio(), metadata = metadata, lyrics = aliases))
+        val beforeReorder = cache.coverRevision.value
+
+        cache.putSnapshot(context, "root-a", snapshot(audio(), metadata = metadata, lyrics = aliases.reversed()))
+
+        assertTrue(cache.coverRevision.value > beforeReorder)
+    }
+
+    @Test
+    fun `cover revision advances on restore and invalidation of resident artwork`() {
+        persisted = "root-a" to snapshot(audio(), covers = listOf(storedEntry("song.png")))
+
+        assertTrue(cache.ensureReady(context))
+        val restoredRevision = cache.coverRevision.value
+        assertTrue(restoredRevision > 0L)
+
+        cache.invalidate()
+        val invalidatedRevision = cache.coverRevision.value
+        assertTrue(invalidatedRevision > restoredRevision)
+        cache.invalidate()
+        assertEquals(invalidatedRevision, cache.coverRevision.value)
+    }
+
+    private fun snapshot(
+        vararg audioEntries: ManagedDownloadStorage.StoredEntry,
+        metadata: DownloadedAudioMetadata? = null,
+        covers: List<ManagedDownloadStorage.StoredEntry> = emptyList(),
+        lyrics: List<ManagedDownloadStorage.StoredEntry> = emptyList()
+    ) =
         ManagedDownloadSnapshotIndex.compose(
             audioEntries = audioEntries.toList(),
             metadataEntries = emptyList(),
-            metadataByAudioName = emptyMap(),
-            coverEntries = emptyList(),
-            lyricEntries = emptyList()
+            metadataByAudioName = metadata?.let { mapOf(audio().name to it) }.orEmpty(),
+            coverEntries = covers,
+            lyricEntries = lyrics
         )
 
-    private fun audio() = ManagedDownloadStorage.StoredEntry(
-        name = "song.flac",
-        reference = "/music/song.flac",
-        mediaUri = "file:///music/song.flac",
-        localFilePath = "/music/song.flac",
+    private fun audio() = storedEntry("song.flac")
+
+    private fun storedEntry(name: String) = ManagedDownloadStorage.StoredEntry(
+        name = name,
+        reference = "/music/$name",
+        mediaUri = "file:///music/$name",
+        localFilePath = "/music/$name",
         sizeBytes = 128L,
         lastModifiedMs = 1L
     )

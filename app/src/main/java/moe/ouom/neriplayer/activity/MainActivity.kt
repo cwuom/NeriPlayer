@@ -58,12 +58,12 @@ import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
@@ -148,6 +148,7 @@ import moe.ouom.neriplayer.core.startup.sync.StartupSyncWarningRepository
 import moe.ouom.neriplayer.core.startup.theme.StartupNightModeSyncPlanner
 import moe.ouom.neriplayer.core.startup.theme.StartupResourceNightMode
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeResolver
+import moe.ouom.neriplayer.core.startup.navigation.StartDestinationSnapshotProvider
 import moe.ouom.neriplayer.core.startup.theme.StartupThemeSnapshotProvider
 import moe.ouom.neriplayer.data.model.ltw.session.ListenTogetherInvite
 import moe.ouom.neriplayer.api.ltw.reconnect.LISTEN_TOGETHER_RECONNECT_EXHAUSTED_REASON
@@ -173,6 +174,7 @@ import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.NightModeHelper
@@ -355,6 +357,9 @@ class MainActivity : ComponentActivity() {
     private var nowPlayingOrientationState = NowPlayingOrientationState()
     private var preferHighRefreshRate = false
     private var nowPlayingShownForRefreshRate = false
+    private var powerPressureForRefreshRate = false
+    private val ambientRefreshRateEligible: Boolean
+        get() = nowPlayingShownForRefreshRate || powerPressureForRefreshRate
     private var ambientRefreshRateActive = false
     private var touchInProgress = false
     private var lastTouchAtMs = 0L
@@ -366,11 +371,19 @@ class MainActivity : ComponentActivity() {
         super.attachBaseContext(applyOnePlusHighDensityDisplayCorrection(localizedContext))
     }
 
+    /**
+     * 在创建界面前选择本次启动的主题和启动页快照，并区分安全模式入口
+     * 快照只提供首帧初值，已保存的 Activity 和 Compose 状态继续走原有恢复路径
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         safeModeActive = SafeModeManager.shouldEnterSafeMode(this)
         val startupLoadingStartedAtMs = SystemClock.elapsedRealtime()
         val startupSettingsSnapshot = readBootstrapSettingsSnapshotSync(this)
         val startupThemeSnapshot = StartupThemeSnapshotProvider.read(
+            context = this,
+            safeModeActive = safeModeActive
+        )
+        val startupStartDestinationSnapshot = StartDestinationSnapshotProvider.read(
             context = this,
             safeModeActive = safeModeActive
         )
@@ -721,6 +734,7 @@ class MainActivity : ComponentActivity() {
 
                                 enter togetherWith exit using SizeTransform(clip = false)
                             },
+                            contentKey = ::startupStageContentKey,
                             label = "AppStageTransition"
                         ) { current ->
                             StartupStageContentGate(
@@ -742,10 +756,12 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    StartupStage.Disclaimer -> {
+                                    // 同意使用说明是引导中的一步, 两个阶段共用同一屏, 共享元素和背景不中断
+                                    StartupStage.Disclaimer, StartupStage.Onboarding -> {
                                         val scope = rememberCoroutineScope()
-                                        DisclaimerScreen(
-                                            onAgree = {
+                                        StartupOnboardingScreen(
+                                            disclaimerAccepted = current == StartupStage.Onboarding,
+                                            onAcceptDisclaimer = {
                                                 pendingDisclaimerAccepted = true
                                                 scope.launch {
                                                     runCatching {
@@ -761,12 +777,8 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                     }
                                                 }
-                                            }
-                                        )
-                                    }
-
-                                    StartupStage.Onboarding -> {
-                                        StartupOnboardingScreen(
+                                            },
+                                            initialUiStyle = startupThemeSnapshot.uiStyle,
                                             onLanguageChanged = { selectedAppLanguage = it }
                                         )
                                     }
@@ -964,7 +976,7 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 },
                                                 text = {
-                                                    Column(
+                                                    ScrollableDialogColumn(
                                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
                                                         Text(warningMessage)
@@ -1005,7 +1017,7 @@ class MainActivity : ComponentActivity() {
                                             AlertDialog(
                                                 onDismissRequest = { showDialog = false },
                                                 title = { Text(stringResource(AppR.string.dialog_hint)) },
-                                                text = { Text(dialogMessage) },
+                                                text = { ScrollableDialogColumn { Text(dialogMessage) } },
                                                 confirmButton = {
                                                     HapticTextButton(onClick = {
                                                         showDialog = false
@@ -1134,7 +1146,7 @@ class MainActivity : ComponentActivity() {
                                             AlertDialog(
                                                 onDismissRequest = { showErrorDialog = false },
                                                 title = { Text(errorTitle) },
-                                                text = { Text(errorMessage) },
+                                                text = { ScrollableDialogColumn { Text(errorMessage) } },
                                                 confirmButton = {
                                                     HapticTextButton(onClick = {
                                                         showErrorDialog = false
@@ -1153,8 +1165,19 @@ class MainActivity : ComponentActivity() {
                                             !showDialog && !showErrorDialog &&
                                             pendingInvite == null && loudPlaybackConfirmation == null
                                         var appGlobalDialogVisible by remember { mutableStateOf(true) }
+                                        val reduceRefreshUnderPressure =
+                                            rememberSystemPowerPressure().reduceOptionalEffects
+                                        LaunchedEffect(reduceRefreshUnderPressure) {
+                                            if (powerPressureForRefreshRate != reduceRefreshUnderPressure) {
+                                                powerPressureForRefreshRate = reduceRefreshUnderPressure
+                                                lastTouchAtMs = SystemClock.uptimeMillis()
+                                                updateWindowRefreshRate()
+                                            }
+                                        }
                                         NeriApp(
                                             initialThemeSnapshot = startupThemeSnapshot,
+                                            initialStartDestinationSnapshot =
+                                                startupStartDestinationSnapshot,
                                             launcherShortcutRequestFlow = launcherShortcutRequestFlow,
                                             onLauncherShortcutRequestConsumed =
                                                 ::clearLauncherShortcutRequest,
@@ -1725,10 +1748,11 @@ class MainActivity : ComponentActivity() {
             nowPlayingShown = nowPlayingShownForRefreshRate,
             resumed = resumed,
             touching = touchInProgress,
-            idleForMs = idleForMs
+            idleForMs = idleForMs,
+            powerPressure = powerPressureForRefreshRate
         )
         ambientRefreshRateActive = applyPreferredHighRefreshRate(preferHighRefreshRate, ambientIdle)
-        if (nowPlayingShownForRefreshRate && resumed && !touchInProgress && !ambientIdle) {
+        if (ambientRefreshRateEligible && resumed && !touchInProgress && !ambientIdle) {
             refreshRateHandler.postDelayed(refreshRateCheck, AMBIENT_REFRESH_RATE_IDLE_MS - idleForMs)
         }
     }
@@ -1742,7 +1766,7 @@ class MainActivity : ComponentActivity() {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 touchInProgress = false
-                if (nowPlayingShownForRefreshRate) updateWindowRefreshRate()
+                if (ambientRefreshRateEligible) updateWindowRefreshRate()
             }
         }
         return super.dispatchTouchEvent(ev)
@@ -1851,30 +1875,20 @@ private fun StartupCrashReportDialog(
                 )
             }
         },
-        confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HapticTextButton(onClick = onCopy) {
-                    Text(stringResource(AppR.string.debug_copy_all))
-                }
-                HapticTextButton(onClick = onExport) {
-                    Text(stringResource(AppR.string.log_export))
-                }
-                HapticTextButton(onClick = onClose) {
-                    Text(stringResource(CoreCommonR.string.action_close))
-                }
+        dismissButton = {
+            HapticTextButton(onClick = onCopy) {
+                Text(stringResource(AppR.string.debug_copy_all))
             }
         },
-        dismissButton = null
-    )
-}
-
-@Composable
-fun DisclaimerScreen(
-    onAgree: () -> Unit,
-    initialCountdownSeconds: Int = 5
-) {
-    StartupDisclaimerContent(
-        onAgree = onAgree,
-        initialCountdownSeconds = initialCountdownSeconds
+        neutralButton = {
+            HapticTextButton(onClick = onExport) {
+                Text(stringResource(AppR.string.log_export))
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = onClose) {
+                Text(stringResource(CoreCommonR.string.action_close))
+            }
+        }
     )
 }

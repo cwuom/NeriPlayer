@@ -143,8 +143,7 @@ class PlaybackStatsProductionCapacityTest {
         }
         sql.execSQL("INSERT INTO playback_stat_counter_shard SELECT identity_key,'scale-device',0,total_listen_ms,play_count,first_played_at,last_played_at FROM playback_stat")
         if (buckets) {
-            sql.execSQL("INSERT INTO playback_stat_bucket SELECT $day,identity_key,id,name,artist,album,album_id,cover_url,duration_ms,total_listen_ms,play_count,last_played_at,first_played_at,media_uri,local_file_path,local_file_name,custom_name,custom_artist,custom_cover_url FROM playback_stat")
-            sql.execSQL("INSERT INTO playback_stat_daily_counter_shard SELECT $day,identity_key,'scale-device',0,total_listen_ms,play_count,first_played_at,last_played_at FROM playback_stat")
+            sql.seedLegacyDailyPlaybackRows(day)
         }
     }
 

@@ -246,6 +246,7 @@ class MoreOptionsSheetPredictiveBackTest {
     }
 
     private fun verifyHandleReversal(samples: MutableList<SheetDragSample>, stage: String) {
+        awaitSheetReady(samples, stage)
         val baseline = observeSheetDrag(samples, "$stage-baseline", 200L)
         assertSettledSheet(baseline, baseline.last().offset)
         val root = composeRule.onNode(isDialog())
@@ -300,8 +301,23 @@ class MoreOptionsSheetPredictiveBackTest {
         val released = observeSheetDrag(samples, "$stage-released", 2_000L)
         assertTrue("真实触摸全程不能误关闭或丢失窗口焦点",
             (baseline + released).all { it.visible && it.dismissals == 0 && it.attached && it.focused })
-        assertSettledSheet(released.takeLast(12), baseline.last().offset)
+        assertSettledSheet(released.takeLast(StableSheetFrames), baseline.last().offset)
         assertRestored(idle, frame("$stage-after-drag"))
+    }
+
+    private fun awaitSheetReady(all: MutableList<SheetDragSample>, stage: String) {
+        val ready = mutableListOf<SheetDragSample>()
+        // 独立窗口可能在 Compose 空闲后重新测量，先建立稳定的触摸基线
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.waitForIdle()
+            val sample = sheetDragSample("$stage-ready")
+            ready += sample
+            all += sample
+            val expectedOffset = sample.offset
+            ready.size >= StableSheetFrames && expectedOffset != null && expectedOffset.isFinite() &&
+                ready.takeLast(StableSheetFrames).all { it.isSettledAt(expectedOffset) }
+        }
     }
 
     private fun observeSheetDrag(
@@ -330,13 +346,16 @@ class MoreOptionsSheetPredictiveBackTest {
     }
 
     private fun assertSettledSheet(samples: List<SheetDragSample>, expectedOffset: Float?) {
-        assertTrue("需要连续稳定帧", samples.size >= 12 && expectedOffset != null && expectedOffset.isFinite())
-        assertTrue("真实 Sheet 必须稳定在展开锚点: ${samples.last()}", samples.all {
-            it.current == SheetValue.Expanded && it.target == SheetValue.Expanded && !it.running &&
-                it.offset != null && it.offset.isFinite() && abs(it.offset - checkNotNull(expectedOffset)) <= 1f &&
-                it.visible && it.dismissals == 0 && it.attached && it.focused
-        })
+        assertTrue("需要连续稳定帧",
+            samples.size >= StableSheetFrames && expectedOffset != null && expectedOffset.isFinite())
+        val invalid = samples.firstOrNull { !it.isSettledAt(checkNotNull(expectedOffset)) }
+        assertTrue("真实 Sheet 必须稳定在展开锚点: firstInvalid=$invalid, last=${samples.last()}", invalid == null)
     }
+
+    private fun SheetDragSample.isSettledAt(expectedOffset: Float): Boolean =
+        current == SheetValue.Expanded && target == SheetValue.Expanded && !running &&
+            offset != null && offset.isFinite() && abs(offset - expectedOffset) <= 1f &&
+            visible && dismissals == 0 && attached && focused
 
     private fun saveSheetDragTrace(samples: List<SheetDragSample>, failure: Throwable?) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -626,6 +645,7 @@ class MoreOptionsSheetPredictiveBackTest {
     }
 
     private companion object {
+        const val StableSheetFrames = 12
         const val BodyTag = "more-options-predictive-body"
         const val HostTag = "more-options-predictive-host"
         const val PageTag = "more-options-predictive-page-"

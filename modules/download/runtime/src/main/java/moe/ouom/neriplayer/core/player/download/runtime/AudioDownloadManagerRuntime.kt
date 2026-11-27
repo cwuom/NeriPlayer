@@ -483,6 +483,7 @@ internal suspend fun AudioDownloadManager.buildCorePendingMetadata(
         channelId = song.channelId,
         audioId = song.audioId,
         subAudioId = song.subAudioId,
+        youtubeContentLabel = song.youtubeContentLabel,
         playlistContextId = song.playlistContextId,
         durationMs = song.durationMs,
         verifiedAudioDurationMs = verifiedAudioDurationMs,

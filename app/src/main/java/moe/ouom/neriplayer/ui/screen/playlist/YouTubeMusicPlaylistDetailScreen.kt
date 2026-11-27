@@ -27,6 +27,7 @@ import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import android.content.ClipData
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -62,8 +63,8 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -117,6 +118,8 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
@@ -170,9 +173,12 @@ fun YouTubeMusicPlaylistDetailScreen(
     val ui by viewModel.uiState.collectAsState()
     val hasRequestedPlaylistState = ui.playlist?.browseId == playlist.browseId
     val visibleTracks = if (hasRequestedPlaylistState) ui.tracks else emptyList()
+    val favoriteSnapshot = ui.favoriteSnapshot.takeIf { hasRequestedPlaylistState }
     val requestedAllTracksLoaded = hasRequestedPlaylistState && ui.allTracksLoaded
     val requestedError = ui.error.takeIf { hasRequestedPlaylistState }
-    val pageOwner = remember(playlist.browseId) { Any() }
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsState()
+    val catalogKey = contentPreferences.catalogKey(YouTubeContentSettings.systemLocale())
+    val pageOwner = remember(playlist.browseId, catalogKey) { Any() }
     val retryPlaylist: () -> Unit = {
         if (viewModel.uiState.value.playlist?.browseId == playlist.browseId) {
             viewModel.retry(offlineMode = offlineMode, owner = pageOwner)
@@ -316,12 +322,16 @@ fun YouTubeMusicPlaylistDetailScreen(
         end = PlaylistModernHeroSearchHeight,
         fraction = searchVisibilityEased
     )
+    // 横屏平板两栏时头部固定在侧栏, 顶栏不随列表折叠, 搜索框也留在侧栏
+    val twoPane = rememberPlaylistTwoPaneLayout()
     val playlistChromeCollapseProgress by remember(
         listState,
         density,
-        playlistHeroHeight
+        playlistHeroHeight,
+        twoPane
     ) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 1f
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -335,8 +345,9 @@ fun YouTubeMusicPlaylistDetailScreen(
     val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
         playlistChromeCollapseProgress
     )
-    val dockedSearchRevealProgress by remember(listState, density) {
+    val dockedSearchRevealProgress by remember(listState, density, twoPane) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 0f
             resolvePlaylistDockedSearchRevealProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -359,7 +370,7 @@ fun YouTubeMusicPlaylistDetailScreen(
     )
     val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
         searchVisibilityProgress = searchVisibilityProgress,
-        chromeCollapseProgress = playlistChromeCollapseProgress
+        chromeCollapseProgress = if (twoPane) 0f else playlistChromeCollapseProgress
     )
     val headerSearchVisible = shouldComposePlaylistSearchSlot(
         searchVisible = searchVisible,
@@ -452,19 +463,18 @@ fun YouTubeMusicPlaylistDetailScreen(
         onSongClick(visibleTracks, startIndex)
     }
 
-    LaunchedEffect(isFavorite, resolvedPlaylist, visibleTracks, requestedAllTracksLoaded) {
-        if (!isFavorite) return@LaunchedEffect
-        if (!requestedAllTracksLoaded) return@LaunchedEffect
+    LaunchedEffect(isFavorite, resolvedPlaylist, favoriteSnapshot) {
+        if (!isFavorite || favoriteSnapshot == null) return@LaunchedEffect
         favoriteRepo.updateFavoriteMeta(
             id = playlistFavoriteId,
             name = resolvedPlaylist.title,
             coverUrl = resolvedPlaylist.coverUrl,
-            trackCount = resolvedTrackCount,
+            trackCount = favoriteSnapshot.trackCount,
             source = "youtubeMusic",
             browseId = resolvedPlaylist.browseId,
             playlistId = resolvedPlaylist.playlistId,
             subtitle = resolvedPlaylist.subtitle,
-            songs = visibleTracks
+            songs = favoriteSnapshot.songs
         )
     }
 
@@ -479,9 +489,16 @@ fun YouTubeMusicPlaylistDetailScreen(
         topBar = {
             if (!selectionMode) {
                 TopAppBar(
+                    modifier = Modifier.scrollToTopOnTitleBarTap {
+                        listState.scrollToTopForReselect()
+                    },
                     title = {
                         Text(
                             text = resolvedPlaylist.title,
+                            // 标题已在头部大字展示, 顶栏只在头部滚走后淡入, 避免同屏出现两遍
+                            modifier = Modifier.graphicsLayer {
+                                        alpha = if (twoPane) 0f else playlistChromeVisualProgress
+                                    },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -522,7 +539,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     if (isFavorite) {
                                         favoriteRepo.removeFavorite(playlistFavoriteId, "youtubeMusic")
                                     } else {
-                                        if (!requestedAllTracksLoaded) {
+                                        if (favoriteSnapshot == null) {
                                             showWaitForFullLoadMessage()
                                             return@launch
                                         }
@@ -530,12 +547,12 @@ fun YouTubeMusicPlaylistDetailScreen(
                                             id = playlistFavoriteId,
                                             name = resolvedPlaylist.title,
                                             coverUrl = resolvedPlaylist.coverUrl,
-                                            trackCount = resolvedTrackCount,
+                                            trackCount = favoriteSnapshot.trackCount,
                                             source = "youtubeMusic",
                                             browseId = resolvedPlaylist.browseId,
                                             playlistId = resolvedPlaylist.playlistId,
                                             subtitle = resolvedPlaylist.subtitle,
-                                            songs = visibleTracks
+                                            songs = favoriteSnapshot.songs
                                         )
                                     }
                                 }
@@ -667,13 +684,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                     coverUrl = resolvedPlaylist.coverUrl,
                     offlineMode = offlineMode
                 ) {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = miniPlayerHeight + 24.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        item(key = PLAYLIST_HEADER_KEY) {
-                            PlaylistModernHeroHeader(
+                    val heroBlock: @Composable () -> Unit = {
+                        PlaylistModernHeroHeader(
                                 displayName = resolvedPlaylist.title,
                                 coverUrl = resolvedPlaylist.coverUrl,
                                 subtitle = heroSubtitle,
@@ -706,12 +718,8 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     null
                                 }
                             )
-                        }
-
-                    item(
-                        key = PLAYLIST_ACTIONS_KEY,
-                        contentType = "playlist_actions"
-                    ) {
+                    }
+                    val actionsBlock: @Composable () -> Unit = {
                         PlaylistModernActionSheet(
                             coverUrl = resolvedPlaylist.coverUrl,
                             offlineMode = offlineMode,
@@ -735,10 +743,38 @@ fun YouTubeMusicPlaylistDetailScreen(
                                         } else {
                                             showWaitForFullLoadMessage()
                                         }
+                                    },
+                                    onEnterSelection = {
+                                        selectedKeys = emptySet()
+                                        selectionMode = true
                                     }
                                 )
                         }
                     }
+                    PlaylistTwoPaneBody(
+                        twoPane = twoPane,
+                        modifier = Modifier.fillMaxSize(),
+                        pane = {
+                            heroBlock()
+                            actionsBlock()
+                        }
+                    ) {
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = miniPlayerHeight + 24.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        item(key = PLAYLIST_HEADER_KEY) {
+                                // 两栏时头部和操作区搬进侧栏, 这里留空位保住索引, 定位和恢复滚动仍按固定偏移计算
+                                if (twoPane) PlaylistTwoPaneListTopGap() else heroBlock()
+                            }
+
+                    item(
+                        key = PLAYLIST_ACTIONS_KEY,
+                        contentType = "playlist_actions"
+                    ) {
+                                if (!twoPane) actionsBlock()
+                            }
 
                     if (!requestedAllTracksLoaded && visibleTracks.isNotEmpty()) {
                         item(key = "youtube_music_partial_loaded") {
@@ -786,11 +822,11 @@ fun YouTubeMusicPlaylistDetailScreen(
                                     offlineMode = offlineMode
                                 ) {
                                     EmptyBlock(
-                                        text = if (searchQuery.isBlank()) {
-                                            stringResource(CoreCommonR.string.library_youtube_music_empty)
-                                        } else {
-                                            stringResource(CoreCommonR.string.search_no_match)
-                                        }
+                                        text = stringResource(when {
+                                            searchQuery.isNotBlank() -> CoreCommonR.string.search_no_match
+                                            hasRequestedPlaylistState && ui.filteredEmpty -> AppR.string.youtube_tracks_filtered
+                                            else -> AppR.string.youtube_tracks_empty
+                                        })
                                     )
                                 }
                             }
@@ -853,6 +889,7 @@ fun YouTubeMusicPlaylistDetailScreen(
                         }
                     }
                 }
+                    }
                 }
 
                 if (currentIndex >= 0) {

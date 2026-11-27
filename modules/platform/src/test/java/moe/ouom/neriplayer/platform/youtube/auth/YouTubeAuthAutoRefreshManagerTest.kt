@@ -146,7 +146,8 @@ class YouTubeAuthAutoRefreshManagerTest {
             val manager = YouTubeAuthAutoRefreshManager(
                 context = context,
                 httpClientProvider = { client },
-                authStore = store
+                authStore = store,
+                awaitWebViewRoute = { true }
             )
             block(manager, { store.captureAuthSnapshot().auth }, initial)
         } finally {
@@ -348,7 +349,8 @@ class YouTubeAuthAutoRefreshManagerTest {
         val manager = YouTubeAuthAutoRefreshManager(
             httpClientProvider = { okhttp3.OkHttpClient() },
             context = context,
-            authStore = RefreshTestAuthStore(auth)
+            authStore = RefreshTestAuthStore(auth),
+            awaitWebViewRoute = { true }
         )
         val method = YouTubeAuthAutoRefreshManager::class.java.getDeclaredMethod(
             "shouldAttemptRefresh",

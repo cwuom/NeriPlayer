@@ -6,11 +6,35 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import java.util.Locale
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.MutableStateFlow
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.platform.youtube.api.auth.hasSavedAuthMaterial
+import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
+
+internal data class LibraryYouTubeCatalog(val enabled: Boolean, val account: String?, val catalogKey: String?)
+
+internal fun libraryYouTubeCatalog(
+    auth: Flow<YouTubeAuthBundle>,
+    enabled: Flow<Boolean>,
+    preferences: Flow<YouTubeContentPreferences>,
+    systemLocale: () -> Locale = YouTubeContentSettings::systemLocale
+): Flow<LibraryYouTubeCatalog> = combine(auth, enabled, preferences) { bundle, active, prefs ->
+    if (active && bundle.hasSavedAuthMaterial()) {
+        LibraryYouTubeCatalog(true, bundle.buildRefreshObserverFingerprint(), prefs.catalogKey(systemLocale()))
+    } else {
+        LibraryYouTubeCatalog(active, null, null)
+    }
+}.distinctUntilChanged()
 
 internal class LibraryYouTubeRefreshOwner(
     private val scope: CoroutineScope,

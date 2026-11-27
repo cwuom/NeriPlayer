@@ -331,7 +331,8 @@
     "moe/ouom/neriplayer/data/local/storage/host/Storage*.kt",
     "moe/ouom/neriplayer/data/local/storage/mapping/Storage*.kt",
     "moe/ouom/neriplayer/data/local/storage/presentation/Storage*.kt",
-    "moe/ouom/neriplayer/data/local/storage/Storage*.kt"
+    "moe/ouom/neriplayer/data/local/storage/Storage*.kt",
+    "moe/ouom/neriplayer/lanltw/core/**/*.kt"
   ],
   "method_scopes": [
     {
@@ -542,17 +543,18 @@
       "methods": [
         "SettingsHostScreen",
         "selectSettingsHostPage",
-        "SettingsHostScreen$lambda$19",
-        "SettingsHostScreen$lambda$19$1",
-        "SettingsHostScreen$lambda$19$1$2",
-        "SettingsHostScreen$lambda$19$1$2$0",
-        "SettingsHostScreen$lambda$19$1$2$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$0$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$1",
-        "SettingsHostScreen$lambda$19$1$2$0$1$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$1$1$0",
-        "SettingsHostScreen$lambda$19$1$2$0$2",
-        "SettingsHostScreen$lambda$19$1$2$0$2$0$0"
+        "reselectSettingsHost",
+        "SettingsHostScreen$lambda$21",
+        "SettingsHostScreen$lambda$21$1",
+        "SettingsHostScreen$lambda$21$1$2",
+        "SettingsHostScreen$lambda$21$1$2$0",
+        "SettingsHostScreen$lambda$21$1$2$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$0$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$1",
+        "SettingsHostScreen$lambda$21$1$2$0$1$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$1$1$0",
+        "SettingsHostScreen$lambda$21$1$2$0$2",
+        "SettingsHostScreen$lambda$21$1$2$0$2$0$0"
       ]
     },
     {
@@ -560,16 +562,16 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$181",
-        "NeriAppContent$lambda$181$4$0",
-        "NeriAppContent$lambda$181$RenderMainTabRoute",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$24",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$25",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$26",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$27",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$28",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$28$1",
-        "NeriAppContent$lambda$181$30"
+        "NeriAppContent$lambda$185",
+        "NeriAppContent$lambda$185$3$0",
+        "NeriAppContent$lambda$185$RenderMainTabRoute",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$27",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$28",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$29",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$30",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$31",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$31$2",
+        "NeriAppContent$lambda$185$33"
       ]
     },
     {
@@ -770,20 +772,6 @@
         "acceptTrackEndIdentity",
         "isDuplicateTrackEnd",
         "acceptTrackEndTiming",
-        "seekToImpl",
-        "logSeekRequested",
-        "acceptSeekCommand",
-        "allowsLocalRoomSeek",
-        "preparePlaybackSeek",
-        "shouldRefreshYouTubeUrlForSeek",
-        "knownSeekDuration",
-        "rememberYouTubeSeekPosition",
-        "applyPendingSeekPosition",
-        "applyPlaybackSeek",
-        "seekPlayerIfReady",
-        "syncSeekOutputs",
-        "refreshPlaybackUrlAfterSeek",
-        "seekRefreshReason",
         "maybePersistPlaybackStatsProgress",
         "pauseInternal",
         "startProgressUpdates",
@@ -829,6 +817,26 @@
         "clearQueueStopMediaUrl",
         "logQueueStopComplete",
         "<clinit>"
+      ]
+    },
+    {
+      "source": "moe/ouom/neriplayer/core/player/playback/PlayerManagerSeekExtensions.kt",
+      "class": "moe.ouom.neriplayer.core.player.playback.PlayerManagerSeekExtensionsKt",
+      "methods": [
+        "seekToImpl",
+        "logSeekRequested",
+        "acceptSeekCommand",
+        "allowsLocalRoomSeek",
+        "preparePlaybackSeek",
+        "shouldRefreshYouTubeUrlForSeek",
+        "knownSeekDuration",
+        "rememberYouTubeSeekPosition",
+        "applyPendingSeekPosition",
+        "applyPlaybackSeek",
+        "seekPlayerIfReady",
+        "syncSeekOutputs",
+        "refreshPlaybackUrlAfterSeek",
+        "seekRefreshReason"
       ]
     },
     {

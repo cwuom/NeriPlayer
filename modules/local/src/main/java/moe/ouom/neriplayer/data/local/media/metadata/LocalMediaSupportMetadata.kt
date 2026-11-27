@@ -8,13 +8,20 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
 import kotlinx.coroutines.CancellationException
+import moe.ouom.neriplayer.data.local.media.curation.FolderArtworkLocator
+import moe.ouom.neriplayer.data.local.media.curation.resolveSharedAudioPathWriteTarget
+import moe.ouom.neriplayer.data.local.media.source.ResolvedLocalMediaSource
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.io.readBytesLimited
 import moe.ouom.neriplayer.common.io.isFileInsideDirectory
 import java.io.File
 import java.io.IOException
+import java.util.UUID
 import androidx.core.net.toUri
 
 internal fun LocalMediaSupport.logEditableMetadataWriteTiming(
@@ -50,24 +57,80 @@ private fun LocalMediaSupport.resolveWritableSafMirrorOrNull(context: Context, s
     null
 }
 
-internal fun LocalMediaSupport.editableLocalMediaUriCandidates(
+internal data class EditableLocalMediaTargets(
+    val candidates: List<Uri>,
+    val recoveryReferences: List<String>,
+    val mediaStoreFile: File?
+)
+
+internal fun LocalMediaSupport.editableLocalMediaTargets(
     context: Context,
-    song: SongItem
-): List<Uri> {
-    val directCandidates = song.localMediaUriCandidates()
+    song: SongItem,
+    sidecarsOnly: Boolean = false
+): EditableLocalMediaTargets {
+    val sources = song.localMediaUriCandidates()
+    val source = sources.firstOrNull()
+    val documentPath = source?.takeIf(::isExternalStorageDocumentUri)?.let { uri ->
+        runCatching { ResolvedLocalMediaSource.externalStorageFile(uri)?.let(Uri::fromFile) }.getOrNull()
+    }
+    val pathTarget = (documentPath ?: source)?.let { uri ->
+        resolveSharedAudioPathWriteTarget(context, uri) { context.contentResolver.persistedUriPermissions.orEmpty() }
+    }
+    val directCandidates = sources.map { uri ->
+        FolderArtworkLocator.writableExternalStorageDocumentUri(context, uri) ?: uri
+    }
     val safCandidates = directCandidates.asSequence()
         .filter(::isMediaStoreUri)
         .mapNotNull { source -> resolveWritableSafMirrorOrNull(context, source) }
         .toList()
-    return (safCandidates + directCandidates)
-        .distinctBy(Uri::toString)
-        .sortedBy { uri ->
-            when {
-                uri.scheme.equals("file", ignoreCase = true) -> 0
-                isMediaStoreUri(uri) -> 2
-                else -> 1
-            }
+    val orderedCandidates = (safCandidates + directCandidates).sortedBy { uri ->
+        when {
+            uri.scheme.equals("file", ignoreCase = true) -> 0
+            isMediaStoreUri(uri) -> 2
+            else -> 1
         }
+    }
+    // 媒体条目授权只覆盖音频本身，单独写侧载仍需通过文件路径或 SAF 树
+    val preferred = pathTarget?.uri?.takeIf { uri ->
+        documentPath == null && (!sidecarsOnly || !isMediaStoreUri(uri))
+    }
+    val candidates = (listOfNotNull(preferred) + orderedCandidates).distinctBy(Uri::toString)
+    // 即使授权变化导致写入目标切换，也要检查旧引用是否有待恢复的事务
+    val recoveryAliases = pathTarget?.let { it.recoveryAliases + listOfNotNull(documentPath) }.orEmpty()
+    val recoveryReferences = (candidates + recoveryAliases).map(Uri::toString).distinct()
+    val mediaStoreFile = pathTarget?.file?.takeIf { preferred?.let(::isMediaStoreUri) == true }
+    return EditableLocalMediaTargets(candidates, recoveryReferences, mediaStoreFile)
+}
+
+internal fun SongItem.sidecarDisplayName(sourceUri: Uri): String {
+    localFileName?.takeIf(String::isNotBlank)?.let { return it }
+    val segment = sourceUri.lastPathSegment.orEmpty()
+    return if (isExternalStorageDocumentUri(sourceUri)) segment.substringAfter(':').substringAfterLast('/') else segment
+}
+
+internal fun canCreateSidecarTemporaryFile(file: File): Boolean {
+    val parent = file.parentFile ?: return false
+    if (!file.isFile) return false
+    // 分区存储可能允许 stat 和音频回写，但仍拒绝同目录的临时文件
+    val probe = File(parent, ".neri-sidecar-${UUID.randomUUID()}.tmp")
+    val descriptor = try {
+        Os.open(
+            probe.path,
+            OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_EXCL or OsConstants.O_CLOEXEC,
+            OsConstants.S_IRUSR or OsConstants.S_IWUSR
+        )
+    } catch (error: ErrnoException) {
+        when (error.errno) {
+            OsConstants.EACCES, OsConstants.EPERM, OsConstants.EROFS -> return false
+            else -> throw IOException(error.message, error)
+        }
+    }
+    try {
+        Os.remove(probe.path)
+    } finally {
+        Os.close(descriptor)
+    }
+    return true
 }
 
 internal fun LocalMediaSupport.resolveEditableSidecarFile(context: Context, sourceUri: Uri): File? {
@@ -85,10 +148,11 @@ fun LocalMediaSupport.isStandaloneContentMetadataTarget(
         return false
     }
     if (isMediaStoreUri(sourceUri)) {
-        val relativePath = queryContentInfo(context, sourceUri).relativePath
-            ?.trim()?.trim('/')?.takeIf(String::isNotBlank) ?: return false
+        val relativePath = queryContentInfo(context, sourceUri).relativePath?.trim()?.trim('/') ?: return false
         // 目录查询失败不代表相邻文件不存在，匹配根仍需保持侧载事务；只读授权写不了侧载，按独立文件处理
-        return resolveExternalStorageTreeUri(context, relativePath, requireWrite = true) == null
+        return resolveExternalStorageTreeUri(
+            context, relativePath, requireWrite = true, volumeId = mediaStoreDocumentVolumeId(sourceUri)
+        ) == null
     }
     // 单文件授权没有相邻文件命名空间，已有 SAF 目录授权仍沿完整侧载事务处理
     return resolveLocalDocumentNavigation(context, sourceUri)?.parentDocumentId == null

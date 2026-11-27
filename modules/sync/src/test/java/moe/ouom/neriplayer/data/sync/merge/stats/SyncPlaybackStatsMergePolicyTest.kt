@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.sync.merge.stats
 
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import org.junit.Assert.assertEquals
@@ -8,6 +9,44 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SyncPlaybackStatsMergePolicyTest {
+    @Test
+    fun `hourly amounts converge across devices retries old peers and clear epochs`() {
+        val first = SyncPlaybackHourTotal("phone", 0, 0, 8, 14)
+        val later = first.copy(totalListenMs = 26)
+        val tablet = later.copy(deviceId = "tablet")
+        val nextEpoch = first.copy(epochStartedAt = 100, totalListenMs = 9)
+        val resetCounter = SyncPlaybackCounterShard("phone", 100, 9, 1, 105, 114)
+        val oldCounter = SyncPlaybackCounterShard("phone", 0, 26, 1, 20, 46)
+        val local = SyncPlaybackStatBucket(identityKey = "song", firstPlayedAt = 20, lastPlayedAt = 114,
+            counterShards = listOf(oldCounter, resetCounter), hourlyTotals = listOf(nextEpoch, first))
+        val remote = local.copy(hourlyTotals = listOf(tablet, later))
+        val merged = requireNotNull(SyncPlaybackStatsMergePolicy.mergeBucket(local, remote, 0))
+        assertEquals(listOf(later, nextEpoch, tablet), merged.hourlyTotals)
+        assertEquals(merged, SyncPlaybackStatsMergePolicy.mergeBucket(remote, local, 0))
+        assertEquals(merged, SyncPlaybackStatsMergePolicy.mergeBucket(merged, remote, 0))
+        assertEquals(merged, SyncPlaybackStatsMergePolicy.mergeBucket(merged, merged.copy(hourlyTotals = emptyList()), 0))
+        val afterClear = requireNotNull(SyncPlaybackStatsMergePolicy.mergeBucket(merged, remote, 100))
+        assertEquals(listOf(nextEpoch), afterClear.hourlyTotals)
+        assertEquals(9L, afterClear.totalListenMs)
+    }
+
+    @Test
+    fun `date line devices keep both recorded dates when merging with an old peer`() {
+        fun bucket(device: String, date: String?) = SyncPlaybackStatBucket(
+            dayStartAt = 100, identityKey = "track", lastPlayedAt = 120, firstPlayedAt = 110,
+            totalListenMs = 10, playCount = 1, recordedLocalDate = date,
+            counterShards = listOf(SyncPlaybackCounterShard(device, 0, 10, 1, 110, 120, date))
+        )
+        val west = bucket("west", "2026-11-22")
+        val east = bucket("east", "2026-11-23")
+        val both = requireNotNull(SyncPlaybackStatsMergePolicy.mergeBucket(west, east, 0))
+        assertEquals(both, SyncPlaybackStatsMergePolicy.mergeBucket(east, west, 0))
+        assertEquals(20L, both.totalListenMs)
+        assertEquals(west.recordedLocalDate, both.recordedLocalDate)
+        assertEquals(listOf("2026-11-23", "2026-11-22"), both.counterShards.map { it.recordedLocalDate })
+        assertEquals(both, SyncPlaybackStatsMergePolicy.mergeBucket(both, bucket("west", null), 0))
+    }
+
     @Test
     fun `clear barrier drops remote stats recorded before clear`() {
         val clearedAt = 1_000L

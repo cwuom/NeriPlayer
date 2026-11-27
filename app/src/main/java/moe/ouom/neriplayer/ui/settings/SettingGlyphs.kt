@@ -104,7 +104,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import moe.ouom.neriplayer.ui.theme.ContinuousRoundedCornerShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /** Per-setting symbol on its own hue; makes each row recognizable at a glance in clean style. */
 internal data class SettingGlyph(val icon: ImageVector, val tint: Color)
@@ -215,6 +215,7 @@ internal fun settingGlyphFor(key: String): SettingGlyph? = when (key) {
     "coherent_feedback_enabled" -> g(Icons.Rounded.TouchApp, Orange)
     "predictive_back_preview_enabled" -> g(Icons.Rounded.SwipeLeft, Blue)
     "liquid_glass_enabled" -> g(Icons.Rounded.WaterDrop, Cyan)
+    "enhanced_visual_effects_enabled" -> g(Icons.Rounded.AutoAwesome, Pink)
     "advanced_blur_enabled" -> g(Icons.Rounded.BlurOn, Indigo)
     "enhanced_advanced_blur_enabled" -> g(Icons.Rounded.BlurCircular, Purple)
     "enhanced_advanced_blur_radius_dp" -> g(Icons.Rounded.BlurLinear, Purple)
@@ -242,6 +243,8 @@ internal fun settingGlyphFor(key: String): SettingGlyph? = when (key) {
     "netease_login" -> g(Icons.Rounded.MusicNote, Red)
     "bili_login" -> g(Icons.Rounded.LiveTv, Pink)
     "youtube_login" -> g(Icons.Rounded.SmartDisplay, Red)
+    "netease_play_history_sync_enabled" -> g(Icons.Rounded.History, Red)
+    "bili_play_history_sync_enabled" -> g(Icons.Rounded.History, Pink)
     "playlist_export" -> g(Icons.Rounded.IosShare, Blue)
     "playlist_import" -> g(Icons.Rounded.FileDownload, Green)
     "config_export" -> g(Icons.Rounded.Upload, Blue)
@@ -271,7 +274,7 @@ internal fun SettingGlyphTile(
     Box(
         modifier = modifier
             .size(size)
-            .clip(ContinuousRoundedCornerShape(size * 0.28f))
+            .clip(RoundedCornerShape(size * 0.28f))
             .background(glyph.tint),
         contentAlignment = Alignment.Center
     ) {

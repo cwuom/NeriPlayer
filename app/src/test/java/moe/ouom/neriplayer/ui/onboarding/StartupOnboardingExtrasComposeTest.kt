@@ -1,11 +1,19 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.Box
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -15,10 +23,10 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
-import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
@@ -57,9 +65,7 @@ class StartupOnboardingExtrasComposeTest {
         composeRule.waitForIdle()
     }
 
-    // The playback previews run an endless waveform animation, so they need a manually driven clock.
-    private fun setStep(hasEndlessAnimation: Boolean = false, content: @Composable () -> Unit) {
-        composeRule.mainClock.autoAdvance = !hasEndlessAnimation
+    private fun setStep(content: @Composable () -> Unit) {
         composeRule.setContent {
             hostView = LocalView.current
             Column {
@@ -83,9 +89,6 @@ class StartupOnboardingExtrasComposeTest {
         composeRule.onNodeWithText(text).performClick()
         settle()
     }
-
-    private fun topOf(text: String): Float =
-        composeRule.onNodeWithText(text).getBoundsInRoot().top.value
 
     private fun setLyricScaleSlider(to: Float) {
         composeRule.onNode(
@@ -216,23 +219,23 @@ class StartupOnboardingExtrasComposeTest {
     fun `playback controls step links lyric size while it follows the now playing size`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
-        setStep(hasEndlessAnimation = true) {
+        var previewRequests = 0
+        setStep {
             StartupPlaybackControlsContent(
                 preferences = PlaybackControlLayoutPreferences(),
                 coverLyricFontScale = 1f,
                 onCoverLyricFontScaleChange = { scales += it },
-                onPreferencesChange = { changes += it }
+                onPreferencesChange = { changes += it },
+                onOpenPreview = { previewRequests += 1 }
             )
         }
 
-        val previewLyric = string(AppR.string.onboarding_controls_preview_lyric_2)
-        assertTrue(topOf(PROGRESS_ELAPSED) < topOf(previewLyric))
+        clickText(string(AppR.string.onboarding_preview_hint_open))
+        assertEquals(1, previewRequests)
 
         clickText(string(CoreCommonR.string.settings_playback_control_size_large))
         clickText(string(CoreCommonR.string.settings_nowplaying_control_placement_bottom))
-        assertTrue(topOf(PROGRESS_ELAPSED) < topOf(previewLyric))
         clickText(string(CoreCommonR.string.settings_nowplaying_control_placement_bottom_with_progress))
-        assertTrue(topOf(PROGRESS_ELAPSED) > topOf(previewLyric))
         drawHost()
 
         assertEquals(
@@ -257,10 +260,114 @@ class StartupOnboardingExtrasComposeTest {
     }
 
     @Test
+    @Config(sdk = [35, 36], qualifiers = "w1280dp-h800dp-land-mdpi")
+    fun `tablet landscape step keeps only options that apply beside the lyrics and points to portrait`() {
+        val changes = mutableListOf<PlaybackControlLayoutPreferences>()
+        val scales = mutableListOf<Float>()
+        var previewRequests = 0
+        setStep {
+            StartupOnboardingLayout(header = {}, actions = {}) {
+                StartupNowPlayingLandscapeContent(
+                    preferences = PlaybackControlLayoutPreferences(),
+                    lyricFontScale = 1f,
+                    onLyricFontScaleChange = { scales += it },
+                    onPreferencesChange = { changes += it },
+                    onOpenPreview = { previewRequests += 1 }
+                )
+            }
+        }
+
+        val controls = composeRule.onNodeWithText(string(AppR.string.onboarding_controls_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        val lyrics = composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_lyrics_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(controls.top, lyrics.top, 1f)
+        assertTrue(controls.right < lyrics.left)
+        composeRule.onNodeWithTag(StartupLandscapePortraitHintTag).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_portrait_hint_title)).assertExists()
+        // 横屏播放页里不生效的选项不能出现
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_nowplaying_immersive_mode)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_controls_cover_lyrics_size_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_lyrics_control_size_title)).assertDoesNotExist()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_controls_position_title)).assertDoesNotExist()
+
+        clickText(string(AppR.string.onboarding_preview_hint_open))
+        clickText(string(CoreCommonR.string.settings_playback_control_size_large))
+        setLyricScaleSlider(to = 1.2f)
+
+        assertEquals(1, previewRequests)
+        assertEquals(
+            listOf(
+                PlaybackControlLayoutPreferences(
+                    nowPlayingSize = PlaybackControlSize.LARGE,
+                    lyricsSize = PlaybackControlSize.LARGE
+                )
+            ),
+            changes
+        )
+        assertEquals(listOf(1.2f), scales)
+    }
+
+    @Test
+    fun `wide two pane landscape step lays options in two columns without intrinsic measurement`() {
+        setStep {
+            CompositionLocalProvider(LocalStartupOnboardingTwoPane provides true) {
+                Box(Modifier.requiredWidth(900.dp)) {
+                    StartupNowPlayingLandscapeContent(
+                        preferences = PlaybackControlLayoutPreferences(),
+                        lyricFontScale = 1f,
+                        onLyricFontScaleChange = {},
+                        onPreferencesChange = {},
+                        onOpenPreview = {}
+                    )
+                }
+            }
+        }
+
+        // 选项卡里带 BoxWithConstraints, 双列 FlowRow 一旦按权重测量就会因固有尺寸查询崩溃
+        val size = composeRule.onNodeWithText(string(AppR.string.onboarding_controls_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        val lyrics = composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_lyrics_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("两个选项应并排成两列", lyrics.left > size.right)
+    }
+
+    @Test
+    fun `progress header reads the chapter from the merged landscape sequence`() {
+        val steps = startupStepsFor(tabletLandscape = true)
+        val index = steps.indexOf(StartupStep.Personalize)
+        setStep { StartupProgressHeader(steps = steps, stepIndex = index) }
+
+        composeRule.onNodeWithText(string(AppR.string.onboarding_step_counter, index + 1, steps.size)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_chapter_personalize)).assertExists()
+        composeRule.onNodeWithText(string(AppR.string.onboarding_chapter_playback)).assertDoesNotExist()
+    }
+
+    @Test
+    fun `playback controls step toggles immersive mode from the whole card`() {
+        val changes = mutableListOf<Boolean>()
+        setStep {
+            StartupPlaybackControlsContent(
+                preferences = PlaybackControlLayoutPreferences(),
+                coverLyricFontScale = 1f,
+                onCoverLyricFontScaleChange = {},
+                onPreferencesChange = {},
+                immersiveMode = false,
+                onImmersiveModeChange = { changes += it }
+            )
+        }
+
+        clickText(string(CoreCommonR.string.settings_nowplaying_immersive_mode))
+        clickText(string(CoreCommonR.string.settings_nowplaying_immersive_mode))
+
+        assertEquals(listOf(true, false), changes)
+    }
+
+    @Test
     fun `playback controls step keeps a custom lyric size and commits the cover lyric scale`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
-        setStep(hasEndlessAnimation = true) {
+        setStep {
             StartupPlaybackControlsContent(
                 preferences = PlaybackControlLayoutPreferences(lyricsSize = PlaybackControlSize.SMALL),
                 coverLyricFontScale = 0.6f,
@@ -293,7 +400,7 @@ class StartupOnboardingExtrasComposeTest {
     fun `lyrics step warns before diverging from the now playing control size`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
-        setStep(hasEndlessAnimation = true) {
+        setStep {
             StartupLyricsContent(
                 preferences = PlaybackControlLayoutPreferences(),
                 lyricFontScale = 1f,
@@ -329,7 +436,27 @@ class StartupOnboardingExtrasComposeTest {
             .assertExists()
     }
 
-    private companion object {
-        const val PROGRESS_ELAPSED = "1:18"
+    @Test
+    fun `lyrics size warning confirms the picked size even if preferences refresh meanwhile`() {
+        val changes = mutableListOf<PlaybackControlLayoutPreferences>()
+        var preferences by mutableStateOf(PlaybackControlLayoutPreferences())
+        setStep {
+            StartupLyricsContent(
+                preferences = preferences,
+                lyricFontScale = 1f,
+                onLyricFontScaleChange = {},
+                onPreferencesChange = { changes += it }
+            )
+        }
+
+        clickText(string(CoreCommonR.string.settings_playback_control_size_small))
+        // 对话框开着时迟到一份仍是旧歌词尺寸的设置快照
+        composeRule.runOnIdle {
+            preferences = PlaybackControlLayoutPreferences(nowPlayingPlacement = NowPlayingControlPlacement.BOTTOM)
+        }
+        settle()
+        clickDialogButton(string(AppR.string.onboarding_lyrics_control_size_warning_confirm))
+
+        assertEquals(PlaybackControlSize.SMALL, changes.single().lyricsSize)
     }
 }

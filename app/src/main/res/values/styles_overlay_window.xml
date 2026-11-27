@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 入场由 Compose 自行驱动，窗口只负责退场，避免两套入场动画叠加 -->
+    <style name="NeriOverlayWindowExit">
+        <item name="android:windowEnterAnimation">@null</item>
+        <item name="android:windowExitAnimation">@anim/neri_overlay_window_exit</item>
+    </style>
+</resources>

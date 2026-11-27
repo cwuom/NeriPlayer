@@ -57,6 +57,8 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material3.*
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +100,8 @@ import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.screen.nowplaying.actions.BiliVideoSkipIntervalsSheet
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
@@ -326,12 +330,16 @@ fun BiliPlaylistDetailScreen(
         end = PlaylistModernHeroSearchHeight,
         fraction = searchVisibilityEased
     )
+    // 横屏平板两栏时头部固定在侧栏, 顶栏不随列表折叠, 搜索框也留在侧栏
+    val twoPane = rememberPlaylistTwoPaneLayout()
     val playlistChromeCollapseProgress by remember(
         listState,
         density,
-        playlistHeroHeight
+        playlistHeroHeight,
+        twoPane
     ) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 1f
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -345,8 +353,9 @@ fun BiliPlaylistDetailScreen(
     val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
         playlistChromeCollapseProgress
     )
-    val dockedSearchRevealProgress by remember(listState, density) {
+    val dockedSearchRevealProgress by remember(listState, density, twoPane) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 0f
             resolvePlaylistDockedSearchRevealProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -369,7 +378,7 @@ fun BiliPlaylistDetailScreen(
     )
     val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
         searchVisibilityProgress = searchVisibilityProgress,
-        chromeCollapseProgress = playlistChromeCollapseProgress
+        chromeCollapseProgress = if (twoPane) 0f else playlistChromeCollapseProgress
     )
     val headerSearchVisible = shouldComposePlaylistSearchSlot(
         searchVisible = searchVisible,
@@ -465,9 +474,16 @@ fun BiliPlaylistDetailScreen(
             Column {
                 if (!selectionMode) {
                     TopAppBar(
+                        modifier = Modifier.scrollToTopOnTitleBarTap {
+                            listState.scrollToTopForReselect()
+                        },
                         title = {
                             Text(
                                 text = ui.header?.title ?: playlist.title,
+                                // 标题已在头部大字展示, 顶栏只在头部滚走后淡入, 避免同屏出现两遍
+                                modifier = Modifier.graphicsLayer {
+                                        alpha = if (twoPane) 0f else playlistChromeVisualProgress
+                                    },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -629,13 +645,8 @@ fun BiliPlaylistDetailScreen(
                         coverUrl = displayHeaderCoverUrl,
                         offlineMode = offlineMode
                     ) {
-                        LazyColumn(
-                            state = listState,
-                            contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            item {
-                                PlaylistModernHeroHeader(
+                        val heroBlock: @Composable () -> Unit = {
+                            PlaylistModernHeroHeader(
                                     displayName = displayHeader.title,
                                     coverUrl = displayHeaderCoverUrl,
                                     subtitle = pluralStringResource(
@@ -672,12 +683,8 @@ fun BiliPlaylistDetailScreen(
                                         null
                                     }
                                 )
-                            }
-
-                        item(
-                            key = PLAYLIST_ACTIONS_KEY,
-                            contentType = "playlist_actions"
-                        ) {
+                        }
+                        val actionsBlock: @Composable () -> Unit = {
                             PlaylistModernActionSheet(
                                 coverUrl = displayHeaderCoverUrl,
                                 offlineMode = offlineMode,
@@ -697,10 +704,38 @@ fun BiliPlaylistDetailScreen(
                                         },
                                         onExportToLocalPlaylist = {
                                             showExportAllSheet = true
+                                        },
+                                        onEnterSelection = {
+                                            selectedIds = emptySet()
+                                            selectionMode = true
                                         }
                                     )
                             }
                         }
+                        PlaylistTwoPaneBody(
+                            twoPane = twoPane,
+                            modifier = Modifier.fillMaxSize(),
+                            pane = {
+                                heroBlock()
+                                actionsBlock()
+                            }
+                        ) {
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(bottom = 24.dp + miniPlayerHeight),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            item {
+                                // 两栏时头部和操作区搬进侧栏, 这里留空位保住索引, 定位和恢复滚动仍按固定偏移计算
+                                if (twoPane) PlaylistTwoPaneListTopGap() else heroBlock()
+                            }
+
+                        item(
+                            key = PLAYLIST_ACTIONS_KEY,
+                            contentType = "playlist_actions"
+                        ) {
+                                if (!twoPane) actionsBlock()
+                            }
 
                         when {
                             ui.loading && ui.videos.isEmpty() -> {
@@ -820,6 +855,7 @@ fun BiliPlaylistDetailScreen(
                             }
                         }
                     }
+                        }
                     }
 
                     if (currentVideoIndex >= 0) {
@@ -1044,77 +1080,35 @@ fun BiliPlaylistDetailScreen(
                         }
 
                         AnimatedVisibility(visible = !partsSelectionMode) {
-                            Text(
-                                text = currentPartsInfo.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            BiliVideoPartsTitle(currentPartsInfo.title)
                         }
 
                         HorizontalDivider()
 
-                        LazyColumn {
-                            val originalVideoItem = displayedVideos.find { it.bvid == currentPartsInfo.bvid }
-
-                            itemsIndexed(currentPartsInfo.pages, key = { _, page -> page.page }) { index, page ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .combinedClickable(
-                                            onClick = {
-                                                if (partsSelectionMode) {
-                                                    selectedParts = if (selectedParts.contains(page.page)) {
-                                                        selectedParts - page.page
-                                                    } else {
-                                                        selectedParts + page.page
-                                                    }
-                                                } else {
-                                                    onPlayParts(currentPartsInfo, index, originalVideoItem?.coverUrl ?: "")
-                                                    scope.launch { partsSheetState.hide() }.invokeOnCompletion {
-                                                        if (!partsSheetState.isVisible) showPartsSheet = false
-                                                    }
-                                                }
-                                            },
-                                            onLongClick = {
-                                                if (!partsSelectionMode) {
-                                                    partsSelectionMode = true
-                                                    selectedParts = setOf(page.page)
-                                                }
-                                            }
-                                        )
-                                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (partsSelectionMode) {
-                                        Checkbox(
-                                            checked = selectedParts.contains(page.page),
-                                            onCheckedChange = {
-                                                selectedParts = if (selectedParts.contains(page.page)) {
-                                                    selectedParts - page.page
-                                                } else {
-                                                    selectedParts + page.page
-                                                }
-                                            }
-                                        )
-                                        Spacer(Modifier.width(16.dp))
-                                    }
-
-                                    Text(
-                                        text = "P${page.page}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.width(48.dp)
-                                    )
-                                    Text(
-                                        text = page.part,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                        BiliVideoPartsList(
+                            pages = currentPartsInfo.pages,
+                            selectedParts = selectedParts.takeIf { partsSelectionMode },
+                            onTogglePart = { page ->
+                                selectedParts = if (page in selectedParts) {
+                                    selectedParts - page
+                                } else {
+                                    selectedParts + page
+                                }
+                            },
+                            onLongPressPart = { page ->
+                                if (!partsSelectionMode) {
+                                    partsSelectionMode = true
+                                    selectedParts = setOf(page)
+                                }
+                            },
+                            onPlayPart = { index ->
+                                val originalVideoItem = displayedVideos.find { it.bvid == currentPartsInfo.bvid }
+                                onPlayParts(currentPartsInfo, index, originalVideoItem?.coverUrl.orEmpty())
+                                scope.launch { partsSheetState.hide() }.invokeOnCompletion {
+                                    if (!partsSheetState.isVisible) showPartsSheet = false
                                 }
                             }
-                        }
+                        )
                     }
                 }
             }

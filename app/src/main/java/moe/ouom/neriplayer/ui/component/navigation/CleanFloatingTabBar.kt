@@ -32,6 +32,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -61,8 +63,9 @@ import androidx.navigation.NavDestination
 import moe.ouom.neriplayer.navigation.Destinations
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.enhancedGlassRim
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
-import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import kotlin.math.roundToInt
 
 private val FloatingBarHeight = 64.dp
@@ -85,7 +88,7 @@ internal fun CleanFloatingTabBar(
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val dark = colors.surface.luminance() < 0.5f
-    val overBackground = LocalHasCustomBackground.current
+    val enhanced = NeriDesign.tokens.enhancedEffects
     val selectedIndex = items.indexOfFirst { (dest, _) ->
         isNeriNavigationDestinationSelected(currentDestination, dest)
     }
@@ -101,6 +104,15 @@ internal fun CleanFloatingTabBar(
     SideEffect { tabDrag.trimItems(items.size) }
     LaunchedEffect(selectedIndex, tabDrag.layoutVersion) {
         tabDrag.settleOn(selectedIndex)
+    }
+    if (enhanced) {
+        LaunchedEffect(tabDrag) {
+            // 只在透镜被按住或正在移动时逐帧推进果冻弹簧，静止时不占用帧
+            while (true) {
+                snapshotFlow { tabDrag.jellyActive() }.first { it }
+                tabDrag.runJelly()
+            }
+        }
     }
     Box(
         modifier = modifier
@@ -119,19 +131,20 @@ internal fun CleanFloatingTabBar(
                 .fillMaxWidth()
                 .height(FloatingBarHeight)
                 .shadow(
-                    elevation = 18.dp,
+                    elevation = if (enhanced) 26.dp else 18.dp,
                     shape = CircleShape,
                     clip = false,
                     ambientColor = Color.Black.copy(alpha = 0.06f),
                     spotColor = Color.Black.copy(alpha = if (dark) 0.3f else 0.12f)
                 )
-                .border(
+                .then(if (enhanced) Modifier.enhancedGlassRim(CircleShape, dark) else Modifier.border(
                     width = 0.5.dp,
                     color = if (dark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.7f),
                     shape = CircleShape
-                ),
+                )),
             shape = CircleShape,
-            fallbackColor = colors.surfaceContainerLow.copy(alpha = if (overBackground) 0.62f else 0.9f),
+            // 无模糊时内容会从悬浮底栏后面滚过, 半透明底色会透出杂乱内容, 直接用纯色
+            fallbackColor = colors.surfaceContainerLow,
             tintColor = colors.surfaceContainerLow
         ) {
             Row(
@@ -140,14 +153,14 @@ internal fun CleanFloatingTabBar(
                     .fillMaxHeight()
                     .padding(horizontal = 6.dp)
                     .onGloballyPositioned { tabDrag.bar = it }
-                    .cleanTabDragGesture(tabDrag) { index ->
+                    .cleanTabDragGesture(tabDrag, enhanced) { index ->
                         if (index == latestSelectedIndex) return@cleanTabDragGesture
                         latestItems.getOrNull(index)?.let { (dest, _) -> latestOnItemSelected(dest) }
                     }
                     .drawWithContent {
                         drawBarContentAroundIndicator(
                             layer = barLayer,
-                            indicator = tabDrag.indicatorRect(barHeightPx, density),
+                            indicator = tabDrag.indicatorRect(barHeightPx, density, enhanced),
                             path = lensPath
                         )
                     },
@@ -186,7 +199,8 @@ internal fun CleanFloatingTabBar(
             hostCoordinates = { host.coordinates },
             barLayer = barLayer,
             barHeightPx = barHeightPx,
-            dark = dark
+            dark = dark,
+            enhanced = enhanced
         )
     }
 }

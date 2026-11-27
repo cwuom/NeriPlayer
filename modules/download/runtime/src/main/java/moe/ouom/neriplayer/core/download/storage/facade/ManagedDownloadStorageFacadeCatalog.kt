@@ -1008,6 +1008,7 @@ internal suspend fun ManagedDownloadStorage.persistFastIndexImpl(
             channelId = metadata.channelId,
             audioId = metadata.audioId,
             subAudioId = metadata.subAudioId,
+            youtubeContentLabel = metadata.youtubeContentLabel,
             playlistContextId = metadata.playlistContextId,
             durationMs = metadata.durationMs.takeIf { it > 0L },
             coverPath = ManagedDownloadCoverLookup.findCoverReference(snapshot, audio),
