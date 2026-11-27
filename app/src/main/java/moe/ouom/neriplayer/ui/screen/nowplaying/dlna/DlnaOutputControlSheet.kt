@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeDown
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.CastConnected
@@ -49,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -218,9 +222,10 @@ fun DlnaOutputAndVolumeSheetContent() {
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // 标题行已经用设备图标表示当前输出，这里用音量图标，避免两个一模一样的图标上下重复
                 Icon(
-                    imageVector = audioDeviceInfo.second,
-                    contentDescription = audioDeviceInfo.first
+                    imageVector = localVolumeIcon(currentLocalVolume, maxVolume),
+                    contentDescription = stringResource(CoreCommonR.string.mini_player_volume)
                 )
                 Slider(
                     value = currentLocalVolume.toFloat(),
@@ -654,4 +659,10 @@ private fun DlnaOptionToggleRow(
             onCheckedChange = onCheckedChange
         )
     }
+}
+
+internal fun localVolumeIcon(volume: Int, maxVolume: Int): ImageVector = when {
+    volume <= 0 -> Icons.AutoMirrored.Outlined.VolumeOff
+    maxVolume > 0 && volume * 2 < maxVolume -> Icons.AutoMirrored.Outlined.VolumeDown
+    else -> Icons.AutoMirrored.Outlined.VolumeUp
 }
