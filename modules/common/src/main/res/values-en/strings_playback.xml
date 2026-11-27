@@ -118,7 +118,6 @@
     <string name="heartbeat_room_cannot_enable">Heartbeat mode is unavailable in a Listen Together room</string>
     <string name="heartbeat_candidates_insufficient">Heartbeat mode has no suggestions right now; continuing with the current queue</string>
     <string name="heartbeat_mode_content_description">Heartbeat mode</string>
-    <string name="player_shuffle_with_heartbeat_description">Shuffle (tap again for Heartbeat mode)</string>
     <string name="heartbeat_dislike_action">Don\'t like this song</string>
     <string name="heartbeat_dislike_marked">Marked as disliked</string>
 </resources>

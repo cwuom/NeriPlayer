@@ -116,10 +116,8 @@ internal fun NowPlayingShuffleModeButton(
  */
 @Composable
 private fun ShuffleIconWithHeartbeatBadge(showBadge: Boolean, iconSize: Dp, tint: Color) {
-    val description = stringResource(
-        if (showBadge) CoreCommonR.string.player_shuffle_with_heartbeat_description
-        else CoreCommonR.string.player_shuffle
-    )
+    // 角标只是视觉提示，无障碍标签保持「随机播放」：读屏和界面测试都按这个名字找按钮
+    val description = stringResource(CoreCommonR.string.player_shuffle)
     if (!showBadge) {
         Icon(Icons.Outlined.Shuffle, contentDescription = description, modifier = Modifier.size(iconSize), tint = tint)
         return
