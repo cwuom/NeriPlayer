@@ -291,16 +291,15 @@ internal fun PlayerManager.fillHeartbeatQueueAsync(reason: String) {
         val batch = try {
             selector.selectBatch(currentSong, queue, HEARTBEAT_BATCH_SIZE)
         } catch (error: CancellationException) {
-            heartbeatFillInFlight.set(false)
             throw error
         } catch (error: Throwable) {
             NPLogger.w(TAG, "补充心动歌失败（reason=$reason），按原队列继续", error)
             emptyList()
-        }
-        mainScope.launch {
+        } finally {
+            // 在这里就释放补货名额：播放器释放时 mainScope 会被取消，下面的协程可能根本不执行
             heartbeatFillInFlight.set(false)
-            applyHeartbeatBatch(reason, anchor, generation, currentSong, batch)
         }
+        mainScope.launch { applyHeartbeatBatch(reason, anchor, generation, currentSong, batch) }
     }
 }
 
@@ -320,6 +319,11 @@ private fun PlayerManager.applyHeartbeatBatch(
     if (heartbeatPendingAnchor() != anchor) {
         NPLogger.d(TAG, "补货期间当前歌已变（reason=$reason），按新歌重新检查")
         fillHeartbeatQueueAsync("anchorMoved")
+        return
+    }
+    // 请求期间进了一起听（含局域网）房间：队列由房间控制，结果不能插进去
+    if (isListenTogetherActive()) {
+        NPLogger.d(TAG, "补货期间进入一起听房间（reason=$reason），丢弃")
         return
     }
     if (batch.isEmpty()) {

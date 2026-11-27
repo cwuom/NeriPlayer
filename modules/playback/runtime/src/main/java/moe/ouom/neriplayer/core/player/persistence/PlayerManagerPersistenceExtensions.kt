@@ -197,12 +197,13 @@ internal fun PlayerManager.applyRestoredStateSnapshot(snapshot: RestoredPlayerSt
     repeatModeSetting = snapshot.repeatMode
     syncExoRepeatMode()
     _repeatModeFlow.value = repeatModeSetting
-    restoreHeartbeatModeFromState(snapshot.heartbeatMode, snapshot.heartbeatInsertedKeys)
     player.shuffleModeEnabled = snapshot.shuffleEnabled
 
     setRestoredPlayback(snapshot.resumePositionMs, snapshot.shouldResumePlayback)
     updateResumePlaybackRequested(false)
     _playbackPositionMs.value = restoredResumePositionMs
+    // 心动开关变化会立刻调度落盘：必须等进度等字段都恢复完，否则会用 0 进度覆盖存档
+    restoreHeartbeatModeFromState(snapshot.heartbeatMode, snapshot.heartbeatInsertedKeys)
     currentMediaUrlResolvedAtMs = 0L
     statePersistenceWriter.invalidate()
     lastStatePersistAtMs = SystemClock.elapsedRealtime()
