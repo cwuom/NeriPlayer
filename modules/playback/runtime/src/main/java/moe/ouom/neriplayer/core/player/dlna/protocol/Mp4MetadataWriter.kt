@@ -141,7 +141,7 @@ object Mp4MetadataWriter {
                     boxSize = size32
                 }
             }
-            if (boxSize < headerSize || offset + boxSize > totalLen) break
+            if (boxSize < headerSize || boxSize > totalLen - offset) break
             result += BoxRange(type, offset, boxSize, headerSize, extendsToEof = (size32 == 0L))
             offset += boxSize
         }
@@ -322,7 +322,7 @@ object Mp4MetadataWriter {
                     boxSizeLong = size32
                 }
             }
-            if (boxSizeLong < headerSize || pos.toLong() + boxSizeLong > end.toLong()) {
+            if (boxSizeLong < headerSize || boxSizeLong > (end - pos).toLong()) {
                 return false
             }
             val boxEnd = (pos.toLong() + boxSizeLong).toInt()
@@ -400,7 +400,7 @@ object Mp4MetadataWriter {
                     boxSizeLong = size32
                 }
             }
-            if (boxSizeLong < headerSize || pos.toLong() + boxSizeLong > end.toLong()) {
+            if (boxSizeLong < headerSize || boxSizeLong > (end - pos).toLong()) {
                 return null
             }
             val boxEnd = (pos.toLong() + boxSizeLong).toInt()

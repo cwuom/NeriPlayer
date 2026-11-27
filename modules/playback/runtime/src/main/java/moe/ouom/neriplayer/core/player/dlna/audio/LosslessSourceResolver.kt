@@ -37,6 +37,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -174,7 +175,9 @@ class LosslessSourceResolver(
         requestedLosslessQuality: Boolean,
         device: DlnaDevice,
         options: DlnaDeviceOptions,
-        isCancelled: () -> Boolean
+        isCancelled: () -> Boolean,
+        // 预取下一首时与当前曲目同 generation，需要独立标签避免单曲循环时暂存文件同名被删
+        stagingTag: String = generationId.toString()
     ): ResolutionOutcome = withContext(Dispatchers.IO) {
         if (isCancelled()) return@withContext ResolutionOutcome.Failed("Cancelled")
 
@@ -185,8 +188,16 @@ class LosslessSourceResolver(
 
         if (isCancelled()) return@withContext ResolutionOutcome.Failed("Cancelled")
 
-        val inspected = FlacHeaderInspector.inspectFile(sourceFile)
-        val sha256 = computeSha256(sourceFile)
+        // 暂存文件可能在解析途中被淘汰或截断，IO 失败按普通失败处理而不是抛出
+        val inspectedAndHash = try {
+            FlacHeaderInspector.inspectFile(sourceFile) to computeSha256(sourceFile)
+        } catch (_: IOException) {
+            return@withContext ResolutionOutcome.Failed(
+                getLocalizedString(CoreCommonR.string.dlna_err_materialize_failed, emptyArray())
+            )
+        }
+        val inspected = inspectedAndHash.first
+        val sha256 = inspectedAndHash.second
         val decision = LosslessSourcePolicy.evaluate(
             inspected = inspected,
             audioInfo = urlResult.audioInfo,
@@ -287,7 +298,7 @@ class LosslessSourceResolver(
                                 sourceFile = sourceFile,
                                 inspected = inspected,
                                 sha256 = sha256,
-                                generationId = generationId,
+                                stagingTag = stagingTag,
                                 metadata = normalizedMeta,
                                 isCancelled = isCancelled
                             )
@@ -409,7 +420,7 @@ class LosslessSourceResolver(
                         }
 
                         evictStagingIfNeeded(setOf(sourceFile.absolutePath))
-                        val pcmCacheFile = File(stagingDir, "${sha256.take(24)}_${generationId}.pcm")
+                        val pcmCacheFile = File(stagingDir, "${sha256.take(24)}_$stagingTag.pcm")
                         try {
                             val decoded = LosslessWavDecoder.decodeToPcmFile(
                                 sourceFile = sourceFile,
@@ -849,7 +860,7 @@ class LosslessSourceResolver(
         sourceFile: File,
         inspected: FlacHeaderInspector.InspectedAudio,
         sha256: String,
-        generationId: Long,
+        stagingTag: String,
         metadata: DlnaTrackMetadataNormalizer.NormalizedMetadata,
         isCancelled: () -> Boolean
     ): File {
@@ -858,7 +869,7 @@ class LosslessSourceResolver(
         val tagSig = sha256Hex("${metadata.title}|${metadata.artist}|${metadata.album}".toByteArray()).take(10)
         return when (inspected.format) {
             FlacHeaderInspector.ContainerFormat.FLAC -> {
-                val tagged = File(stagingDir, "tagged_${sha256.take(16)}_${tagSig}_$generationId.flac")
+                val tagged = File(stagingDir, "tagged_${sha256.take(16)}_${tagSig}_$stagingTag.flac")
                 if (FlacVorbisCommentWriter.writeTags(sourceFile, tagged, metadata.title, metadata.artist, metadata.album)) {
                     tagged
                 } else {
@@ -866,7 +877,7 @@ class LosslessSourceResolver(
                 }
             }
             FlacHeaderInspector.ContainerFormat.MP3 -> {
-                val tagged = File(stagingDir, "tagged_${sha256.take(16)}_${tagSig}_$generationId.mp3")
+                val tagged = File(stagingDir, "tagged_${sha256.take(16)}_${tagSig}_$stagingTag.mp3")
                 if (Mp3Id3TagWriter.writeTags(sourceFile, tagged, metadata.title, metadata.artist, metadata.album)) {
                     tagged
                 } else {
@@ -876,12 +887,12 @@ class LosslessSourceResolver(
             FlacHeaderInspector.ContainerFormat.AAC_OR_MP4,
             FlacHeaderInspector.ContainerFormat.ALAC_MP4 -> {
                 val defragmented = if (Mp4MetadataWriter.hasMoofBox(sourceFile)) {
-                    val m4a = File(stagingDir, "defrag_${sha256.take(16)}_$generationId.m4a")
+                    val m4a = File(stagingDir, "defrag_${sha256.take(16)}_$stagingTag.m4a")
                     Mp4Defragmenter.defragmentIfNeeded(sourceFile, m4a, isCancelled)
                 } else {
                     sourceFile
                 }
-                val tagged = File(stagingDir, "tagged_${sha256.take(16)}_${tagSig}_$generationId.m4a")
+                val tagged = File(stagingDir, "tagged_${sha256.take(16)}_${tagSig}_$stagingTag.m4a")
                 val wrote = Mp4MetadataWriter.writeTags(
                     sourceFile = defragmented,
                     targetFile = tagged,

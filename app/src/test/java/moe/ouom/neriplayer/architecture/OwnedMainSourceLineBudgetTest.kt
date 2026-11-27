@@ -263,6 +263,9 @@ class OwnedMainSourceLineBudgetTest {
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaPreferencesStore.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaServiceKeepAliveController.kt",
             "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/PlayerManagerDlnaAdapter.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaCastSessionModels.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaPrequeueGate.kt",
+            "modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/dlna/session/DlnaRendererReachability.kt",
             "app/src/main/java/moe/ouom/neriplayer/ui/screen/nowplaying/dlna/DlnaOutputControlSheet.kt"
         ).forEach { path ->
             val file = File(projectRoot, path)

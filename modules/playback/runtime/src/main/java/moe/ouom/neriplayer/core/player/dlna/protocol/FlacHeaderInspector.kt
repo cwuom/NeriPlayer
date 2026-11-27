@@ -362,7 +362,7 @@ object FlacHeaderInspector {
                 headerSize = 8
                 boxSize = size32
             }
-            if (boxSize < headerSize || offset + boxSize > fileLength) break
+            if (boxSize < headerSize || boxSize > fileLength - offset) break
             if (type == "moov" && boxSize <= 16L * 1024L * 1024L) {
                 val payloadLen = (boxSize - headerSize).toInt()
                 val moovPayload = ByteArray(payloadLen)
@@ -399,11 +399,11 @@ object FlacHeaderInspector {
                 else -> size32
             }
             if (boxSize < headerSize) break
-            val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
+            val boxEnd = if (boxSize >= (end - pos).toLong()) end else pos + boxSize.toInt()
             if (type == "moov") {
                 findAlacSpecInContainer(bytes, pos + headerSize, boxEnd, "moov")?.let { return it }
             }
-            if (pos.toLong() + boxSize > end) break
+            if (boxSize > (end - pos).toLong()) break
             pos = (pos.toLong() + boxSize).toInt()
         }
         return null
@@ -428,7 +428,7 @@ object FlacHeaderInspector {
                 else -> size32
             }
             if (boxSize < headerSize) break
-            val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
+            val boxEnd = if (boxSize >= (end - pos).toLong()) end else pos + boxSize.toInt()
             if (type == "trak") {
                 val trackClassification = classifyMp4Trak(bytes, pos + headerSize, boxEnd)
                 if (trackClassification != null) {
@@ -436,7 +436,7 @@ object FlacHeaderInspector {
                     return trackClassification.alacSpec
                 }
             }
-            if (pos.toLong() + boxSize > end) break
+            if (boxSize > (end - pos).toLong()) break
             pos = (pos.toLong() + boxSize).toInt()
         }
         return null
@@ -490,11 +490,11 @@ object FlacHeaderInspector {
                 else -> size32
             }
             if (boxSize < headerSize) return null
-            val boxEnd = minOf(end.toLong(), pos.toLong() + boxSize).toInt()
+            val boxEnd = if (boxSize >= (end - pos).toLong()) end else pos + boxSize.toInt()
             if (type == targetType) {
                 return (pos + headerSize) to boxEnd
             }
-            if (pos.toLong() + boxSize > end) return null
+            if (boxSize > (end - pos).toLong()) return null
             pos = (pos.toLong() + boxSize).toInt()
         }
         return null

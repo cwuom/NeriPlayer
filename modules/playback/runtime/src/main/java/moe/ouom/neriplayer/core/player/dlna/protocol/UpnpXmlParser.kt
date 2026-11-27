@@ -164,8 +164,8 @@ object UpnpXmlParser {
             if (serviceType.isNotEmpty() && controlPath.isNotEmpty()) {
                 services += ServiceEndpoint(
                     serviceType = serviceType,
-                    controlUrl = resolveUrl(endpointBaseUrl, controlPath),
-                    eventSubUrl = if (eventSubPath.isNotEmpty()) resolveUrl(endpointBaseUrl, eventSubPath) else ""
+                    controlUrl = resolveEndpointUrl(endpointBaseUrl, controlPath),
+                    eventSubUrl = if (eventSubPath.isNotEmpty()) resolveEndpointUrl(endpointBaseUrl, eventSubPath) else ""
                 )
             }
         }
@@ -181,8 +181,8 @@ object UpnpXmlParser {
             if (serviceType.isNotEmpty() && controlPath.isNotEmpty()) {
                 services += ServiceEndpoint(
                     serviceType = serviceType,
-                    controlUrl = resolveUrl(endpointBaseUrl, controlPath),
-                    eventSubUrl = if (eventSubPath.isNotEmpty()) resolveUrl(endpointBaseUrl, eventSubPath) else ""
+                    controlUrl = resolveEndpointUrl(endpointBaseUrl, controlPath),
+                    eventSubUrl = if (eventSubPath.isNotEmpty()) resolveEndpointUrl(endpointBaseUrl, eventSubPath) else ""
                 )
             }
         }
@@ -258,13 +258,24 @@ object UpnpXmlParser {
         return result
     }
 
+    // 控制/事件地址必须和描述文件同主机，否则局域网里伪造的描述能让手机向任意主机（含 127.0.0.1）发 SOAP/SUBSCRIBE
+    private fun resolveEndpointUrl(endpointBaseUrl: String, path: String): String {
+        val resolved = resolveUrl(endpointBaseUrl, path)
+        return resolved.takeIf { sameHost(it, endpointBaseUrl) }.orEmpty()
+    }
+
+    private fun sameHost(url: String, referenceUrl: String): Boolean = runCatching {
+        val host = URI(url).host
+        !host.isNullOrBlank() && host.equals(URI(referenceUrl).host, ignoreCase = true)
+    }.getOrDefault(false)
+
     private fun resolveValidUrlBase(urlBaseRaw: String, locationUrl: String): String {
         val trimmed = urlBaseRaw.trim()
         if (trimmed.isEmpty()) return locationUrl
         return runCatching {
             val uri = URI(trimmed)
             val scheme = uri.scheme?.lowercase()
-            if ((scheme == "http" || scheme == "https") && !uri.host.isNullOrBlank()) {
+            if ((scheme == "http" || scheme == "https") && sameHost(trimmed, locationUrl)) {
                 trimmed
             } else {
                 locationUrl

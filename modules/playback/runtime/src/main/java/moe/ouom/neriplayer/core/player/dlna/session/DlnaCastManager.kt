@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.dlna.session
 import android.app.Application
 import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,6 +78,8 @@ object DlnaCastManager {
     private var connectJob: Job? = null
     private var castJob: Job? = null
     private var nextPrequeueJob: Job? = null
+    private val prequeueGate = DlnaPrequeueGate()
+    private val rendererReachability = DlnaRendererReachability()
     private var pollJob: Job? = null
     private var activeGenaSid: String? = null
     private var activeGenaEventSubUrl: String? = null
@@ -86,24 +89,6 @@ object DlnaCastManager {
     private val sessionStateLock = Any()
     private val nextUriMutex = Mutex()
     private val volumeMutex = Mutex()
-
-    private data class LocalHandoffSnapshot(
-        val positionMs: Long,
-        val wasPlaying: Boolean
-    )
-
-    private data class PendingCastRequest(
-        val song: SongItem,
-        val startPositionMs: Long,
-        val autoPlay: Boolean,
-        val trackGen: Long
-    )
-
-    private data class PendingVolumeCommand(
-        val deviceUdn: String,
-        val connectionGen: Long,
-        val volume: Int
-    )
 
     @Volatile
     private var desiredRemotePlaying = true
@@ -129,21 +114,6 @@ object DlnaCastManager {
     private var pendingVolumeCommand: PendingVolumeCommand? = null
     @Volatile
     private var activeBoundNetwork: android.net.Network? = null
-
-    private data class QueuedNextTrack(
-        val connectionGen: Long,
-        val forGenerationId: Long,
-        val queueRevision: Long,
-        val song: SongItem,
-        val snapshot: moe.ouom.neriplayer.data.model.playback.dlna.DlnaPlaybackSnapshot,
-        val qualityReport: moe.ouom.neriplayer.data.model.playback.dlna.DlnaAudioQualityReport,
-        val streamUrl: String,
-        val streamPath: String,
-        val coverPath: String?,
-        val didl: String,
-        val sentToRenderer: Boolean,
-        val rejectedByRenderer: Boolean = false
-    )
 
     @Volatile
     private var queuedNext: QueuedNextTrack? = null
@@ -297,8 +267,11 @@ object DlnaCastManager {
 
     fun refreshDiscovery() {
         if (!initialized) return
-        discoveryJob?.cancel()
+        val previousDiscovery = discoveryJob
+        previousDiscovery?.cancel()
         discoveryJob = scope.launch {
+            // scanOnce 是阻塞调用，cancel 停不下来；等旧扫描结束，免得它在 finally 里释放新扫描持有的 MulticastLock
+            previousDiscovery?.join()
             _castStateFlow.update { it.copy(isDiscovering = true, errorMessage = null) }
             lockController.acquireMulticastLock()
             try {
@@ -583,8 +556,12 @@ object DlnaCastManager {
             } catch (e: Exception) {
                 NPLogger.e(TAG, "selectDevice failed", e)
                 var shouldCleanup = false
+                var failedHandoff: LocalHandoffSnapshot? = null
                 synchronized(sessionStateLock) {
                     if (connectionGen == connectionGenerationCounter.get()) {
+                        failedHandoff = pendingHandoffSnapshot
+                        pendingHandoffSnapshot = null
+                        desiredRemotePlaying = false
                         pendingConnectCastRequest = null
                         mediaServer.allowedPeerHost = null
                         shouldCleanup = true
@@ -602,17 +579,19 @@ object DlnaCastManager {
                 if (shouldCleanup) {
                     lockController.releaseCastLocks()
                     mediaServer.clearGenaSubscriptions()
+                    // 连接前已暂停本地并把播放状态置为 true，失败时要恢复本地队列，否则 UI 显示播放中却无声
+                    failedHandoff?.let { playerHost?.onSwitchBackToLocal(it.positionMs.coerceAtLeast(0L), wasPlaying = false) }
                 }
             }
         }
     }
 
-    fun switchToLocalPlayback(resumeLocalPlayback: Boolean = true) {
+    fun switchToLocalPlayback(resumeLocalPlayback: Boolean = true, forceLocalPaused: Boolean = false) {
         val state = _castStateFlow.value
         val active = state.activeDevice
         val handoff = pendingHandoffSnapshot
         val confirmed = rendererMediaConfirmed
-        val resumePlaying = if (confirmed) {
+        val resumePlaying = !forceLocalPaused && if (confirmed) {
             state.transportState == DlnaTransportState.PLAYING || desiredRemotePlaying
         } else {
             handoff?.wasPlaying ?: desiredRemotePlaying
@@ -1424,6 +1403,7 @@ object DlnaCastManager {
 
     private fun startPollingLoop(device: DlnaDevice, connectionGen: Long) {
         pollJob?.cancel()
+        rendererReachability.reset()
         pollJob = scope.launch {
             while (isActive &&
                 connectionGenerationCounter.get() == connectionGen &&
@@ -1437,6 +1417,10 @@ object DlnaCastManager {
                 } else null
 
                 if (connectionGenerationCounter.get() != connectionGen) break
+                if (rendererReachability.record(transport != null, monotonicBootElapsedMs())) {
+                    handleRendererUnreachable(device, connectionGen)
+                    break
+                }
 
                 if (transport != null && currentTrackUriLoadedGen == activeTrackGen) {
                     val pendingNext = queuedNext
@@ -1601,7 +1585,6 @@ object DlnaCastManager {
     }
 
     private fun scheduleNextTrackPrequeue(device: DlnaDevice, connGen: Long, forTrackGen: Long) {
-        if (nextPrequeueJob?.isActive == true && queuedNext?.forGenerationId == forTrackGen) return
         val existing = queuedNext
         if (existing != null &&
             existing.forGenerationId == forTrackGen &&
@@ -1609,15 +1592,20 @@ object DlnaCastManager {
         ) {
             return
         }
-        nextPrequeueJob?.cancel()
         val targetQueueRev = queueRevisionCounter.get()
+        val target = DlnaPrequeueGate.Target(connGen, forTrackGen, targetQueueRev)
+        if (!prequeueGate.tryBegin(target, jobActive = nextPrequeueJob?.isActive == true)) return
+        nextPrequeueJob?.cancel()
         val isCancelled = {
             connGen != connectionGenerationCounter.get() ||
                 forTrackGen != trackGenerationCounter.get() ||
                 targetQueueRev != queueRevisionCounter.get() ||
                 userPausedOrStopped
         }
-        nextPrequeueJob = scope.launch {
+        // 预取只是 gapless 优化，失败不能把异常抛到 SupervisorJob 外导致进程崩溃
+        val prequeueErrorHandler = CoroutineExceptionHandler { _, e -> NPLogger.w(TAG, "Next-track prequeue failed", e) }
+        nextPrequeueJob = scope.launch(prequeueErrorHandler) {
+            val jobCancelled = { !isActive || isCancelled() }
             delay(1_200L)
             if (isCancelled()) return@launch
             val host = playerHost ?: return@launch
@@ -1633,7 +1621,8 @@ object DlnaCastManager {
                 requestedLosslessQuality = isRequestedLosslessForSong(nextSong),
                 device = device,
                 options = options,
-                isCancelled = isCancelled
+                isCancelled = jobCancelled,
+                stagingTag = "${forTrackGen}_next"
             )
             if (isCancelled() || outcome !is LosslessSourceResolver.ResolutionOutcome.Ready) {
                 if (outcome is LosslessSourceResolver.ResolutionOutcome.Ready) {
@@ -1704,6 +1693,10 @@ object DlnaCastManager {
                 if (!streamHandedOff) {
                     mediaServer.unregisterStream(nextStreamPath)
                 }
+            }
+        }.also { job ->
+            job.invokeOnCompletion { cause ->
+                if (cause !is CancellationException && !isCancelled()) prequeueGate.markFinished(target)
             }
         }
     }
@@ -1837,6 +1830,16 @@ object DlnaCastManager {
         }
         if (parsedTransport != null) {
             nudgePolling()
+        }
+    }
+
+    private suspend fun handleRendererUnreachable(device: DlnaDevice, connectionGen: Long) {
+        NPLogger.w(TAG, "Renderer unreachable, ending cast session: ${device.friendlyName}")
+        withContext(Dispatchers.Main) {
+            if (connectionGen != connectionGenerationCounter.get()) return@withContext
+            // 切回本机但保持暂停，避免设备掉线后手机外放突然出声
+            switchToLocalPlayback(resumeLocalPlayback = true, forceLocalPaused = true)
+            playerHost?.onDlnaCastError(localized(CoreCommonR.string.dlna_err_renderer_unreachable, device.friendlyName))
         }
     }
 

@@ -6,6 +6,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
@@ -20,6 +21,9 @@ class UpnpControlClient(
         .readTimeout(5_000L, TimeUnit.MILLISECONDS)
         .writeTimeout(5_000L, TimeUnit.MILLISECONDS)
         .callTimeout(8_000L, TimeUnit.MILLISECONDS)
+        // 渲染器地址已绑定到描述文件主机，不能再被 3xx 带到别处
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
 ) {
     data class PositionInfo(
@@ -210,7 +214,7 @@ class UpnpControlClient(
                 .header("SOAPACTION", "\"$serviceType#$action\"")
                 .build()
             httpClient.newCall(request).execute().use { response ->
-                val responseBody = response.body.string()
+                val responseBody = readBoundedBody(response, action)
                 if (response.code != 200 && response.code != 500) {
                     error("SOAP $action failed HTTP ${response.code}")
                 }
@@ -225,6 +229,16 @@ class UpnpControlClient(
         }
     }
 
+    // 轮询每秒都会调用，渲染器返回超大响应时不能整段读进内存
+    private fun readBoundedBody(response: Response, action: String): String {
+        val body = response.body
+        val source = body.source()
+        if (source.request(MAX_SOAP_RESPONSE_BYTES + 1L)) {
+            error("SOAP $action response exceeds $MAX_SOAP_RESPONSE_BYTES bytes")
+        }
+        return source.buffer.readString(body.contentType()?.charset() ?: Charsets.UTF_8)
+    }
+
     internal fun parseTransportState(raw: String?): DlnaTransportState {
         return when (raw?.trim()?.uppercase()) {
             "PLAYING" -> DlnaTransportState.PLAYING
@@ -234,5 +248,9 @@ class UpnpControlClient(
             "NO_MEDIA_PRESENT" -> DlnaTransportState.NO_MEDIA_PRESENT
             else -> DlnaTransportState.UNKNOWN
         }
+    }
+
+    private companion object {
+        const val MAX_SOAP_RESPONSE_BYTES = 256L * 1024L
     }
 }

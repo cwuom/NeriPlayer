@@ -159,6 +159,7 @@
     <string name="dlna_status_casting_to">正在向 %2$s 投送《%1$s》…</string>
     <string name="dlna_status_playing_on">正在 %1$s 上播放</string>
     <string name="dlna_err_lan_lost">Wi-Fi / 局域网连接已断开</string>
+    <string name="dlna_err_renderer_unreachable">与 %1$s 失去连接，已切回本机（已暂停）</string>
     <string name="dlna_err_login_required">需要登录对应平台账号后才可投送此曲目</string>
     <string name="dlna_err_no_playable_url">无法获取「%1$s」的有效播放地址</string>
     <string name="dlna_err_materialize_failed">无法缓存或读取音频流，请检查网络或文件权限</string>
