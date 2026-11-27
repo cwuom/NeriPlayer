@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
 
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.ui.onboarding.StartupPreviewPlaybackSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingShuffleMode.HEARTBEAT
 import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingShuffleMode.OFF
@@ -32,6 +33,17 @@ class NowPlayingShuffleModeTest {
         assertEquals(SHUFFLE, resolveNowPlayingShuffleMode(true, true, heartbeatAvailable = false))
         assertEquals(OFF, resolveNowPlayingShuffleMode(false, true, heartbeatAvailable = false))
         assertEquals(OFF, resolveNowPlayingShuffleMode(false, false, heartbeatAvailable = true))
+    }
+
+    @Test
+    fun `heartbeat is offered only for netease songs while logged in`() {
+        val netease = song.copy(channelId = "netease")
+
+        assertEquals(true, isHeartbeatModeAvailable(netease, SavedCookieAuthState.Valid))
+        assertEquals(true, isHeartbeatModeAvailable(netease, SavedCookieAuthState.Checking))
+        // 没登录时与 B 站等音源一样只剩两档随机
+        assertEquals(false, isHeartbeatModeAvailable(netease, SavedCookieAuthState.Missing))
+        assertEquals(false, isHeartbeatModeAvailable(song.copy(channelId = "bilibili"), SavedCookieAuthState.Valid))
     }
 
     @Test

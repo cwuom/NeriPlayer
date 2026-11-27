@@ -504,6 +504,7 @@ fun NowPlayingScreen(
     val repeatMode by playbackSource.repeatModeFlow.collectAsStateWithLifecycle()
     val heartbeatMode by playbackSource.heartbeatModeFlow.collectAsStateWithLifecycle()
     val heartbeatEnabled = heartbeatMode == HeartbeatMode.ON
+    val neteaseAuth by AppContainer.neteaseCookieRepo.authHealthFlow.collectAsStateWithLifecycle()
     val durationMs by playbackSource.playbackDurationFlow.collectAsStateWithLifecycle()
     val sleepTimerState by playbackSource.sleepTimerStateFlow.collectAsStateWithLifecycle()
     val currentPlaybackAudioInfo by playbackSource.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
@@ -1307,7 +1308,7 @@ fun NowPlayingScreen(
                                             playbackSource = playbackSource,
                                             shuffleEnabled = shuffleEnabled,
                                             heartbeatEnabled = heartbeatEnabled,
-                                            heartbeatAvailable = isNeteaseExclusiveFeatureAvailable(currentSong),
+                                            heartbeatAvailable = isHeartbeatModeAvailable(currentSong, neteaseAuth.state),
                                             buttonSize = controlsLayout.secondaryButtonSize,
                                             iconSize = secondaryIconSize,
                                             activeColor = nowPlayingActiveIconColor,

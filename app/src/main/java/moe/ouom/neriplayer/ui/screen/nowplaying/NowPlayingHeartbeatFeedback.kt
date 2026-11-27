@@ -38,7 +38,6 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatCandidateExhaustedFlow
-import moe.ouom.neriplayer.core.player.heartbeat.heartbeatLoginRequiredFlow
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatRoomAutoOffFlow
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatRoomRejectedFlow
 import moe.ouom.neriplayer.ui.feedback.dismissCurrentNeriSnackbar
@@ -77,13 +76,12 @@ private suspend fun SnackbarHostState.showTimedHeartbeatSnackbar(message: String
 /**
  * 心动模式的底部提示。
  *
- * 四类事件各一条，都只停留 3 秒（Snackbar 默认的 Short 约 4 秒，略长且会挡操作）：
+ * 三类事件各一条，都只停留 3 秒（Snackbar 默认的 Short 约 4 秒，略长且会挡操作）：
  *
  * 1. **候选耗尽**——连续多次拿不到官方推荐，按原队列继续播放。这是功能真没帮上忙的时刻。
  * 2. **进一起听房间被自动关闭**——房间里的播放由房间控制，心动模式选歌不会生效，
  *    必须让用户知道开关被动了，否则会以为是自己误触。
  * 3. **房间里想开启被拒绝**——点了没反应最难受，明确告诉他为什么。
- * 4. **没登录网易云想开启**——心动模式只用网易云官方推荐，提示先登录。
  *
  * 成功开启不提示。
  *
@@ -127,34 +125,28 @@ fun NowPlayingHeartbeatFeedback(
 
     val heartbeatRoomAutoOff by PlayerManager.heartbeatRoomAutoOffFlow.collectAsStateWithLifecycle()
     val heartbeatRoomRejected by PlayerManager.heartbeatRoomRejectedFlow.collectAsStateWithLifecycle()
-    val heartbeatLoginRequired by PlayerManager.heartbeatLoginRequiredFlow.collectAsStateWithLifecycle()
     val messageRoomAutoOff = stringResource(CoreCommonR.string.heartbeat_room_auto_disabled)
     val messageRoomRejected = stringResource(CoreCommonR.string.heartbeat_room_cannot_enable)
-    val messageLoginRequired = stringResource(CoreCommonR.string.heartbeat_login_required)
 
     // 计数器都只增不减，所以「数值变了」就等于「又发生了一次」。
     // 首组合同样跳过：计数器会随进程状态恢复而带上历史值，那不是本次发生的事。
     var isFirstEvent: Boolean by remember { mutableStateOf(true) }
     var lastRoomAutoOff: Int by remember { mutableStateOf(0) }
     var lastRoomRejected: Int by remember { mutableStateOf(0) }
-    var lastLoginRequired: Int by remember { mutableStateOf(0) }
-    LaunchedEffect(heartbeatRoomAutoOff, heartbeatRoomRejected, heartbeatLoginRequired) {
+    LaunchedEffect(heartbeatRoomAutoOff, heartbeatRoomRejected) {
         val notice = if (isFirstEvent) {
             null
         } else {
             pickHeartbeatNotice(
                 roomRejected = heartbeatRoomRejected > lastRoomRejected,
-                loginRequired = heartbeatLoginRequired > lastLoginRequired,
                 roomAutoOff = heartbeatRoomAutoOff > lastRoomAutoOff,
             )
         }
         isFirstEvent = false
         lastRoomAutoOff = heartbeatRoomAutoOff
         lastRoomRejected = heartbeatRoomRejected
-        lastLoginRequired = heartbeatLoginRequired
         val message = when (notice ?: return@LaunchedEffect) {
             HeartbeatNotice.ROOM_REJECTED -> messageRoomRejected
-            HeartbeatNotice.LOGIN_REQUIRED -> messageLoginRequired
             HeartbeatNotice.ROOM_AUTO_OFF -> messageRoomAutoOff
         }
         scope.launch {
@@ -163,16 +155,11 @@ fun NowPlayingHeartbeatFeedback(
     }
 }
 
-internal enum class HeartbeatNotice { ROOM_REJECTED, LOGIN_REQUIRED, ROOM_AUTO_OFF }
+internal enum class HeartbeatNotice { ROOM_REJECTED, ROOM_AUTO_OFF }
 
-/** 几个事件同时发生时优先说用户刚做的操作为什么没生效，其次才是被动关闭。 */
-internal fun pickHeartbeatNotice(
-    roomRejected: Boolean,
-    loginRequired: Boolean,
-    roomAutoOff: Boolean,
-): HeartbeatNotice? = when {
+/** 两个事件同时发生时优先说「被拒绝」：那是用户刚做的操作，更该被解释。 */
+internal fun pickHeartbeatNotice(roomRejected: Boolean, roomAutoOff: Boolean): HeartbeatNotice? = when {
     roomRejected -> HeartbeatNotice.ROOM_REJECTED
-    loginRequired -> HeartbeatNotice.LOGIN_REQUIRED
     roomAutoOff -> HeartbeatNotice.ROOM_AUTO_OFF
     else -> null
 }

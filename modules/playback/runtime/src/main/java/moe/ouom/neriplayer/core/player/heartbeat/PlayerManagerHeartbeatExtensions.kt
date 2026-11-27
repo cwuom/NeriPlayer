@@ -54,11 +54,6 @@ private val heartbeatRoomAutoOffStateFlow = MutableStateFlow(0)
  */
 private val heartbeatRoomRejectedStateFlow = MutableStateFlow(0)
 
-/**
- * 「没登录网易云却想开启」的次数，只增不减。心动模式只用网易云官方推荐，没登录就开不了。
- */
-private val heartbeatLoginRequiredStateFlow = MutableStateFlow(0)
-
 /** 由 `app` 的 DI 容器在启动时安装一次的官方仓库引用；未安装时官方能力视为不可用。 */
 @Volatile
 private var heartbeatOfficialRepository: NeteasePlaymodeIntelligenceRepository? = null
@@ -159,9 +154,6 @@ val PlayerManager.heartbeatRoomAutoOffFlow: StateFlow<Int>
 val PlayerManager.heartbeatRoomRejectedFlow: StateFlow<Int>
     get() = heartbeatRoomRejectedStateFlow
 
-/** 「没登录网易云却想开启」的计数，UI 观察它来提示先登录。 */
-val PlayerManager.heartbeatLoginRequiredFlow: StateFlow<Int>
-    get() = heartbeatLoginRequiredStateFlow
 
 /**
  * 开启或关闭心动模式。
@@ -185,9 +177,8 @@ fun PlayerManager.setHeartbeatMode(
         NPLogger.d(TAG, "setHeartbeatMode: 一起听房间内不允许开启，已拒绝（source=$commandSource）")
         return
     }
-    // 只有网易云官方推荐，没登录就没有歌可补；冷启动恢复时也一样不开，只是不弹提示
+    // 只有网易云官方推荐，没登录就没有歌可补；界面在未登录时不提供心动档，这里只是兜底
     if (normalized == HeartbeatMode.ON && !isHeartbeatOfficialLoggedIn()) {
-        if (userInitiated) heartbeatLoginRequiredStateFlow.value += 1
         NPLogger.d(TAG, "setHeartbeatMode: 未登录网易云，不开启（source=$commandSource）")
         return
     }
@@ -275,6 +266,8 @@ private fun PlayerManager.shouldFillHeartbeatQueue(): Boolean {
     if (heartbeatModeState != HeartbeatMode.ON) return false
     // 外部音源（B 站 / YouTube）没有网易云 id 可问；一起听房间的队列由房间控制
     if (!isHeartbeatSourceSupported() || isListenTogetherActive()) return false
+    // 开着心动时退出登录：不再请求，也就不会弹「拿不到推荐」
+    if (!isHeartbeatOfficialLoggedIn()) return false
     if (currentIndex !in currentPlaylist.indices) return false
     return HeartbeatQueuePlan.upcomingCount(currentPlaylist, currentIndex, heartbeatInsertedSnapshot()) <=
         HEARTBEAT_REFILL_THRESHOLD

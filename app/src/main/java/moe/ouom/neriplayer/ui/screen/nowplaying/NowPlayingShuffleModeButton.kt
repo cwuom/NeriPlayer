@@ -21,10 +21,19 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 
 /** 播放页随机键的三档：网易云歌曲按 默认 → 随机 → 心动 → 默认 循环，其他音源只有前两档 */
 internal enum class NowPlayingShuffleMode { OFF, SHUFFLE, HEARTBEAT }
+
+/**
+ * 心动模式只用网易云官方推荐：没登录网易云时与 B 站等音源一样，随机键只有两档、不带角标。
+ * 登录态还在校验中（Checking）按已登录处理，免得冷启动时角标闪一下。
+ */
+internal fun isHeartbeatModeAvailable(song: SongItem?, neteaseAuth: SavedCookieAuthState): Boolean =
+    neteaseAuth != SavedCookieAuthState.Missing && isNeteaseExclusiveFeatureAvailable(song)
 
 internal fun resolveNowPlayingShuffleMode(
     shuffleEnabled: Boolean,
