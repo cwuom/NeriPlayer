@@ -1337,6 +1337,16 @@ object AutoSettingsSchema {
         val floatingLyricsLongPressDragEnabled = Unit
 
         @AutoSetting(
+            key = "floating_lyrics_touch_passthrough",
+            type = SettingValueType.Boolean,
+            defaultBoolean = false,
+            order = 16,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val floatingLyricsTouchPassthrough = Unit
+
+        @AutoSetting(
             key = "floating_lyrics_text_color",
             type = SettingValueType.String,
             defaultString = "FFFFFF",

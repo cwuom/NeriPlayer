@@ -262,6 +262,10 @@ class AutoSettingsGeneratedTest {
             "floating lyrics long-press drag switch should be exportable",
             "floating_lyrics_long_press_drag_enabled" in booleanKeyNames
         )
+        assertTrue(
+            "floating lyrics touch passthrough switch should be exportable",
+            "floating_lyrics_touch_passthrough" in booleanKeyNames
+        )
         listOf(
             "floating_lyrics_landscape_position_x",
             "floating_lyrics_landscape_position_y"
@@ -425,6 +429,12 @@ class AutoSettingsGeneratedTest {
         )
 
         val lyricsSettings = AutoSettingsMetadata.settingsIn(AutoSettingsSections.lyrics)
+        assertTrue(
+            "lyrics metadata should include floating lyrics touch passthrough switch",
+            lyricsSettings.any {
+                it.keyName == "floating_lyrics_touch_passthrough" && it.ui == SettingUiType.Custom
+            }
+        )
         assertTrue(
             "lyrics metadata should include Lyricon switch",
             lyricsSettings.any { it.keyName == "lyricon_enabled" && it.ui == SettingUiType.Switch }

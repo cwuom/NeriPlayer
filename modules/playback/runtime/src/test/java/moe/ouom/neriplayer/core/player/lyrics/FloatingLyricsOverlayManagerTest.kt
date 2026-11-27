@@ -196,6 +196,36 @@ class FloatingLyricsOverlayManagerTest {
     }
 
     @Test
+    fun `touch passthrough makes the overlay untouchable even with long press drag enabled`() {
+        showOverlay(FloatingLyricsPreferences(enabled = true))
+        assertEquals(0, overlayParams().flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        assertTrue(overlayRoot().isLongClickable)
+
+        FloatingLyricsOverlayManager.updatePreferences(
+            FloatingLyricsPreferences(enabled = true, touchPassthrough = true)
+        )
+        idle()
+
+        assertTrue(overlayParams().flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+        assertFalse(overlayRoot().isLongClickable)
+    }
+
+    @Test
+    fun `disabling touch passthrough restores the drag handles`() {
+        showOverlay(FloatingLyricsPreferences(enabled = true, touchPassthrough = true))
+        assertTrue(overlayParams().flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+        assertFalse(overlayRoot().isLongClickable)
+
+        FloatingLyricsOverlayManager.updatePreferences(
+            FloatingLyricsPreferences(enabled = true, touchPassthrough = false)
+        )
+        idle()
+
+        assertEquals(0, overlayParams().flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        assertTrue(overlayRoot().isLongClickable)
+    }
+
+    @Test
     fun `long press drag moves the overlay and reports the normalized position`() {
         val reported = mutableListOf<Triple<Float, Float, Boolean>>()
         FloatingLyricsOverlayManager.setPositionChangeListener { x, y, landscape ->
