@@ -68,7 +68,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -296,13 +295,11 @@ internal fun resolvePlaybackActionToolbarLayout(
     availableWidth: Dp,
     preferredHorizontalPadding: Dp,
     defaultIconSize: Dp,
-    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget,
-    itemCount: Int = PlaybackActionToolbarItemCount
+    preferredMinimumTouchTarget: Dp = PlaybackActionToolbarMinimumTouchTarget
 ): PlaybackActionToolbarLayout {
     val minimumTouchTarget = preferredMinimumTouchTarget.coerceAtLeast(0.dp)
-    val safeItemCount = itemCount.coerceAtLeast(1)
     val preferredSlotWidth = (
-            (availableWidth - preferredHorizontalPadding * 2) / safeItemCount
+            (availableWidth - preferredHorizontalPadding * 2) / PlaybackActionToolbarItemCount
             ).coerceAtLeast(0.dp)
     if (preferredSlotWidth >= minimumTouchTarget) {
         return PlaybackActionToolbarLayout(
@@ -313,7 +310,7 @@ internal fun resolvePlaybackActionToolbarLayout(
         )
     }
 
-    val compactSlotWidth = (availableWidth / safeItemCount).coerceAtLeast(0.dp)
+    val compactSlotWidth = (availableWidth / PlaybackActionToolbarItemCount).coerceAtLeast(0.dp)
     return PlaybackActionToolbarLayout(
         horizontalPadding = 0.dp,
         minimumInteractiveComponentSize = minOf(
@@ -1306,21 +1303,18 @@ fun NowPlayingScreen(
                                         horizontalArrangement = Arrangement.spacedBy(controlsLayout.spacing),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        HapticIconButton(
-                                            onClick = { playbackSource.setShuffle(!shuffleEnabled) },
-                                            modifier = Modifier.size(controlsLayout.secondaryButtonSize)
-                                        ) {
-                                            Icon(
-                                                Icons.Outlined.Shuffle,
-                                                contentDescription = stringResource(CoreCommonR.string.player_shuffle),
-                                                modifier = Modifier.size(secondaryIconSize),
-                                                tint = if (shuffleEnabled) {
-                                                    nowPlayingActiveIconColor
-                                                } else {
-                                                    LocalContentColor.current
-                                                }
-                                            )
-                                        }
+                                        NowPlayingShuffleModeButton(
+                                            playbackSource = playbackSource,
+                                            shuffleEnabled = shuffleEnabled,
+                                            heartbeatEnabled = heartbeatEnabled,
+                                            heartbeatAvailable = isNeteaseExclusiveFeatureAvailable(currentSong),
+                                            buttonSize = controlsLayout.secondaryButtonSize,
+                                            iconSize = secondaryIconSize,
+                                            activeColor = nowPlayingActiveIconColor,
+                                            inactiveColor = LocalContentColor.current,
+                                            snackbarHostState = snackbarHostState,
+                                            scope = screenScope
+                                        )
 
                                         HapticIconButton(
                                             onClick = { playbackSource.previous() },
@@ -1497,8 +1491,7 @@ fun NowPlayingScreen(
                                     },
                                     onSwitchPage = { onShowLyricsScreenChange(!showLyricsScreen) }
                                 ),
-                                onAddToPlaylist = secondaryAction { showAddSheet = true },
-                                onHeartbeat = secondaryAction { playbackSource.cycleHeartbeatMode() }
+                                onAddToPlaylist = secondaryAction { showAddSheet = true }
                             )
 
                             val coverTopBar: @Composable () -> Unit = {
@@ -1616,9 +1609,7 @@ fun NowPlayingScreen(
                                         sleepTimerActive = sleepTimerState.isActive,
                                         lyricsAvailable = coverLyricsAvailable,
                                         lyricsShowing = isLyricsMode,
-                                        activeColor = nowPlayingActiveIconColor,
-                                        heartbeatActive = heartbeatEnabled,
-                                        heartbeatAvailable = isNeteaseExclusiveFeatureAvailable(currentSong)
+                                        activeColor = nowPlayingActiveIconColor
                                     ),
                                     actions = coverToolbarActions,
                                     sharedTransitionScope = this@SharedTransitionLayout,

@@ -4,7 +4,8 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.StateFlow
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.heartbeat.cycleHeartbeatMode
+import moe.ouom.neriplayer.core.player.heartbeat.setHeartbeatMode
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.core.player.heartbeat.heartbeatModeFlow
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
@@ -57,7 +58,7 @@ internal interface NowPlayingPlaybackSource {
     fun previous()
     fun setShuffle(enabled: Boolean)
     fun cycleRepeatMode()
-    fun cycleHeartbeatMode()
+    fun setHeartbeatEnabled(enabled: Boolean)
     fun seekTo(positionMs: Long)
     fun toggleCurrentFavorite()
     fun addCurrentToPlaylist(playlistId: Long)
@@ -99,7 +100,8 @@ internal object PlayerManagerNowPlayingPlaybackSource : NowPlayingPlaybackSource
     override fun previous() = PlayerManager.previous()
     override fun setShuffle(enabled: Boolean) = PlayerManager.setShuffle(enabled)
     override fun cycleRepeatMode() = PlayerManager.cycleRepeatMode()
-    override fun cycleHeartbeatMode() = PlayerManager.cycleHeartbeatMode()
+    override fun setHeartbeatEnabled(enabled: Boolean) =
+        PlayerManager.setHeartbeatMode(if (enabled) HeartbeatMode.ON else HeartbeatMode.OFF)
     override fun seekTo(positionMs: Long) = PlayerManager.seekTo(positionMs)
     override fun toggleCurrentFavorite() = PlayerManager.toggleCurrentFavorite()
     override fun addCurrentToPlaylist(playlistId: Long) = PlayerManager.addCurrentToPlaylist(playlistId)

@@ -330,15 +330,6 @@ internal fun PlayerManager.recordHeartbeatSkip(song: SongItem) {
     }
 }
 
-fun PlayerManager.cycleHeartbeatMode(
-    commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
-) {
-    setHeartbeatMode(
-        if (heartbeatModeState == HeartbeatMode.ON) HeartbeatMode.OFF else HeartbeatMode.ON,
-        commandSource,
-    )
-}
-
 /**
  * 加入一起听房间时把心动模式关掉（任务书 §八「优先房间控制」）。
  *
