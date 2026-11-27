@@ -104,7 +104,7 @@ import moe.ouom.neriplayer.core.download.presentation.formatDownloadTransferProg
 import moe.ouom.neriplayer.core.download.presentation.isDownloadTaskCancellable
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatSongIdentity
 import moe.ouom.neriplayer.core.player.download.AudioDownloadManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.local.media.LocalMediaSupport
@@ -681,14 +681,13 @@ private fun PlaybackStatsAction(song: SongItem) {
 /**
  * 「不喜欢」菜单项。
  *
- * 数据只存在本地（网易云没有「给单曲打不喜欢」的通用接口），标记后：
- * - 本地降级推荐：评分被压到最低（[HeartbeatScorer.NOT_LIKED_PENALTY]）；
- * - 官方推荐：命中名单时丢弃并重新请求，不改官方顺序与权重。
+ * 数据只存在本地（网易云没有「给单曲打不喜欢」的通用接口），标记后心动模式补歌时
+ * 会略过这首歌，不改官方推荐的顺序与权重。
  * 菜单项点一次加入、再点一次移出，不需要单独的管理页。
  */
 @Composable
 private fun DislikeSongAction(song: SongItem) {
-    val songKey = remember(song) { HeartbeatScorer.identityKey(song) }
+    val songKey = remember(song) { HeartbeatSongIdentity.identityKey(song) }
     val dislikedKeys by AppContainer.dislikedSongRepo.dislikedKeysFlow
         .collectAsStateWithLifecycle(initialValue = emptySet())
     val isDisliked = songKey in dislikedKeys

@@ -527,8 +527,7 @@ internal fun SettingsPlaybackSection(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             ) {
-                // 心动模式的静态说明，同时承担合规告知：让用户知道未登录时走的是本地推荐，
-                // 推荐逻辑与官方不同（任务书 §四 步骤 3 / §5.3 文案红线）。
+                // 心动模式的静态说明：推荐来自网易云官方，需要登录
                 MiuixSettingsSectionIntro(
                     title = stringResource(CoreCommonR.string.settings_heartbeat_section_title),
                     description = stringResource(CoreCommonR.string.settings_heartbeat_section_desc)

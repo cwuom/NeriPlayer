@@ -1776,11 +1776,7 @@ object PlayerManager {
     fun next(
         force: Boolean = false,
         commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL
-    ) {
-        // 用户主动跳过计入心动模式负反馈：确认真的会切歌之后才记录，
-        // 避免「USB 确认被取消 / 队列已到底」时也惩罚当前歌。
-        this.nextImpl(force, commandSource, recordUserSkip = true)
-    }
+    ) = this.nextImpl(force, commandSource)
 
     fun previous(commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL) =
         this.previousImpl(commandSource)

@@ -9,8 +9,6 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
 import moe.ouom.neriplayer.core.player.durationMsOrZero
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
-import moe.ouom.neriplayer.core.player.heartbeat.markHeartbeatSongFailed
-import moe.ouom.neriplayer.core.player.heartbeat.recordHeartbeatSkip
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
 import moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction
@@ -171,8 +169,6 @@ private fun PlayerManager.dispatchFailureAdvance(
     action: PlaybackFailureAdvanceAction,
     commandSource: PlaybackCommandSource,
 ) {
-    // 放不出来的歌记进本次心动会话的黑名单，补货时不再推荐它
-    _currentSongFlow.value?.let { markHeartbeatSongFailed(it) }
     if (action == PlaybackFailureAdvanceAction.STOP) {
         stopPlaybackPreservingQueue(clearMediaUrl = true)
         return
@@ -225,70 +221,65 @@ internal fun PlayerManager.nextImpl(
     force: Boolean = false,
     commandSource: PlaybackCommandSource = PlaybackCommandSource.LOCAL,
     bypassLoudVolumeWarning: Boolean = false,
-    allowRememberedLongFormPosition: Boolean = false,
-    recordUserSkip: Boolean = false,
+    allowRememberedLongFormPosition: Boolean = false
 ) {
     ensureInitialized()
     if (!initialized) return
-    requestNextTrackAfterLanGate(
-        NextTrackRequest(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition, recordUserSkip)
-    )
+    requestNextTrackAfterLanGate(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
 }
 
-/** 「下一首」一路往下传的参数；[recordUserSkip] 只在真的切歌时才记一次心动跳过。 */
-private class NextTrackRequest(
-    val force: Boolean,
-    val commandSource: PlaybackCommandSource,
-    val bypassLoudVolumeWarning: Boolean,
-    val allowRememberedLongFormPosition: Boolean,
-    val recordUserSkip: Boolean,
-)
-
-private fun PlayerManager.requestNextTrackAfterLanGate(request: NextTrackRequest) {
-    if (LanPlaybackBinding.step(1, request.commandSource, request.force)) return
-    requestNextTrack(request)
+private fun PlayerManager.requestNextTrackAfterLanGate(
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean
+) {
+    if (LanPlaybackBinding.step(1, commandSource, force)) return
+    requestNextTrack(force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
 }
 
-private fun PlayerManager.requestNextTrack(request: NextTrackRequest) {
-    if (shouldBlockLocalRoomControl(request.commandSource)) return
-    val step = PlayerQueueNavigationOwner.nextStep(currentPlaylist.size, currentIndex, repeatModeSetting, request.force)
-    confirmNextTrack(step, request)
+private fun PlayerManager.requestNextTrack(
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean,
+) {
+    if (shouldBlockLocalRoomControl(commandSource)) return
+    val step = PlayerQueueNavigationOwner.nextStep(currentPlaylist.size, currentIndex, repeatModeSetting, force)
+    confirmNextTrack(step, force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
 }
 
-private fun PlayerManager.confirmNextTrack(step: QueueNavigationStep?, request: NextTrackRequest) {
+private fun PlayerManager.confirmNextTrack(
+    step: QueueNavigationStep?,
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean,
+) {
     if (step == null) {
         NPLogger.d("NERI-Player", "Already at the end of the playlist.")
         return
     }
-    confirmNextTrackVolume(step, request)
+    confirmNextTrackVolume(step, force, commandSource, bypassLoudVolumeWarning, allowRememberedLongFormPosition)
 }
 
-private fun PlayerManager.confirmNextTrackVolume(step: QueueNavigationStep, request: NextTrackRequest) {
-    logQueueNavigation("next", request.commandSource)
+private fun PlayerManager.confirmNextTrackVolume(
+    step: QueueNavigationStep,
+    force: Boolean,
+    commandSource: PlaybackCommandSource,
+    bypassLoudVolumeWarning: Boolean,
+    allowRememberedLongFormPosition: Boolean,
+) {
+    logQueueNavigation("next", commandSource)
     if (requestUsbExclusiveLoudPlaybackConfirmation(
-            commandSource = request.commandSource,
-            bypassWarning = request.bypassLoudVolumeWarning,
+            commandSource = commandSource,
+            bypassWarning = bypassLoudVolumeWarning,
             continuePlayback = {
-                nextImpl(
-                    request.force,
-                    request.commandSource,
-                    true,
-                    request.allowRememberedLongFormPosition,
-                    request.recordUserSkip,
-                )
+                nextImpl(force, commandSource, true, allowRememberedLongFormPosition)
             }
         )
     ) return
-    recordUserSkipIfRequested(request)
-    applyNextTrack(step, request.force, request.commandSource, request.allowRememberedLongFormPosition)
-}
-
-private fun PlayerManager.recordUserSkipIfRequested(request: NextTrackRequest) {
-    if (request.recordUserSkip) recordCurrentSongSkip()
-}
-
-private fun PlayerManager.recordCurrentSongSkip() {
-    _currentSongFlow.value?.let { recordHeartbeatSkip(it) }
+    applyNextTrack(step, force, commandSource, allowRememberedLongFormPosition)
 }
 
 private fun PlayerManager.applyNextTrack(

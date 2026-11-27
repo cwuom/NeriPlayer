@@ -49,7 +49,7 @@ class HeartbeatQueuePlanTest {
         assertEquals(listOf(a, b, h2, c, d), queue.filterIndexed { index, _ -> index !in removed })
     }
 
-    private fun keys(vararg songs: SongItem): Set<String> = songs.mapTo(HashSet()) { HeartbeatScorer.identityKey(it) }
+    private fun keys(vararg songs: SongItem): Set<String> = songs.mapTo(HashSet()) { HeartbeatSongIdentity.identityKey(it) }
 
     private fun song(id: Long) = SongItem(
         id = id,

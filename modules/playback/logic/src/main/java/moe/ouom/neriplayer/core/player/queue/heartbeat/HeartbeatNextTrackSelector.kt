@@ -7,8 +7,8 @@ import moe.ouom.neriplayer.data.model.SongItem
  *
  * 分层约束（见心动模式任务书 §3.2）：
  * - 本接口位于 `playback/logic`，是播放域唯一认识的抽象；
- * - 官方接口实现在 `playback/runtime`（内部委托 `platform` 的网易云客户端），
- *   本地降级实现同样在 `playback/runtime`，由 `app` 的 DI 容器负责接线；
+ * - 网易云官方接口实现在 `playback/runtime`（内部委托 `platform` 的网易云客户端），
+ *   由 `app` 的 DI 容器负责接线；
  * - `playback/logic` 绝不反向依赖 `platform` / `local`，因此实现必须从外部注入。
  *
  * 契约：
@@ -43,7 +43,7 @@ interface HeartbeatNextTrackSelector {
         while (picked.size < limit) {
             val next = selectNext(currentSong, currentQueue + picked) ?: break
             // 实现没有按队列排除时会反复给同一首，停下比死循环好
-            if (!pickedKeys.add(HeartbeatScorer.identityKey(next))) break
+            if (!pickedKeys.add(HeartbeatSongIdentity.identityKey(next))) break
             picked.add(next)
         }
         return picked

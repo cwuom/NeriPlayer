@@ -18,7 +18,7 @@ import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackCoordinator
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackSelector
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatQueuePlan
-import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatSongIdentity
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueSnapshot
@@ -39,14 +39,6 @@ internal var heartbeatModeState: Int = HeartbeatMode.OFF
 private val heartbeatModeStateFlow = MutableStateFlow(HeartbeatMode.OFF)
 
 /**
- * 官方接口是否可用的可观察状态。
- *
- * 语义是「官方接口本次可用」，**不是**「已登录」：已登录但接口临时失败时本值为 false，
- * UI 据此走「本地推荐」文案。
- */
-private val heartbeatOfficialAvailableStateFlow = MutableStateFlow(false)
-
-/**
  * 「因进入一起听房间而被自动关闭」的次数，只增不减。
  *
  * 用计数器而不是布尔值：连续两次进房间各被关一次，UI 要各提示一次。
@@ -63,12 +55,9 @@ private val heartbeatRoomAutoOffStateFlow = MutableStateFlow(0)
 private val heartbeatRoomRejectedStateFlow = MutableStateFlow(0)
 
 /**
- * 「用户主动开启心动模式」的次数，只增不减。
- *
- * 只统计用户主动开启（含点按钮、设置页开关），不统计状态恢复——
- * 否则每次冷启动都会弹一条提示。UI 观察它的变化来提示「当前是本地推荐」。
+ * 「没登录网易云却想开启」的次数，只增不减。心动模式只用网易云官方推荐，没登录就开不了。
  */
-private val heartbeatUserEnabledStateFlow = MutableStateFlow(0)
+private val heartbeatLoginRequiredStateFlow = MutableStateFlow(0)
 
 /** 由 `app` 的 DI 容器在启动时安装一次的官方仓库引用；未安装时官方能力视为不可用。 */
 @Volatile
@@ -123,7 +112,7 @@ internal val PlayerManager.heartbeatMode: Int
  * 为 A 预取的候选会被当成 B 的下一首，进而截断 B 的队列尾部。
  */
 private fun PlayerManager.heartbeatPendingAnchor(): String? =
-    _currentSongFlow.value?.let { HeartbeatScorer.identityKey(it) }
+    _currentSongFlow.value?.let { HeartbeatSongIdentity.identityKey(it) }
 
 /** 心动模式只对网易云音源生效：外部音源（B 站 / YouTube）既不预取也不接管推进。 */
 internal fun PlayerManager.isHeartbeatSourceSupported(): Boolean =
@@ -134,35 +123,9 @@ fun installHeartbeatSelector(selector: HeartbeatNextTrackSelector) {
     heartbeatSelectorHolder = selector
 }
 
-/**
- * 跳过行为的落盘入口，由 `app` 的 DI 容器注入。
- *
- * 做成接口而不是直接依赖 `HeartbeatSkipRepository`：`playback/runtime`
- * 虽然可以依赖 `local`，但心跳的其余数据都走 [HeartbeatNextTrackSelector]
- * 抽象注入，这里保持一致，单测也好替换。
- */
-fun interface HeartbeatSkipRecorder {
-    /** 给该曲的跳过次数 +1；实现方负责自己的异常处理与并发安全。 */
-    suspend fun recordSkip(identityKey: String)
-}
-
-@Volatile
-private var heartbeatSkipRecorder: HeartbeatSkipRecorder? = null
-
-/** 由 `app` 的 DI 容器在启动时安装一次；未安装时跳过行为不落盘。 */
-fun installHeartbeatSkipRecorder(recorder: HeartbeatSkipRecorder) {
-    heartbeatSkipRecorder = recorder
-}
-
-/**
- * 由 `app` 的 DI 容器在启动时安装一次官方仓库引用。
- *
- * 只有装上了官方仓库，[heartbeatOfficialAvailableFlow] 才有可能为 true；
- * 未安装时心动模式仍可开启，但只能走本地降级。
- */
+/** 由 `app` 的 DI 容器在启动时安装一次官方仓库引用，用来判断登录态。 */
 fun installHeartbeatOfficialRepository(repository: NeteasePlaymodeIntelligenceRepository) {
     heartbeatOfficialRepository = repository
-    refreshHeartbeatOfficialAvailability()
 }
 
 /**
@@ -170,15 +133,6 @@ fun installHeartbeatOfficialRepository(repository: NeteasePlaymodeIntelligenceRe
  */
 val PlayerManager.heartbeatModeFlow: StateFlow<Int>
     get() = heartbeatModeStateFlow
-
-/**
- * 官方接口可用性状态。
- *
- * 语义是「官方接口本次可用」而非「已登录」：未登录、没有红心歌单、
- * 连续失败达到熔断上限都会让它变成 false，UI 据此切到「本地推荐」文案。
- */
-val PlayerManager.heartbeatOfficialAvailableFlow: StateFlow<Boolean>
-    get() = heartbeatOfficialAvailableStateFlow
 
 /**
  * 心动模式候选是否已耗尽。
@@ -205,37 +159,9 @@ val PlayerManager.heartbeatRoomAutoOffFlow: StateFlow<Int>
 val PlayerManager.heartbeatRoomRejectedFlow: StateFlow<Int>
     get() = heartbeatRoomRejectedStateFlow
 
-/**
- * 「用户主动开启心动模式」的计数，UI 观察它来决定要不要提示当前推荐来源。
- *
- * 与 [heartbeatModeFlow] 的区别：状态恢复也会让 [heartbeatModeFlow] 变成 ON，
- * 但用户并没有做任何操作，不该被打扰。
- */
-val PlayerManager.heartbeatUserEnabledFlow: StateFlow<Int>
-    get() = heartbeatUserEnabledStateFlow
-
-/**
- * 重新判定官方接口可用性。
- *
- * 只按「登录态还在且没有熔断」判断，请求失败时静默降级，不在这里反复横跳。
- * [honorLastResult] 为 true 时再叠加一次实际结果校验，用于选歌刚成功之后。
- */
-private fun refreshHeartbeatOfficialAvailability(honorLastResult: Boolean = false) {
-    val repository = heartbeatOfficialRepository
-    val gateOpen = repository != null &&
-        runCatching { repository.isLoggedIn() }.getOrDefault(false) &&
-        !isHeartbeatOfficialCircuitOpen()
-    // 登录态在、熔断也没开，但官方接口一直返回空：真正在出歌的是本地候选池。
-    // 这时若还对外报「官方可用」，界面就会一直不说「本地推荐」，用户以为用着云端推荐。
-    val producedByOfficial =
-        (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.lastResultFromOfficial == true
-    heartbeatOfficialAvailableStateFlow.value =
-        gateOpen && (!honorLastResult || producedByOfficial)
-}
-
-/** 熔断状态由选择器持有，这里只做读取，不在这里改。 */
-private fun isHeartbeatOfficialCircuitOpen(): Boolean =
-    (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.isOfficialCircuitOpen() == true
+/** 「没登录网易云却想开启」的计数，UI 观察它来提示先登录。 */
+val PlayerManager.heartbeatLoginRequiredFlow: StateFlow<Int>
+    get() = heartbeatLoginRequiredStateFlow
 
 /**
  * 开启或关闭心动模式。
@@ -259,6 +185,12 @@ fun PlayerManager.setHeartbeatMode(
         NPLogger.d(TAG, "setHeartbeatMode: 一起听房间内不允许开启，已拒绝（source=$commandSource）")
         return
     }
+    // 只有网易云官方推荐，没登录就没有歌可补；冷启动恢复时也一样不开，只是不弹提示
+    if (normalized == HeartbeatMode.ON && !isHeartbeatOfficialLoggedIn()) {
+        if (userInitiated) heartbeatLoginRequiredStateFlow.value += 1
+        NPLogger.d(TAG, "setHeartbeatMode: 未登录网易云，不开启（source=$commandSource）")
+        return
+    }
     val changed = heartbeatModeState != normalized
     heartbeatModeState = normalized
     if (changed) {
@@ -272,61 +204,21 @@ fun PlayerManager.setHeartbeatMode(
             removeHeartbeatSongsFromQueue(restoreQueue = commandSource == PlaybackCommandSource.LOCAL)
             heartbeatCandidateExhaustion.reset()
             (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
-            // 任务书 §3.6：退出心动模式时让候选池缓存失效，
-            // 避免下次开启还沿用上次会话的收藏/历史快照。
-            invalidateHeartbeatCandidateCache()
         } else {
             heartbeatCandidateExhaustion.reset()
-            // 重新开启视为新会话：清空上一次会话的失败曲目黑名单（任务书 §3.5）
+            // 重新开启视为新会话：清空上一次会话的失败计数与熔断
             (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.reset()
-            refreshHeartbeatOfficialAvailability()
             // 用户重新开启是新会话；状态恢复要沿用落盘的记录，否则冷启动后关不回原队列
             if (userInitiated) synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.clear() }
             fillHeartbeatQueueAsync("enable")
-            // 只有用户主动开启才计数：状态恢复走的是同一个函数，但那是静默的。
-            if (userInitiated) heartbeatUserEnabledStateFlow.value += 1
         }
     }
-    // 开关状态最后才广播：UI 收到「已开启」时，官方可用性必须已经是刷新后的值，
-    // 否则「登录后可启用云端推荐」这条提示会拿到上一轮的结果（例如上次熔断过就误报本地推荐）。
     heartbeatModeStateFlow.value = normalized
 }
 
-/**
- * 让本地候选池缓存失效（任务书 §3.6）。
- *
- * 退出心动模式、收藏/历史发生变更时调用；未安装本地源时静默无操作。
- */
-internal fun PlayerManager.invalidateHeartbeatCandidateCache() {
-    val coordinator = heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator ?: return
-    coordinator.invalidateLocalCandidates()
-}
-
-/**
- * 记录一首播放失败的歌曲，使其在本次心动会话内不再被推荐（任务书 §八）。
- *
- * 只影响本地降级候选的挑选；官方接口返回什么就播什么，不做客户端过滤（§1.3 红线）。
- */
-internal fun PlayerManager.markHeartbeatSongFailed(song: SongItem) {
-    if (heartbeatModeState != HeartbeatMode.ON) return
-    (heartbeatSelectorHolder as? HeartbeatNextTrackCoordinator)?.markFailed(song)
-}
-
-/**
- * 记录一次「用户在心动模式下主动跳过」（任务书 §七 第三阶段）。
- *
- * 与 [markHeartbeatSongFailed] 的区别：跳过不是失败，只是这一次不想听，
- * 因此不排除该曲，只把次数交给候选源并入重复惩罚衰减。
- * 只在心动模式开启时记录——关着的时候用户点下一首是普通操作，不该被算作负反馈。
- */
-internal fun PlayerManager.recordHeartbeatSkip(song: SongItem) {
-    if (heartbeatModeState != HeartbeatMode.ON) return
-    val recorder = heartbeatSkipRecorder ?: return
-    val key = HeartbeatScorer.identityKey(song)
-    PlayerDependencies.launchBackgroundIo {
-        runCatching { recorder.recordSkip(key) }
-            .onFailure { NPLogger.w(TAG, "记录跳过失败：$key", it) }
-    }
+private fun isHeartbeatOfficialLoggedIn(): Boolean {
+    val repository = heartbeatOfficialRepository ?: return false
+    return runCatching { repository.isLoggedIn() }.getOrDefault(false)
 }
 
 /**
@@ -374,7 +266,7 @@ internal fun PlayerManager.heartbeatOnCurrentSongChanged(song: SongItem?) {
     fillHeartbeatQueueAsync("songChanged")
 }
 
-private fun heartbeatKeyOf(song: SongItem): String = HeartbeatScorer.identityKey(song)
+private fun heartbeatKeyOf(song: SongItem): String = HeartbeatSongIdentity.identityKey(song)
 
 private fun heartbeatInsertedSnapshot(): Set<String> =
     synchronized(heartbeatInsertedKeys) { heartbeatInsertedKeys.toSet() }
@@ -439,12 +331,10 @@ private fun PlayerManager.applyHeartbeatBatch(
     }
     if (batch.isEmpty()) {
         heartbeatCandidateExhaustion.onNoCandidate(heartbeatKeyOf(seedSong))
-        refreshHeartbeatOfficialAvailability()
         NPLogger.d(TAG, "没有可补的心动歌（reason=$reason）")
         return
     }
     heartbeatCandidateExhaustion.onCandidate()
-    refreshHeartbeatOfficialAvailability(honorLastResult = true)
     insertHeartbeatBatch(batch)
 }
 

@@ -27,7 +27,7 @@ private const val MAX_BATCH_ROUNDS = 6
  *
  * 只负责「拿到下一首推荐歌曲」，不含任何播放器/队列逻辑。
  * 未登录（code=301）、无红心歌单、接口异常等所有情况一律返回 null，
- * 由调用方静默降级到本地推荐，绝不把错误抛给 UI。
+ * 由调用方按原队列继续播放，绝不把错误抛给 UI。
  */
 class NeteasePlaymodeIntelligenceRepository internal constructor(
     private val api: NeteasePlaymodeIntelligenceApi,

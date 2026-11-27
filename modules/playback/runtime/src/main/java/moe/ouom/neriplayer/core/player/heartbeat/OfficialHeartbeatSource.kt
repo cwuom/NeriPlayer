@@ -2,7 +2,7 @@ package moe.ouom.neriplayer.core.player.heartbeat
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatNextTrackSelector
-import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatSongIdentity
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligenceRepository
@@ -17,7 +17,7 @@ import moe.ouom.neriplayer.platform.netease.playmode.NeteasePlaymodeIntelligence
  *   因此由本类在边界处做转换，域依赖方向保持为 `runtime → platform`，不会反向。
  *
  * 合规红线（任务书 §1.3 / §3.3）：
- * - 官方返回的歌曲**原样透传**，本类绝不做二次排序、二次过滤、插入本地评分；
+ * - 官方返回的歌曲**原样透传**，本类绝不做二次排序、二次过滤；
  * - `NeteasePlaymodeIntelligenceRepository` 已保证任何失败都返回 null（不抛异常），
  *   这里再兜一层 catch，防止实现被替换后违约把播放链路打断。
  *
@@ -44,7 +44,7 @@ class OfficialHeartbeatSource(
         while (true) {
             // 第一次走缓存；重试必须绕过缓存，否则拿到的还是刚才那首被标记的歌
             val song = fetchOnce(currentSong, bypassCache = attempt > 0) ?: return null
-            if (disliked.isEmpty() || HeartbeatScorer.identityKey(song) !in disliked) {
+            if (disliked.isEmpty() || HeartbeatSongIdentity.identityKey(song) !in disliked) {
                 return song
             }
             if (attempt >= MAX_DISLIKE_RETRY) {
@@ -75,10 +75,10 @@ class OfficialHeartbeatSource(
         if (!repository.isLoggedIn()) return emptyList()
         val disliked = readDislikedIdentities()
         val blocked = HashSet<String>(disliked)
-        currentQueue.mapTo(blocked) { HeartbeatScorer.identityKey(it) }
-        blocked.add(HeartbeatScorer.identityKey(currentSong))
+        currentQueue.mapTo(blocked) { HeartbeatSongIdentity.identityKey(it) }
+        blocked.add(HeartbeatSongIdentity.identityKey(currentSong))
         return try {
-            repository.fetchSongBatch(currentSong.id, limit) { HeartbeatScorer.identityKey(it) !in blocked }
+            repository.fetchSongBatch(currentSong.id, limit) { HeartbeatSongIdentity.identityKey(it) !in blocked }
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             emptyList()

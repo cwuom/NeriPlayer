@@ -89,7 +89,6 @@ import moe.ouom.neriplayer.platform.youtube.auth.mergeYouTubeAuthCookieUpdates
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.heartbeat.DislikedSongRepository
-import moe.ouom.neriplayer.data.heartbeat.HeartbeatSkipRepository
 import moe.ouom.neriplayer.data.history.PlayHistoryRepository
 import moe.ouom.neriplayer.platform.bilibili.cache.BiliCacheRepositories
 import moe.ouom.neriplayer.data.local.platform.bilibili.BiliVideoSkipRepositoryProvider
@@ -339,10 +338,6 @@ object AppContainer {
     val dislikedSongRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         DislikedSongRepository(application)
     }
-    /** 心动模式「跳过」次数（本地 DataStore，只并入重复惩罚，不做硬排除）。 */
-    val heartbeatSkipRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        HeartbeatSkipRepository(application)
-    }
     val biliFavoriteFolderCacheRepo by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BiliCacheRepositories.createFavoriteFolder(application)
     }
@@ -448,7 +443,7 @@ object AppContainer {
         NeteaseSongEncyclopediaRepository(neteaseClient)
     }
 
-    /** 心动模式官方推荐仓库；未登录或接口不可用时由本地降级接管。 */
+    /** 心动模式官方推荐仓库；心动模式只用它，未登录时开不了。 */
     val heartbeatOfficialRepository: NeteasePlaymodeIntelligenceRepository by lazy {
         NeteasePlaymodeIntelligenceRepository(neteaseClient)
     }
@@ -600,7 +595,7 @@ object AppContainer {
         initialized = true
         moe.ouom.neriplayer.core.integration.download.installDownloadDependencies()
         moe.ouom.neriplayer.core.di.player.installPlayerDependencies(app)
-        moe.ouom.neriplayer.core.di.player.installHeartbeatDependencies(app)
+        moe.ouom.neriplayer.core.di.player.installHeartbeatDependencies()
         moe.ouom.neriplayer.data.local.media.source.LocalMediaHostAccess.bind(
             downloads = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaDownloads,
             covers = moe.ouom.neriplayer.core.download.host.media.AndroidLocalMediaCovers,

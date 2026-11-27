@@ -199,7 +199,7 @@ class PlaymodeIntelligenceResponseParserTest {
     fun `wrapped songInfo shape parsed from real device sample`() {
         // 2026-10-19 真机实测（登录态）：data[] 元素是包装对象，歌曲字段全在 songInfo 里。
         // 这是生产环境的主要路径；此前按「元素即歌曲」解析导致每个元素都被丢掉，
-        // 报「data 中没有可解析的歌曲」并错误降级到本地推荐。
+        // 报「data 中没有可解析的歌曲」，心动模式拿不到歌。
         val raw = """
             {
               "code": 200,

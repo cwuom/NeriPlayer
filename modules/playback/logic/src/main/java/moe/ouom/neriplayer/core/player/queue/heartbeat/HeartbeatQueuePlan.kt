@@ -16,7 +16,7 @@ object HeartbeatQueuePlan {
     fun upcomingCount(playlist: List<SongItem>, currentIndex: Int, inserted: Set<String>): Int {
         var count = 0
         for (index in currentIndex + 1 until playlist.size) {
-            if (HeartbeatScorer.identityKey(playlist[index]) !in inserted) break
+            if (HeartbeatSongIdentity.identityKey(playlist[index]) !in inserted) break
             count++
         }
         return count
@@ -33,8 +33,8 @@ object HeartbeatQueuePlan {
         batch: List<SongItem>,
     ): Insertion? {
         if (currentIndex !in playlist.indices) return null
-        val existing = playlist.mapTo(HashSet()) { HeartbeatScorer.identityKey(it) }
-        val fresh = batch.filter { existing.add(HeartbeatScorer.identityKey(it)) }
+        val existing = playlist.mapTo(HashSet()) { HeartbeatSongIdentity.identityKey(it) }
+        val fresh = batch.filter { existing.add(HeartbeatSongIdentity.identityKey(it)) }
         if (fresh.isEmpty()) return null
         val insertAt = currentIndex + 1 + upcomingCount(playlist, currentIndex, inserted)
         val songs = playlist.toMutableList().apply { addAll(insertAt, fresh) }
@@ -44,6 +44,6 @@ object HeartbeatQueuePlan {
     /** 关闭心动时要删的下标；正在播的那首保留，播完接回原队列。 */
     fun removalIndices(playlist: List<SongItem>, currentIndex: Int, inserted: Set<String>): Set<Int> =
         playlist.indices.filterTo(HashSet()) { index ->
-            index != currentIndex && HeartbeatScorer.identityKey(playlist[index]) in inserted
+            index != currentIndex && HeartbeatSongIdentity.identityKey(playlist[index]) in inserted
         }
 }

@@ -10,7 +10,7 @@ import org.junit.Test
  * 核心语义：
  * - 同一首歌连续失败达到 [HeartbeatCandidateExhaustionTracker.MAX_CONSECUTIVE_NO_CANDIDATE] 才判定耗尽；
  * - 换首歌失败计数重新开始，不会因为一首难搞的歌把整个会话判死；
- * - 任一次成功立刻解除耗尽（本地推荐仍在工作就不能说「候选不足」）；
+ * - 任一次成功立刻解除耗尽；
  * - [HeartbeatCandidateExhaustionTracker.reset] 供开启/关闭心动模式时切换会话。
  */
 class HeartbeatCandidateExhaustionTrackerTest {

@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.player.PlayerManager
-import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatScorer
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatSongIdentity
 import moe.ouom.neriplayer.data.model.playback.queue.PlayerQueueDisplayItem
 import moe.ouom.neriplayer.data.local.playlist.LocalPlaylistRepository
 import moe.ouom.neriplayer.data.local.playlist.launchLocalPlaylistMutation
@@ -1112,7 +1112,7 @@ internal fun NowPlayingQueueSheet(
     }
 
     fun toggleQueueSongDislike(song: SongItem) {
-        val key = HeartbeatScorer.identityKey(song)
+        val key = HeartbeatSongIdentity.identityKey(song)
         screenScope.launch { dislikedSongRepo.toggle(key) }
     }
 
@@ -1281,7 +1281,7 @@ internal fun NowPlayingQueueSheet(
                                 favoriteSongs.any { FavoritesPlaylist.matchesSong(it, entry.song) }
                             }
                             val isDislikedSong = remember(dislikedKeys, entry.song) {
-                                HeartbeatScorer.identityKey(entry.song) in dislikedKeys
+                                HeartbeatSongIdentity.identityKey(entry.song) in dislikedKeys
                             }
                             val rowScale by animateFloatAsState(
                                 targetValue = queueRowScale(isDragging),

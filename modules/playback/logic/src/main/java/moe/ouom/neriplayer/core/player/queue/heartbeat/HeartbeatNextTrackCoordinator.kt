@@ -3,25 +3,21 @@ package moe.ouom.neriplayer.core.player.queue.heartbeat
 import moe.ouom.neriplayer.data.model.SongItem
 
 /**
- * 心动模式「下一首」协调器：官方接口优先，本地候选池兜底。
+ * 心动模式选歌协调器：只走网易云官方推荐，并负责失败熔断。
  *
- * 这是任务书 §3.2 的分层装配点，也是合规红线（§1.3）的守门人：
- * - 官方源返回非 null 时，**原样返回**，不经过 [HeartbeatScorer]、不二次排序、不二次过滤；
- * - 官方源返回 null 时才调用本地源；
- * - 两层都无候选时返回 null，由调用方回退到原有 `nextStep` 逻辑。
+ * - 官方源返回的结果**原样返回**，不二次排序、不二次过滤；
+ * - 官方源拿不到时返回 null / 空列表，由调用方按原队列继续播放。
  *
- * 失败重试约束（§3.5）：同一首歌连续失败 [MAX_CONSECUTIVE_FAILURES] 次后，
- * 本次心动模式会话内不再调用官方源，全部走本地降级；直到 [reset] 被调用
- * （用户重新开启心动模式）才恢复。**禁止无限重试。**
+ * 失败重试约束：同一首歌连续失败 [MAX_CONSECUTIVE_FAILURES] 次后，
+ * 本次心动模式会话内不再请求官方源，直到 [reset] 被调用（用户重新开启心动模式）。**禁止无限重试。**
  */
 class HeartbeatNextTrackCoordinator(
     private val officialSource: HeartbeatNextTrackSelector? = null,
-    private val localSource: HeartbeatNextTrackSelector? = null,
 ) : HeartbeatNextTrackSelector {
 
     private val lock = Any()
 
-    /** 当前歌曲 id → 连续失败次数 */
+    /** 当前歌曲身份键 → 连续失败次数 */
     private val failureCounts = HashMap<String, Int>()
 
     /** 本次会话内官方源是否已被熔断 */
@@ -32,25 +28,20 @@ class HeartbeatNextTrackCoordinator(
      * 会话代次：每次 [reset] 递增。
      *
      * [reset] 只清状态、打断不了已经在途的选歌请求。那些请求回来后如果照旧写回
-     * `failureCounts` / `officialCircuitOpen` / [lastResultFromOfficial]，
-     * 就会把「刚重置好的新会话」重新标成熔断。所以写回前一律比对代次，过期就丢弃。
+     * `failureCounts` / `officialCircuitOpen`，就会把「刚重置好的新会话」重新标成熔断。
+     * 所以写回前一律比对代次，过期就丢弃。
      */
     @Volatile
     private var sessionGeneration: Int = 0
-
-    /** 最近一次成功从官方源取到结果，用于 UI 区分「官方」与「本地推荐」文案 */
-    @Volatile
-    var lastResultFromOfficial: Boolean = false
-        private set
 
     override suspend fun selectNext(currentSong: SongItem, currentQueue: List<SongItem>): SongItem? {
         val generation = sessionGeneration
         val official = selectFromOfficial(currentSong, generation) { it.selectNext(currentSong, currentQueue) }
         recordOfficialOutcome(currentSong, generation, official != null)
-        return official ?: localSource?.selectNext(currentSong, currentQueue)
+        return official
     }
 
-    /** 与 [selectNext] 同一套熔断规则：官方给出非空批次就原样返回，否则整批走本地。 */
+    /** 与 [selectNext] 同一套熔断规则：官方给出非空批次就原样返回。 */
     override suspend fun selectBatch(
         currentSong: SongItem,
         currentQueue: List<SongItem>,
@@ -61,16 +52,14 @@ class HeartbeatNextTrackCoordinator(
             source.selectBatch(currentSong, currentQueue, limit).takeIf { it.isNotEmpty() }
         }
         recordOfficialOutcome(currentSong, generation, official != null)
-        return official ?: localSource?.selectBatch(currentSong, currentQueue, limit).orEmpty()
+        return official.orEmpty()
     }
 
     private fun recordOfficialOutcome(currentSong: SongItem, generation: Int, succeeded: Boolean) {
-        if (generation != sessionGeneration) return
-        lastResultFromOfficial = succeeded
-        if (succeeded) {
-            synchronized(lock) { failureCounts.remove(HeartbeatScorer.identityKey(currentSong)) }
-        }
+        if (generation != sessionGeneration || !succeeded) return
+        synchronized(lock) { failureCounts.remove(HeartbeatSongIdentity.identityKey(currentSong)) }
     }
+
     /** 用户重新开启心动模式时调用，重置熔断与失败计数 */
     fun reset() {
         synchronized(lock) {
@@ -78,23 +67,6 @@ class HeartbeatNextTrackCoordinator(
             failureCounts.clear()
             officialCircuitOpen = false
         }
-        lastResultFromOfficial = false
-        (localSource as? LocalHeartbeatCandidateSource)?.resetFailures()
-    }
-
-    /**
-     * 记录一首播放失败的歌曲（任务书 §八）。
-     *
-     * 转交给本地源做会话级排除：失败的曲目不该被再次推荐，
-     * 否则「播放失败 → 自动换下一首 → 又选中同一首」会形成死循环。
-     */
-    fun markFailed(song: SongItem) {
-        (localSource as? LocalHeartbeatCandidateSource)?.markFailed(song)
-    }
-
-    /** 让本地候选池缓存失效（任务书 §3.6：退出心动模式 / 收藏变更时调用）。 */
-    fun invalidateLocalCandidates() {
-        (localSource as? LocalHeartbeatCandidateSource)?.invalidate()
     }
 
     /** 仅供测试与诊断 */
@@ -107,7 +79,7 @@ class HeartbeatNextTrackCoordinator(
     ): T? {
         val source = officialSource ?: return null
         if (officialCircuitOpen) return null
-        val key = HeartbeatScorer.identityKey(currentSong)
+        val key = HeartbeatSongIdentity.identityKey(currentSong)
         val alreadyFailed = synchronized(lock) { failureCounts[key] ?: 0 }
         if (alreadyFailed >= MAX_CONSECUTIVE_FAILURES) return null
 
@@ -132,7 +104,7 @@ class HeartbeatNextTrackCoordinator(
     }
 
     companion object {
-        /** 同一首歌连续失败多少次后熔断官方源（任务书 §3.5） */
+        /** 同一首歌连续失败多少次后熔断官方源 */
         const val MAX_CONSECUTIVE_FAILURES = 3
     }
 }

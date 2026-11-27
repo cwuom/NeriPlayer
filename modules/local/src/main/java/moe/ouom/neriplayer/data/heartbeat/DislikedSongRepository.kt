@@ -38,7 +38,7 @@ private val Context.dislikedSongDataStore by preferencesDataStore(
  * 用 DataStore 存一个 JSON 数组是零迁移风险的做法，项目里的搜索历史也是这么做的。
  *
  * 键的生成**不在这里**：本类只存不透明字符串，由调用方统一用
- * `HeartbeatScorer.identityKey(song)` 生成，保证「标记时」与「选歌时」算的是同一个键。
+ * `HeartbeatSongIdentity.identityKey(song)` 生成，保证「标记时」与「选歌时」算的是同一个键。
  * `modules/local` 不依赖 `playback/logic`（域依赖门禁），所以不能在这里引用评分器。
  */
 class DislikedSongRepository(context: Context) {
