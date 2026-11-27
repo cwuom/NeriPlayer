@@ -33,6 +33,7 @@ import moe.ouom.neriplayer.platform.youtube.auth.web.applyYouTubeWebCookies
 import moe.ouom.neriplayer.platform.youtube.auth.youtubeAuthRotationMutex
 import android.content.Context
 import android.webkit.CookieManager
+import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -44,7 +45,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.withLock
 import moe.ouom.neriplayer.data.network.DataHttpClients
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.network.weblogin.ForegroundWebLoginGuard
 import java.util.concurrent.TimeUnit
+
+private const val MAX_ROTATION_RETRIES = 2
+
+internal fun shouldRetryPeriodicRotation(outcome: YouTubeCookieRotationOutcome, attempt: Int): Boolean =
+    attempt < MAX_ROTATION_RETRIES && when (outcome) {
+        YouTubeCookieRotationOutcome.NetworkError -> true
+        is YouTubeCookieRotationOutcome.Rejected -> outcome.code == 408 || outcome.code == 429 || outcome.code in 500..599
+        YouTubeCookieRotationOutcome.Throttled -> attempt > 0
+        else -> false
+    }
 
 /**
  * 后台定期轮换 YouTube 会话凭据
@@ -73,13 +85,14 @@ class YouTubeAuthRotationWorker(
                 FLEX_INTERVAL_HOURS, TimeUnit.HOURS
             )
                 .setConstraints(constraints)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
                 .addTag(PERIODIC_WORK_NAME)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 PERIODIC_WORK_NAME,
-                // 已经排上的就别重排, 否则每次启动都把周期重置回 6 小时后
-                ExistingPeriodicWorkPolicy.KEEP,
+                // 保留原排期，同时让升级前的任务采用当前退避策略
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request
             )
         }
@@ -101,14 +114,11 @@ class YouTubeAuthRotationWorker(
                 return Result.success()
             }
             val authStore = host.authStore
-            val snapshot = authStore.captureAuthSnapshot()
-            val auth = snapshot.auth
-            if (!hasYouTubeRotationPrerequisites(auth.cookies)) {
-                NPLogger.d(TAG, "skip rotation: no usable session cookies")
-                return Result.success()
-            }
-
-            when (val outcome = youtubeAuthRotationMutex.withLock {
+            val outcome = youtubeAuthRotationMutex.withLock {
+                if (ForegroundWebLoginGuard.isActive) return retryIfAvailable()
+                val snapshot = authStore.captureAuthSnapshot()
+                val auth = snapshot.auth
+                if (!hasYouTubeRotationPrerequisites(auth.cookies)) return Result.success()
                 val result = YouTubeCookieRotator(
                     httpClientProvider = { DataHttpClients.shared },
                     stateStore = SharedPreferencesYouTubeCookieRotationStateStore(
@@ -116,9 +126,9 @@ class YouTubeAuthRotationWorker(
                     )
                 ).rotateDetailed(
                     cookies = auth.cookies,
-                    userAgent = auth.userAgent,
-                    force = true
+                    userAgent = auth.userAgent
                 )
+                if (ForegroundWebLoginGuard.isActive) return retryIfAvailable()
                 if (result is YouTubeCookieRotationOutcome.Rotated) {
                     val updated = authStore.updateAuthIfCurrent(snapshot) { current ->
                         mergeYouTubeAuthBundle(
@@ -127,40 +137,23 @@ class YouTubeAuthRotationWorker(
                             savedAt = System.currentTimeMillis()
                         )
                     } ?: return Result.success()
-                    if (!authStore.runIfCurrent(updated) { syncRotatedCookiesToWebView(result.cookies) }) {
-                        return Result.success()
+                    authStore.runIfCurrent(updated) {
+                        if (!ForegroundWebLoginGuard.isActive) syncRotatedCookiesToWebView(result.cookies)
                     }
                 }
                 result
-            }) {
-                is YouTubeCookieRotationOutcome.Rotated -> {
-                    NPLogger.i(
-                        TAG,
-                        "rotation persisted keys=${outcome.cookies.keys.joinToString()}"
-                    )
-                    Result.success()
-                }
-
-                YouTubeCookieRotationOutcome.NetworkError -> {
-                    NPLogger.w(TAG, "rotation failed because the network request failed")
-                    Result.retry()
-                }
-
-                is YouTubeCookieRotationOutcome.Rejected,
-                YouTubeCookieRotationOutcome.Unchanged,
-                YouTubeCookieRotationOutcome.Throttled,
-                YouTubeCookieRotationOutcome.Skipped -> {
-                    NPLogger.d(TAG, "rotation completed without a new cookie")
-                    Result.success()
-                }
             }
+            if (shouldRetryPeriodicRotation(outcome, runAttemptCount)) Result.retry() else Result.success()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             NPLogger.w(TAG, "rotation worker failed: ${error.message}")
-            Result.retry()
+            retryIfAvailable()
         }
     }
+
+    private fun retryIfAvailable(): Result =
+        if (runAttemptCount < MAX_ROTATION_RETRIES) Result.retry() else Result.success()
 
     /**
      * 存档更新了也要同步回浏览器

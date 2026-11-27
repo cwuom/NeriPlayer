@@ -127,4 +127,11 @@
     <string name="auth_storage_unavailable_message">系统安全存储和兼容加密存储均不可用，当前无法在重启后保留账号。已阻止此次登录或导入，请恢复设备存储与系统安全服务后重试。</string>
     <string name="auth_storage_save_failed">无法保存账号凭据，请检查设备存储与系统安全服务后重试</string>
     <string name="auth_storage_clear_failed">无法清除已保存的账号，请检查设备存储后重试</string>
+    <string name="settings_play_history_sync_title">播放记录同步</string>
+    <string name="settings_play_history_sync_desc">把在 NeriPlayer 里的收听同步到平台账号，平台的听歌排行、周报和历史记录不会因此断档。默认关闭</string>
+    <string name="settings_play_history_sync_netease">同步到网易云音乐</string>
+    <string name="settings_play_history_sync_netease_desc">一首歌听满 30 秒或播完后，计入网易云的听歌记录与听歌排行</string>
+    <string name="settings_play_history_sync_bili">同步到哔哩哔哩</string>
+    <string name="settings_play_history_sync_bili_desc">播放视频时上报观看进度，计入哔哩哔哩历史记录；账号暂停了历史记录时不会生效</string>
+    <string name="settings_play_history_sync_sign_in_required">登录对应平台后才能开启</string>
 </resources>

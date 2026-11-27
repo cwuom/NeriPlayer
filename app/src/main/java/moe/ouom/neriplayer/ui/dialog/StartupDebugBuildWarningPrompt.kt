@@ -1,7 +1,6 @@
 package moe.ouom.neriplayer.ui.dialog
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +21,7 @@ import java.io.IOException
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.retry
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -97,7 +97,7 @@ private fun DebugBuildWarningDialog(
         onDismissRequest = {},
         title = { Text(stringResource(R.string.debug_build_warning_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ScrollableDialogColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.debug_build_warning_message))
                 if (saveFailed) {
                     Text(

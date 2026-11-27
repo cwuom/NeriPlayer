@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.screen.artist
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.app.Application
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -58,10 +59,16 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorItem
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSection
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorItemsUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorItemsViewModel
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.artist.youtubeMusicCreatorItemKey
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorSongItem
 
 internal fun resolveYouTubeMusicCreatorItemsTitle(
@@ -82,6 +89,8 @@ fun YouTubeMusicCreatorItemsScreen(
     creatorName: String = "",
     onBack: () -> Unit = {},
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
+    onPlaylistClick: (YouTubeMusicPlaylist) -> Unit,
+    onCreatorClick: (YouTubeMusicCreatorSummary) -> Unit,
     offlineMode: Boolean = false
 ) {
     val context = LocalContext.current
@@ -102,7 +111,9 @@ fun YouTubeMusicCreatorItemsScreen(
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
 
-    LaunchedEffect(endpoint?.browseId, endpoint?.params, section.title) {
+    val preferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val catalogKey = preferences.catalogKey(YouTubeContentSettings.systemLocale())
+    LaunchedEffect(endpoint?.browseId, endpoint?.params, section.title, catalogKey) {
         viewModel.start(section)
     }
     LaunchedEffect(viewModel, onSongClick) {
@@ -133,6 +144,7 @@ fun YouTubeMusicCreatorItemsScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
@@ -142,6 +154,7 @@ fun YouTubeMusicCreatorItemsScreen(
                 onRetry = viewModel::retry,
                 onLoadMore = viewModel::loadMore,
                 onSongClick = viewModel::playSong,
+                onBrowseItemClick = { openYouTubeMusicCreatorItem(it, onSongClick, onPlaylistClick, onCreatorClick) },
                 offlineMode = offlineMode,
                 isTabletLayout = LocalConfiguration.current.smallestScreenWidthDp >= 600
             )
@@ -156,13 +169,10 @@ internal fun YouTubeMusicCreatorItemsContent(
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onSongClick: (YouTubeMusicCreatorItem) -> Unit,
+    onBrowseItemClick: (YouTubeMusicCreatorItem) -> Unit,
     offlineMode: Boolean,
     isTabletLayout: Boolean
 ) {
-    val playableItems = uiState.items.mapNotNull { item ->
-        item.toCreatorSongItem()?.let { item to it }
-    }
-    val songs = playableItems.map { (_, song) -> song }
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     BoxWithConstraints(
         modifier = Modifier
@@ -197,18 +207,18 @@ internal fun YouTubeMusicCreatorItemsContent(
                 ),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if ((uiState.loading || uiState.playbackQueueLoading) && songs.isNotEmpty()) {
+                if ((uiState.loading || uiState.playbackQueueLoading) && uiState.items.isNotEmpty()) {
                     item(key = "creator-items-loading") {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
-                if (uiState.loading && songs.isEmpty()) {
+                if (uiState.loading && uiState.items.isEmpty()) {
                     item(key = "creator-items-first-loading") {
                         CreatorItemsLoadingBlock()
                     }
                     return@LazyColumn
                 }
-                if (uiState.error != null && songs.isEmpty()) {
+                if (uiState.error != null && uiState.items.isEmpty()) {
                     item(key = "creator-items-error") {
                         CreatorItemsErrorBlock(
                             message = uiState.error.asString(),
@@ -242,7 +252,7 @@ internal fun YouTubeMusicCreatorItemsContent(
                         )
                     }
                 }
-                if (songs.isEmpty()) {
+                if (uiState.items.isEmpty() && uiState.continuation == null) {
                     item(key = "creator-items-empty") {
                         Text(
                             text = stringResource(CoreCommonR.string.youtube_creator_items_empty),
@@ -253,17 +263,33 @@ internal fun YouTubeMusicCreatorItemsContent(
                     }
                 } else {
                     itemsIndexed(
-                        playableItems,
-                        key = { _, pair -> pair.second.id }
-                    ) { index, pair ->
-                        val (item, song) = pair
-                        CreatorPlayableRow(
-                            song = song,
-                            index = index + 1,
-                            offlineMode = offlineMode,
-                            enabled = !uiState.playbackQueueLoading && !uiState.loadingMore,
-                            onClick = { onSongClick(item) }
-                        )
+                        uiState.items,
+                        key = { _, item -> youtubeMusicCreatorItemKey(item) }
+                    ) { index, item ->
+                        val song = item.toCreatorSongItem()
+                        if (song != null) {
+                            CreatorPlayableRow(
+                                song = song,
+                                index = index + 1,
+                                offlineMode = offlineMode,
+                                enabled = !uiState.playbackQueueLoading && !uiState.loadingMore,
+                                onClick = { onSongClick(item) }
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { onBrowseItemClick(item) }.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CreatorSongCover(item.coverUrl, item.title, offlineMode)
+                                Column {
+                                    Text(item.title, style = MaterialTheme.typography.titleSmall)
+                                    if (item.subtitle.isNotBlank()) {
+                                        Text(item.subtitle, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 if (uiState.loadMoreError != null) {

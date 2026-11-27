@@ -310,7 +310,7 @@ private fun BiliMusicRankStrip(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         itemsIndexed(
-            items = state.songs,
+            items = state.songs.take(HomeSongPagerMaxSongs),
             key = { index, song -> song.musicId.ifBlank { "rank-$index-${song.creationBvid}" } },
             contentType = { _, _ -> HomeContentTypeBiliRankCard }
         ) { _, song ->
@@ -464,7 +464,7 @@ private fun BiliMusicHotStrip(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         itemsIndexed(
-            items = videos,
+            items = videos.take(HomeSongPagerMaxSongs),
             key = { index, video -> video.bvid.ifBlank { "hot-$index-${video.aid}" } },
             contentType = { _, _ -> HomeContentTypeBiliHotCard }
         ) { index, video ->

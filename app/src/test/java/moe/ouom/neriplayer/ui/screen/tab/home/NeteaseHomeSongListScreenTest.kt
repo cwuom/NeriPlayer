@@ -20,6 +20,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.work.Configuration
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
@@ -38,7 +39,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [35], application = Application::class, qualifiers = "w390dp-h800dp-mdpi")
+@Config(sdk = [35], application = PlaylistHostTestApplication::class, qualifiers = "w390dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NeteaseHomeSongListScreenTest {
     @get:Rule
@@ -104,4 +105,8 @@ class NeteaseHomeSongListScreenTest {
         composeRule.onNodeWithText(songs.last().name).performClick()
         assertEquals(songs to songs.lastIndex, picked)
     }
+}
+
+class PlaylistHostTestApplication : Application(), Configuration.Provider {
+    override val workManagerConfiguration: Configuration = Configuration.Builder().build()
 }

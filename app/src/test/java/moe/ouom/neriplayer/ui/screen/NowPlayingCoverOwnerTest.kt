@@ -278,7 +278,8 @@ class NowPlayingCoverOwnerTest {
 
     @Test
     fun `cover size keeps portrait and landscape bounds`() {
-        assertEquals(180.dp, resolveNowPlayingCoverSize(false, false, 400.dp, 300.dp, 300.dp))
+        assertEquals(195.dp, resolveNowPlayingCoverSize(false, false, 400.dp, 300.dp, 300.dp))
+        assertEquals(288.dp, resolveNowPlayingCoverSize(false, false, 400.dp, 400.dp, 800.dp))
         assertEquals(200.dp, resolveNowPlayingCoverSize(false, true, 600.dp, 300.dp, 400.dp))
         assertEquals(168.dp, resolveNowPlayingCoverSize(true, true, 800.dp, 300.dp, 400.dp))
     }

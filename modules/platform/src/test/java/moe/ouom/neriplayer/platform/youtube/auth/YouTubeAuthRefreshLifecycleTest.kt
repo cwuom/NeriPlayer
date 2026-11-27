@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.platform.youtube.auth
 import android.app.Application
 import android.content.Context
 import android.webkit.WebView
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CompletableDeferred
@@ -10,13 +11,16 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -32,6 +36,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
 
@@ -39,6 +44,53 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], application = Application::class)
 class YouTubeAuthRefreshLifecycleTest {
+    @Test
+    fun `background auth never loads a page when the requested route cannot be installed`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        try {
+            val installing = CompletableDeferred<Unit>()
+            val installed = CompletableDeferred<Boolean>()
+            withManager(awaitRoute = { installing.complete(Unit); installed.await() }) { manager, _ ->
+                val view = mock(WebView::class.java)
+                manager.setWebView(view)
+                val refresh = launch {
+                    assertFalse(manager.refreshIfNeeded("unavailable route", force = true).refreshed)
+                }
+                installing.await()
+                verify(view, never()).loadUrl(anyString())
+                installed.complete(false)
+                refresh.join()
+                verify(view, never()).loadUrl(anyString())
+                verify(view).destroy()
+            }
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `changing accounts clears persisted rotation status after the previous worker finishes`() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val rotation = SharedPreferencesYouTubeCookieRotationStateStore(context)
+        val manager = YouTubeAuthAutoRefreshManager(context, { error("unexpected request") }, RefreshTestAuthStore()) { true }
+        val previousAttempt = YouTubeCookieRotationState(lastRotatedAtMs = 42, consecutiveRejections = 4)
+        val releaseWorker = CompletableDeferred<Unit>()
+        val worker = launch {
+            youtubeAuthRotationMutex.withLock {
+                releaseWorker.await()
+                rotation.write(previousAttempt)
+            }
+        }
+        runCurrent()
+        val reset = launch { manager.resetForAccountChange() }
+        runCurrent()
+        assertFalse(reset.isCompleted)
+        releaseWorker.complete(Unit)
+        worker.join()
+        reset.join()
+        assertEquals(YouTubeCookieRotationState(), rotation.observe().first())
+    }
+
     @Test
     fun `logout waits for teardown after the refresh caller is cancelled`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -162,7 +214,10 @@ class YouTubeAuthRefreshLifecycleTest {
         }
     }
 
-    private suspend fun withManager(block: suspend (YouTubeAuthAutoRefreshManager, RefreshTestAuthStore) -> Unit) {
+    private suspend fun withManager(
+        awaitRoute: suspend (Context) -> Boolean = { true },
+        block: suspend (YouTubeAuthAutoRefreshManager, RefreshTestAuthStore) -> Unit
+    ) {
         val context = mock(Context::class.java)
         `when`(context.applicationContext).thenReturn(context)
         val client = OkHttpClient.Builder().addInterceptor { chain ->
@@ -176,7 +231,7 @@ class YouTubeAuthRefreshLifecycleTest {
         val enabled = YouTubeFeatureGate.isEnabled()
         YouTubeFeatureGate.update(true)
         try {
-            block(YouTubeAuthAutoRefreshManager(context, { client }, store), store)
+            block(YouTubeAuthAutoRefreshManager(context, { client }, store, awaitRoute), store)
         } finally {
             YouTubeFeatureGate.update(enabled)
             client.dispatcher.executorService.shutdown()

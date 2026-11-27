@@ -78,7 +78,7 @@ class PlaybackStatsRepositoryRecoveryTest {
         doAnswer { invocation ->
             pending.add(PlaybackStatsPendingDeltaEntity(invocation.getArgument(0), 1, invocation.getArgument(1), invocation.getArgument(2), invocation.getArgument(3), invocation.getArgument(4), 50, "device"))
             true
-        }.`when`(room).enqueueDelta(sameString("event"), anyString(), anyLong(), eq(0), anyLong(), sameString("device"), isNull(), eq(true))
+        }.`when`(room).enqueueDelta(sameString("event"), anyString(), anyLong(), eq(0), anyLong(), sameString("device"), isNull(), eq(true), isNull())
         doAnswer { if (fails) throw IOException("apply unavailable"); pending.clear(); Unit }.`when`(room).applyDelta(
             any(PlaybackStatsPendingDeltaEntity::class.java) ?: delta(), anyString(), any<(PlaybackStatsDeltaRows) -> PlaybackStatsDeltaRows>() ?: { it }
         )
@@ -98,7 +98,7 @@ class PlaybackStatsRepositoryRecoveryTest {
     @Test
     fun `failed durable enqueue is not acknowledged`() = runTest {
         val room = healthyRoom()
-        doAnswer { throw IOException("disk full") }.`when`(room).enqueueDelta(sameString("event"), anyString(), anyLong(), eq(1), anyLong(), sameString("device"), isNull(), eq(true))
+        doAnswer { throw IOException("disk full") }.`when`(room).enqueueDelta(sameString("event"), anyString(), anyLong(), eq(1), anyLong(), sameString("device"), isNull(), eq(true), isNull())
         val repository = repository(room, backgroundScope)
         assertTrue(repository.awaitInitialized())
         assertTrue(runCatching { repository.recordListenDeltaNow(song(), 100, 1, false, "event", 100) }.exceptionOrNull() is IOException)
@@ -111,7 +111,7 @@ class PlaybackStatsRepositoryRecoveryTest {
         val repository = repository(room, backgroundScope) { throw IOException("identity unavailable") }
         assertTrue(repository.awaitInitialized())
         assertTrue(runCatching { repository.recordListenDeltaNow(song(), 100, 1, false) }.exceptionOrNull() is IOException)
-        verify(room, never()).enqueueDelta(anyString(), anyString(), anyLong(), eq(1), anyLong(), sameString("local"), isNull(), eq(true))
+        verify(room, never()).enqueueDelta(anyString(), anyString(), anyLong(), eq(1), anyLong(), sameString("local"), isNull(), eq(true), isNull())
     }
 
     @Test
@@ -130,7 +130,7 @@ class PlaybackStatsRepositoryRecoveryTest {
     @Test
     fun `cancellation before durable enqueue stays cancellation`() = runTest {
         val room = healthyRoom()
-        doAnswer { throw CancellationException("cancel") }.`when`(room).enqueueDelta(sameString("event"), anyString(), anyLong(), eq(1), anyLong(), sameString("device"), isNull(), eq(true))
+        doAnswer { throw CancellationException("cancel") }.`when`(room).enqueueDelta(sameString("event"), anyString(), anyLong(), eq(1), anyLong(), sameString("device"), isNull(), eq(true), isNull())
         val repository = repository(room, backgroundScope)
         assertTrue(repository.awaitInitialized())
         assertTrue(runCatching { repository.recordListenDeltaNow(song(), 100, 1, false, "event", 100) }.exceptionOrNull() is CancellationException)

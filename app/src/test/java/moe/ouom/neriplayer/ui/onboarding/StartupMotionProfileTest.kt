@@ -17,7 +17,8 @@ class StartupMotionProfileTest {
         maxRefreshRate: Int = 120,
         lowRamDevice: Boolean = false,
         powerSaveMode: Boolean = false,
-        dimensity: Boolean = false
+        dimensity: Boolean = false,
+        entryLevelBlur: Boolean = false
     ) = StartupDeviceSpec(
         displayName = "Test Phone",
         modelCode = "TP-1",
@@ -30,8 +31,26 @@ class StartupMotionProfileTest {
         lowRamDevice = lowRamDevice,
         powerSaveMode = powerSaveMode,
         dimensityDevice = dimensity,
-        dimensityBlurCompatibility = dimensity
+        dimensityBlurCompatibility = dimensity,
+        entryLevelBlurDevice = entryLevelBlur
     )
+
+    @Test
+    fun `entry level gpus keep the lightweight blur quality outside the immersive preset`() {
+        val entry = spec(entryLevelBlur = true)
+        assertEquals(
+            AdvancedBlurQuality.UltraLow,
+            startupMotionConfigFor(StartupMotionPreset.Balanced, entry).advancedBlurQuality
+        )
+        assertEquals(
+            AdvancedBlurQuality.UltraLow,
+            startupMotionConfigFor(StartupMotionPreset.Light, entry).advancedBlurQuality
+        )
+        assertEquals(
+            AdvancedBlurQuality.Default,
+            startupMotionConfigFor(StartupMotionPreset.Balanced, spec()).advancedBlurQuality
+        )
+    }
 
     @Test
     fun `total memory rounds up to the marketed capacity`() {
@@ -121,11 +140,36 @@ class StartupMotionProfileTest {
     }
 
     @Test
-    fun `balanced keeps the dimensity blur defaults and skips the lens`() {
-        val config = startupMotionConfigFor(StartupMotionPreset.Balanced, spec(dimensity = true))
-        assertEquals(AdvancedBlurQuality.UltraLow, config.advancedBlurQuality)
-        assertFalse(config.liquidGlass)
-        assertFalse(config.enhancedAdvancedBlur)
+    fun `balanced turns advanced blur and the lens off`() {
+        listOf(spec(), spec(dimensity = true), spec(socClass = StartupSocClass.Flagship, ramGb = 16)).forEach { device ->
+            val config = startupMotionConfigFor(StartupMotionPreset.Balanced, device)
+            assertFalse(config.advancedBlur)
+            assertFalse(config.enhancedAdvancedBlur)
+            assertFalse(config.liquidGlass)
+        }
+        val dimensity = startupMotionConfigFor(StartupMotionPreset.Balanced, spec(dimensity = true))
+        assertEquals(AdvancedBlurQuality.UltraLow, dimensity.advancedBlurQuality)
+    }
+
+    @Test
+    fun `dimensity always gets ultra low blur quality whatever the preset`() {
+        val device = spec(socClass = StartupSocClass.Flagship, ramGb = 16, dimensity = true)
+        StartupMotionPreset.entries.forEach { preset ->
+            assertEquals(preset.name, AdvancedBlurQuality.UltraLow, startupMotionConfigFor(preset, device).advancedBlurQuality)
+        }
+        val immersive = startupMotionConfigFor(StartupMotionPreset.Immersive, device)
+        assertTrue(immersive.advancedBlur)
+        assertFalse(immersive.liquidGlass)
+    }
+
+    @Test
+    fun `immersive keeps the lens off when only the newer dimensity rule matches`() {
+        // MTK6893 这类型号只被新规则识别, 旧的兼容策略识别不到
+        val device = spec(socClass = StartupSocClass.Flagship, ramGb = 16)
+            .copy(dimensityDevice = true, dimensityBlurCompatibility = false)
+        val immersive = startupMotionConfigFor(StartupMotionPreset.Immersive, device)
+        assertEquals(AdvancedBlurQuality.UltraLow, immersive.advancedBlurQuality)
+        assertFalse(immersive.liquidGlass)
     }
 
     @Test

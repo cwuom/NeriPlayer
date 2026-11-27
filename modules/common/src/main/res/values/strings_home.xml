@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Home -->
+    <string name="international_home_spotlight">今日精选</string>
+    <string name="international_home_feed">为你推荐</string>
+    <string name="international_home_sections_desc">调整国际首页的栏目顺序和显示状态。今日精选和为你推荐需要启用 YouTube。</string>
     <string name="recommend_for_you">为你推荐</string>
     <string name="recommend_refresh">刷新推荐</string>
     <string name="recommend_trending">热力飙升</string>
@@ -36,6 +39,14 @@
     <string name="home_title_brand_loud">音理音理!!</string>
     <string name="home_title_brand_wave">音理音理~</string>
     <string name="home_title_brand_call">NeriPlayer</string>
+    <string name="home_greeting_morning">早上好</string>
+    <string name="home_greeting_noon">午安</string>
+    <string name="home_greeting_afternoon">下午好</string>
+    <string name="home_greeting_evening">晚上好</string>
+    <string name="home_greeting_tone_bright">！</string>
+    <string name="home_greeting_tone_soft">～</string>
+    <string name="home_greeting_midnight">夜深了，记得早点休息</string>
+    <string name="home_greeting_night">夜深了</string>
     <string name="home_all_cards_hidden">首页卡片已全部隐藏，可在设置中重新开启。</string>
     <string name="home_offline_no_continue">脱机模式下仅显示继续播放，暂无可显示内容。</string>
     <string name="offline_mode_title">脱机模式</string>

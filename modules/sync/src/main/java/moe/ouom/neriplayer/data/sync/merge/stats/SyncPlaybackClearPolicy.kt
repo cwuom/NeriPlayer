@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.data.sync.merge.stats
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHours
 
 internal object SyncPlaybackClearPolicy {
     fun normalizeAfterClear(
@@ -30,9 +31,13 @@ internal object SyncPlaybackClearPolicy {
     ): SyncPlaybackStatBucket? {
         val normalizedShards = retainedShards(bucket.counterShards, bucket.firstPlayedAt, bucket.lastPlayedAt, playbackStatsClearedAt)
             ?: return null
-        if (playbackStatsClearedAt <= 0L || normalizedShards.isEmpty()) return bucket.copy(counterShards = normalizedShards)
+        val retainedHours = SyncPlaybackHours.merge(bucket.hourlyTotals, clearedAt = playbackStatsClearedAt)
+        if (playbackStatsClearedAt <= 0L || normalizedShards.isEmpty()) {
+            return bucket.copy(counterShards = normalizedShards, hourlyTotals = retainedHours)
+        }
         val totals = totals(normalizedShards)
         return bucket.copy(
+            hourlyTotals = retainedHours,
             totalListenMs = totals.listenMs,
             playCount = totals.playCount,
             firstPlayedAt = totals.firstPlayedAt,

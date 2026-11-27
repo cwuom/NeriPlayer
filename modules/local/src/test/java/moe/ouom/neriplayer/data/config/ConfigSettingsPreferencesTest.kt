@@ -5,6 +5,9 @@ import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import moe.ouom.neriplayer.data.model.config.TypedPreferenceSnapshot
 import moe.ouom.neriplayer.data.model.settings.appearance.ThemePreferenceSnapshot
+import moe.ouom.neriplayer.platform.youtube.settings.PlaylistSuggestionSource
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentPreferences
+import moe.ouom.neriplayer.data.settings.toYouTubeContentPreferences
 import moe.ouom.neriplayer.data.settings.SettingsKeys
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -18,6 +21,40 @@ class ConfigSettingsPreferencesTest {
     private val longKey = SETTINGS_LONG_KEYS.first()
     private val stringKey = SETTINGS_STRING_KEYS.first()
     private val unrelatedKey = stringPreferencesKey("not_a_backed_up_setting")
+
+    @Test
+    fun `settings backup preserves each home layout and clears international overrides for old backups`() {
+        val source = mutablePreferencesOf(
+            SettingsKeys.HOME_MAJOR_ORDER to "radar,continue,trending,recommended,bilibili",
+            SettingsKeys.INTERNATIONAL_HOME_ORDER to "feed,continue,spotlight",
+            SettingsKeys.INTERNATIONAL_HOME_HIDDEN to "spotlight",
+            SettingsKeys.INTERNATIONAL_HOME_FEED_HIDDEN to "album,artist"
+        )
+        val restored = mutablePreferencesOf()
+        restored.replaceSettingsWith(source.toTypedPreferenceSnapshot())
+        assertEquals(source, restored)
+
+        val legacy = mutablePreferencesOf(SettingsKeys.HOME_CARD_CONTINUE to false)
+        restored.replaceSettingsWith(legacy.toTypedPreferenceSnapshot())
+        assertEquals(legacy, restored)
+    }
+
+    @Test
+    fun `settings backup round trips all YouTube content preferences without login state`() {
+        val source = mutablePreferencesOf(
+            SettingsKeys.YOUTUBE_CONTENT_LANGUAGE to "zh-TW",
+            SettingsKeys.YOUTUBE_CONTENT_COUNTRY to "JP",
+            SettingsKeys.YOUTUBE_HIDE_EXPLICIT to true,
+            SettingsKeys.YOUTUBE_HIDE_MUSIC_VIDEOS to true,
+            SettingsKeys.YOUTUBE_PLAYLIST_SUGGESTION_SOURCE to "Title"
+        )
+        val restored = mutablePreferencesOf()
+        restored.replaceSettingsWith(source.toTypedPreferenceSnapshot())
+        assertEquals(YouTubeContentPreferences("zh-TW", "JP", true, true, PlaylistSuggestionSource.Title),
+            restored.toYouTubeContentPreferences())
+        restored.replaceSettingsWith(TypedPreferenceSnapshot())
+        assertEquals(YouTubeContentPreferences(), restored.toYouTubeContentPreferences())
+    }
 
     @Test
     fun `exported snapshots keep only backed up keys with their stored types`() {

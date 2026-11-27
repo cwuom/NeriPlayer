@@ -1,6 +1,8 @@
 package moe.ouom.neriplayer.platform.youtube.auth
 
 import moe.ouom.neriplayer.data.model.youtube.auth.ROTATION_DEFAULT_INTERVAL_MS
+import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationOutcome
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeCookieRotationState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,6 +10,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubeCookieRotatorTest {
+    @Test
+    fun periodicChecksWaitForTheServerAdvertisedIntervalAcrossRestarts() = runTest {
+        val previous = YouTubeCookieRotationState(lastRotatedAtMs = 5_000L, rotationIntervalMs = 900_000L)
+        val store = object : YouTubeCookieRotationStateStore {
+            override fun read() = previous
+            override fun write(state: YouTubeCookieRotationState) = error("No rotation should be attempted")
+        }
+        val rotator = YouTubeCookieRotator(
+            httpClientProvider = { error("No request should be attempted") },
+            nowMsProvider = { previous.lastRotatedAtMs + 899_999L },
+            stateStore = store
+        )
+        assertEquals(YouTubeCookieRotationOutcome.Throttled, rotator.rotateDetailed(validSession, ""))
+    }
+
 
     @Test
     fun restoresRotationIntervalFromSharedStateAcrossRotatorInstances() {
@@ -141,6 +158,7 @@ class YouTubeCookieRotatorTest {
     @Test
     fun throttlesRepeatRotationsButAlwaysAllowsTheFirstOne() {
         assertTrue(shouldRotateYouTubeCookies(lastRotatedAtMs = 0L, nowMs = 1_000L))
+        assertTrue(shouldRotateYouTubeCookies(lastRotatedAtMs = 90_000L, nowMs = 1_000L))
         assertFalse(shouldRotateYouTubeCookies(lastRotatedAtMs = 1_000L, nowMs = 30_000L))
         assertTrue(shouldRotateYouTubeCookies(lastRotatedAtMs = 1_000L, nowMs = 61_000L))
     }

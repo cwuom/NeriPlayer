@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SkipNext
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
@@ -66,8 +67,9 @@ import moe.ouom.neriplayer.data.model.bilibili.skip.BiliVideoSkipTarget
 import moe.ouom.neriplayer.platform.bilibili.skip.policy.normalizeBiliVideoSkipIntervals
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
-import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.ui.theme.neriInputFieldShape
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 private const val MAX_BILI_VIDEO_SKIP_TIMESTAMP_MS = 24L * 60L * 60L * 1_000L
 internal const val BILI_VIDEO_SKIP_SMALL_SEEK_STEP_MS = 1_000L
@@ -370,7 +372,7 @@ internal fun BiliVideoSkipIntervalsContent(
                 ) {
                     OutlinedTextField(
                         value = startText,
-                        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+                        shape = neriInputFieldShape(),
                         colors = neriSearchFieldColors(),
                         onValueChange = {
                             lockSelectedTargetForEditing()
@@ -386,7 +388,7 @@ internal fun BiliVideoSkipIntervalsContent(
                     )
                     OutlinedTextField(
                         value = endText,
-                        shape = neriSearchFieldShape(OutlinedTextFieldDefaults.shape),
+                        shape = neriInputFieldShape(),
                         colors = neriSearchFieldColors(),
                         onValueChange = {
                             lockSelectedTargetForEditing()
@@ -623,6 +625,7 @@ internal fun BiliVideoSkipIntervalsContent(
                             showClearConfirmation = true
                         },
                         enabled = draftIntervals.isNotEmpty() && !isSaving,
+                        border = neriOutlinedButtonBorder(draftIntervals.isNotEmpty() && !isSaving),
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(stringResource(CoreCommonR.string.bili_video_skip_clear))
@@ -663,7 +666,7 @@ internal fun BiliVideoSkipIntervalsContent(
             title = { Text(stringResource(AppR.string.dialog_confirm_delete)) },
             text = { Text(deleteConfirmationText) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     onClick = {
                         lockSelectedTargetForEditing()
                         draftIntervals = draftIntervals.filterNot { it == interval }
@@ -688,7 +691,7 @@ internal fun BiliVideoSkipIntervalsContent(
             title = { Text(stringResource(AppR.string.dialog_confirm_clear)) },
             text = { Text(clearConfirmationText) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     onClick = {
                         lockSelectedTargetForEditing()
                         draftIntervals = emptyList()

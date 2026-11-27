@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.netease.auth.NeteaseYdDeviceSnapshot
 
 import android.content.Context
 import moe.ouom.neriplayer.network.proxy.DynamicProxySelector
+import moe.ouom.neriplayer.network.proxy.NetworkDns
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.common.io.readBytesLimited
 import okhttp3.Cookie
@@ -95,6 +96,7 @@ class NeteaseQrLoginClient(
                 }
             }
         })
+        .dns(NetworkDns)
         .proxySelector(DynamicProxySelector)
         .build()
 

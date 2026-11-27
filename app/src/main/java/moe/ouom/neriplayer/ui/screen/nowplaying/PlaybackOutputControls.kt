@@ -36,6 +36,7 @@ import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet
 import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPanel
 import moe.ouom.neriplayer.ui.component.playback.ListenTogetherPageTransition
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 @Composable
 internal fun rememberPlaybackRoomActive(): Boolean {
@@ -104,6 +105,7 @@ internal fun PlaybackOutputSheetContent(
             roomContent()
         } else {
             OutlinedButton(
+                border = neriOutlinedButtonBorder(),
                 onClick = { showRoom = true },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)
             ) {

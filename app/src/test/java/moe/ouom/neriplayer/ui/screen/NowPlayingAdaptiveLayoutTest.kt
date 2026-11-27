@@ -283,14 +283,18 @@ class NowPlayingAdaptiveLayoutTest {
         val shortTablet = resolveNowPlayingControlBaseSizes(false, true, true, false)
         val portrait = resolveNowPlayingControlBaseSizes(false, false, false, false)
         assertEquals(36.dp, phone.secondaryButtonSize)
-        assertEquals(40.dp, phone.primaryButtonSize)
+        assertEquals(44.dp, phone.primaryButtonSize)
         assertEquals(20.dp, phone.iconSize)
         assertTrue(phone.spacing < tablet.spacing)
         assertEquals(46.dp, tablet.secondaryButtonSize)
-        assertEquals(50.dp, tablet.primaryButtonSize)
+        assertEquals(56.dp, tablet.primaryButtonSize)
         assertEquals(42.dp, shortTablet.secondaryButtonSize)
-        assertEquals(46.dp, shortTablet.primaryButtonSize)
-        assertEquals(42.dp, portrait.primaryButtonSize)
+        assertEquals(52.dp, shortTablet.primaryButtonSize)
+        assertEquals(56.dp, portrait.primaryButtonSize)
+        // 主键在所有布局下都应明显大于两侧按钮
+        listOf(phone, tablet, shortTablet, portrait).forEach { sizes ->
+            assertTrue(sizes.primaryButtonSize >= sizes.secondaryButtonSize * 1.2f)
+        }
     }
 
     @Test

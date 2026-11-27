@@ -1,5 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.nowplaying
 
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.theme.NeriMotion
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.SizeTransform
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 
@@ -11,7 +17,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -810,15 +815,33 @@ internal fun MoreOptionsAnimatedPage(
         onBack = { owner.back() },
         label = "more_options_sheet_content"
     )
+    val clean = NeriDesign.isClean
+    val materialOffsetPx = with(LocalDensity.current) { MoreOptionsSharedAxisOffset.roundToPx() }
     pageTransition.AnimatedContent(
         transitionSpec = {
-            (fadeIn(animationSpec = tween(220, delayMillis = 90)) +
-                scaleIn(initialScale = 0.92f, animationSpec = tween(220, delayMillis = 90)))
-                .togetherWith(fadeOut(animationSpec = tween(90)))
+            // 共享 X 轴: 进入子页向左推进, 返回主页向右退回; 面板高度同步平滑变化
+            val direction = if (targetState == MoreOptionsPage.MAIN) -1 else 1
+            val offset: (Int) -> Int = { fullWidth ->
+                if (clean) fullWidth / 4 else materialOffsetPx
+            }
+            val enter = slideInHorizontally(
+                tween(MoreOptionsPageDurationMs, easing = NeriMotion.EmphasizedDecelerate)
+            ) { direction * offset(it) } + fadeIn(tween(210, delayMillis = 90))
+            val exit = slideOutHorizontally(
+                tween(MoreOptionsPageDurationMs, easing = NeriMotion.EmphasizedAccelerateSoft)
+            ) { -direction * offset(it) } + fadeOut(tween(90))
+            (enter togetherWith exit).using(
+                SizeTransform(clip = true) { _, _ ->
+                    tween(MoreOptionsPageDurationMs, easing = NeriMotion.Emphasized)
+                }
+            )
         },
         content = { targetState -> content(targetState) }
     )
 }
+
+private val MoreOptionsSharedAxisOffset = 48.dp
+private const val MoreOptionsPageDurationMs = 320
 
 @Composable
 private fun MoreOptionsListenTogetherPage(

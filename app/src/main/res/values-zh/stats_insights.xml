@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stats_rotation">本期排行</string>
+    <string name="stats_rank_description">占本期收听时长</string>
+    <string name="stats_artist_tab">艺人 · %1$s</string>
+    <string name="stats_album_tab">专辑 · %1$s</string>
+    <string name="stats_spotlight">收听最久的歌曲</string>
+    <string name="stats_weekday_mode">星期</string>
+    <string name="stats_hour_mode">小时</string>
+    <string name="stats_rhythm">收听节律</string>
+    <string name="stats_peak">高峰</string>
+    <string name="stats_previous_slot">上一个时段</string>
+    <string name="stats_next_slot">下一个时段</string>
+    <string name="stats_active_days">收听天数</string>
+    <string name="stats_daily_average">收听日均时长</string>
+    <string name="stats_play_average">单次平均时长</string>
+    <string name="stats_share_label">时长占比</string>
+    <string name="stats_exact_duration">%1$d 小时 %2$d 分 %3$d 秒</string>
+    <string name="stats_short_hour">%1$d 小时 %2$d 分</string>
+    <string name="stats_short_min">%1$d 分</string>
+    <string name="stats_short_sec">%1$d 秒</string>
+    <string name="stats_rank_detail_close">关闭</string>
+    <string name="stats_chart_selected">%1$s，收听 %2$s</string>
+    <string name="stats_rank_more">查看前 %1$d 项</string>
+    <string name="stats_rank_less">收起</string>
+    <string name="stats_top_track_action">播放 %1$s</string>
+    <string name="stats_since_date">最早记录于 %1$s</string>
+    <string name="stats_exact_minutes">%1$d 分 %2$d 秒</string>
+    <string name="stats_album_rank">专辑 · 第 %1$d 名</string>
+    <string name="stats_artist_rank">艺人 · 第 %1$d 名</string>
+</resources>

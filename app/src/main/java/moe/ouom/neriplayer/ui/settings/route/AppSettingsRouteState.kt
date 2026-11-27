@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.ui.settings.route
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import moe.ouom.neriplayer.data.model.settings.appearance.AdvancedBlurQuality
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
 import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP
 import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
@@ -114,7 +115,8 @@ internal data class AppHomeCardsSettingsState(
     val radarOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds.DEFAULT_ORDER,
     val radarHidden: Set<String> = emptySet(),
     val recommendedOrder: List<String> = moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds.DEFAULT_ORDER,
-    val recommendedHidden: Set<String> = emptySet()
+    val recommendedHidden: Set<String> = emptySet(),
+    val internationalLayout: InternationalHomeLayout = InternationalHomeLayout()
 )
 
 internal data class AppStorageSettingsState(
@@ -349,8 +351,9 @@ private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSe
         majorFlows,
         trendingFlows,
         radarFlows,
-        recommendedFlows
-    ) { major, trending, radar, recommended ->
+        recommendedFlows,
+        repo.internationalHomeLayoutFlow
+    ) { major, trending, radar, recommended, internationalLayout ->
         AppHomeCardsSettingsState(
             showHomeContinueCard = major.continueEnabled,
             showHomeTrendingCard = major.trending,
@@ -363,7 +366,8 @@ private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSe
             radarOrder = radar.first,
             radarHidden = radar.second,
             recommendedOrder = recommended.first,
-            recommendedHidden = recommended.second
+            recommendedHidden = recommended.second,
+            internationalLayout = internationalLayout
         )
     }
 }

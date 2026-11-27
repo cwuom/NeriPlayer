@@ -15,7 +15,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
+import moe.ouom.neriplayer.ui.component.common.NeriSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -400,7 +400,7 @@ private fun LyricTranslationToggle(
             Text(stringResource(copy.description))
         },
         trailingContent = {
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            NeriSwitch(checked = checked, onCheckedChange = onCheckedChange)
         },
         modifier = Modifier.lyricToggleModifier(true, checked, onCheckedChange),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -434,7 +434,7 @@ private fun LyricPhoneticListItem(
             Text(stringResource(lyricPhoneticHint(translationEnabled, hasPhonetic)))
         },
         trailingContent = {
-            Switch(
+            NeriSwitch(
                 checked = checked,
                 onCheckedChange = lyricPhoneticSwitchAction(hasPhonetic, onCheckedChange),
                 enabled = enabled

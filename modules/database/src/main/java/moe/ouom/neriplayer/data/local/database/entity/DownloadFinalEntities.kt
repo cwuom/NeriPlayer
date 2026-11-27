@@ -121,7 +121,8 @@ data class ManagedLibraryItemEntity(
     @ColumnInfo(name = "title_preview") val titlePreview: String? = null,
     @ColumnInfo(name = "artist_preview") val artistPreview: String? = null,
     @ColumnInfo(name = "cover_key_preview") val coverKeyPreview: String? = null,
-    @ColumnInfo(name = "metadata_revision") val metadataRevision: Long = 0L
+    @ColumnInfo(name = "metadata_revision") val metadataRevision: Long = 0L,
+    @ColumnInfo(name = "youtube_content_label") val youtubeContentLabel: String? = null
 ) {
     val libraryId: String
         get() = rootKey

@@ -1,6 +1,21 @@
 package moe.ouom.neriplayer.ui.screen.playlist
 
-import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.outlined.Checklist
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
+import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.runtime.setValue
+import moe.ouom.neriplayer.ui.theme.NeriDesign
+import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -11,8 +26,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,8 +42,10 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.Shuffle
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -57,12 +72,11 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.graphicsLayer
@@ -78,6 +92,7 @@ import android.os.LocaleList
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -98,8 +113,6 @@ import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassOverscrollBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.drawAdvancedGlassOverscrollBackdrop
-import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
-import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import moe.ouom.neriplayer.data.model.artwork.CoverArtColorSample
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
@@ -425,8 +438,6 @@ private suspend fun <T> rankPlaylistSearchResults(
     query: String
 ): List<T> = if (index == null) items else withContext(Dispatchers.Default) { index.filterAndRank(query) }
 
-private val PlaylistHeroCoverSize = 88.dp
-private val PlaylistHeroCoverCornerRadius = 14.dp
 private val PlaylistHeroSearchTopPadding = 22.dp
 private val PlaylistDockedSearchTopPadding = 10.dp
 private val PlaylistDockedSearchBottomPadding = 8.dp
@@ -435,8 +446,8 @@ internal val PlaylistModernDockedSearchSlotHeight =
     PlaylistDockedSearchTopPadding +
         PlaylistSearchFieldMinHeight +
         PlaylistDockedSearchBottomPadding
-private val PlaylistActionBarHeight = 44.dp
-private val PlaylistCompactActionButtonSize = 40.dp
+private val PlaylistActionBarHeight = 48.dp
+private val PlaylistPlayPillMaxWidth = 320.dp
 private val PlaylistSearchFieldShape = RoundedCornerShape(18.dp)
 private val PlaylistActionSheetCornerRadius = 28.dp
 private val PlaylistActionSheetShape = RoundedCornerShape(
@@ -596,8 +607,10 @@ private fun PlaylistHeroVisualColors?.readableAccentOr(fallback: Color): Color =
 
 private fun PlaylistHeroVisualColors?.backgroundOr(fallback: Color): Color = this?.background ?: fallback
 
-private fun PlaylistHeroVisualColors?.controlContentOr(fallback: Color): Color =
-    this?.controlContent ?: fallback
+/** 侧栏卡片里叠在头部色上的白底控件, 用头部色做选中文字 */
+@Composable
+internal fun playlistHeroBackgroundColor(): Color =
+    LocalPlaylistHeroVisualColors.current.backgroundOr(MaterialTheme.colorScheme.inverseSurface)
 
 private fun Modifier.focusRequesterIfPresent(focusRequester: FocusRequester?): Modifier =
     if (focusRequester == null) this else focusRequester(focusRequester)
@@ -1090,74 +1103,87 @@ internal fun PlaylistModernHeroHeader(
     subtitle: String,
     offlineMode: Boolean,
     height: Dp,
+    metaItems: List<PlaylistHeroMeta>? = null,
     coverContentDescription: String = displayName,
     actionsRevealProgress: Float = 1f,
     actions: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val resolvedMetaItems = metaItems ?: remember(subtitle) { playlistHeroMetaFromSubtitle(subtitle) }
     val normalizedCoverModel = normalizeLocalPlaylistHeaderCoverModel(coverUrl)
     val visualColors = rememberPlaylistHeroVisualColors(
         coverUrl = coverUrl,
         offlineMode = offlineMode
     )
 
+    // 背景图模式也用实色头部, 封面色和标题不受背景图干扰
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = height)
             .background(visualColors.background)
     ) {
+        val clean = NeriDesign.isClean
+        val configuration = LocalConfiguration.current
+        val inPane = LocalPlaylistHeroInPane.current
+        val coverPlaceholderColor = lerp(visualColors.background, Color.White, 0.12f)
+        val wide = !inPane && configuration.screenWidthDp >= PlaylistWideHeroMinWidthDp
+        // 横屏平板高度有限, 封面按屏高封顶, 首屏仍能露出播放按钮和第一首歌
+        val maxCoverByHeight = (configuration.screenHeightDp * PlaylistHeroCoverMaxHeightFraction).dp
+        val heroCoverRequest = remember(context, normalizedCoverModel, offlineMode) {
+            offlineCachedImageRequest(
+                context = context,
+                data = normalizedCoverModel,
+                sizePx = 480,
+                allowHardware = false,
+                crossfade = true,
+                offlineMode = offlineMode
+            )
+        }
         Column(
             modifier = Modifier
-                .align(Alignment.TopStart)
+                .align(Alignment.TopCenter)
+                .widthIn(max = PlaylistWideContentMaxWidth)
                 .fillMaxWidth()
-                .padding(start = 20.dp, top = 6.dp, end = 20.dp, bottom = 6.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                AsyncImage(
-                    model = offlineCachedImageRequest(
-                        context = context,
-                        data = normalizedCoverModel,
-                        sizePx = 320,
-                        allowHardware = false,
-                        crossfade = true,
-                        offlineMode = offlineMode
-                    ),
-                    contentDescription = coverContentDescription,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(PlaylistHeroCoverSize)
-                        .clip(RoundedCornerShape(PlaylistHeroCoverCornerRadius))
+                .padding(
+                    start = 20.dp,
+                    // 侧栏卡片里封面四周留白一致, 顶部不再贴着卡片上沿
+                    top = if (inPane) 20.dp else 8.dp,
+                    end = 20.dp,
+                    // 侧栏里操作区和头部同色相连, 只留胶囊和按钮之间的正常间距
+                    bottom = if (inPane) 4.dp else if (clean) 24.dp else 22.dp
                 )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.headlineSmall.copy(
-                            shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.22f),
-                                offset = Offset(1f, 1f),
-                                blurRadius = 3f
-                            )
-                        ),
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.76f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+        ) {
+            if (inPane) {
+                // 平板侧栏里竖排: 封面铺满侧栏宽度, 标题在下, 两种风格只差封面圆角
+                PlaylistCleanHeroIdentity(
+                    displayName = displayName,
+                    metaItems = resolvedMetaItems,
+                    placeholderColor = coverPlaceholderColor,
+                    coverRequest = heroCoverRequest,
+                    coverContentDescription = coverContentDescription,
+                    coverSize = PlaylistPaneCoverSize
+                        .coerceAtMost((configuration.screenHeightDp * PlaylistPaneCoverMaxHeightFraction).dp),
+                    materialCover = !clean
+                )
+            } else if (clean) {
+                PlaylistCleanHeroIdentity(
+                    displayName = displayName,
+                    metaItems = resolvedMetaItems,
+                    placeholderColor = coverPlaceholderColor,
+                    coverRequest = heroCoverRequest,
+                    coverContentDescription = coverContentDescription,
+                    coverSize = (if (wide) 220.dp else 188.dp).coerceAtMost(maxCoverByHeight)
+                )
+            } else {
+                PlaylistMaterialHeroIdentity(
+                    displayName = displayName,
+                    metaItems = resolvedMetaItems,
+                    placeholderColor = coverPlaceholderColor,
+                    coverRequest = heroCoverRequest,
+                    coverContentDescription = coverContentDescription,
+                    coverSize = (if (wide) 168.dp else 124.dp).coerceAtMost(maxCoverByHeight)
+                )
             }
             CompositionLocalProvider(LocalPlaylistHeroVisualColors provides visualColors) {
                 if (actions != null) {
@@ -1182,6 +1208,28 @@ internal fun PlaylistModernHeroHeader(
     }
 }
 
+/** 本地歌单头部: 时长, 首数, 播放量各一枚胶囊; 播放量只显示数字, 读屏读完整说法 */
+@Composable
+internal fun localPlaylistHeroMeta(
+    totalDurationText: String,
+    songCount: Int,
+    playCountText: String
+): List<PlaylistHeroMeta> {
+    val songCountText = pluralStringResource(CoreCommonR.plurals.playlist_meta_song_count, songCount, songCount)
+    val playCountDescription = stringResource(CoreCommonR.string.playlist_meta_play_count, playCountText)
+    return remember(totalDurationText, songCountText, playCountText, playCountDescription) {
+        listOf(
+            PlaylistHeroMeta(text = totalDurationText, icon = Icons.Rounded.Schedule),
+            PlaylistHeroMeta(text = songCountText, icon = Icons.Rounded.MusicNote),
+            PlaylistHeroMeta(
+                text = playCountText,
+                icon = Icons.Rounded.Headphones,
+                contentDescription = playCountDescription
+            )
+        )
+    }
+}
+
 @Composable
 internal fun LocalPlaylistHeroHeader(
     displayName: String,
@@ -1194,6 +1242,7 @@ internal fun LocalPlaylistHeroHeader(
     actionsRevealProgress: Float = 1f,
     actions: (@Composable () -> Unit)? = null
 ) {
+    val playCountText = formatPlayCount(LocalContext.current, playCount)
     PlaylistModernHeroHeader(
         displayName = displayName,
         coverUrl = headerCover,
@@ -1201,10 +1250,11 @@ internal fun LocalPlaylistHeroHeader(
             CoreCommonR.string.local_playlist_total_duration,
             totalDurationText,
             songCount,
-            formatPlayCount(LocalContext.current, playCount)
+            playCountText
         ),
         offlineMode = offlineMode,
         height = height,
+        metaItems = localPlaylistHeroMeta(totalDurationText, songCount, playCountText),
         actionsRevealProgress = actionsRevealProgress,
         actions = actions
     )
@@ -1438,6 +1488,21 @@ internal fun PlaylistModernActionSheet(
         coverUrl = coverUrl,
         offlineMode = offlineMode
     )
+    if (LocalPlaylistHeroInPane.current) {
+        // 平板侧栏: 操作区直接铺在头部色上, 和封面标题连成一张卡, 不再叠一层带圆角的玻璃 sheet
+        val onHero = visualColors.copy(controlContent = Color.White)
+        CompositionLocalProvider(LocalPlaylistHeroVisualColors provides onHero) {
+            Box(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .background(visualColors.background)
+                    .padding(bottom = 10.dp)
+            ) {
+                content()
+            }
+        }
+        return
+    }
     val fallbackColor = playlistModernSheetFallbackColor(hasCustomBackground)
     val tintColor = playlistModernSheetTintColor(hasCustomBackground)
     val glassEnabled = hasCustomBackground || !playlistModernUsesDarkSurface()
@@ -1461,7 +1526,11 @@ internal fun PlaylistModernActionSheet(
                 tintColor = tintColor,
                 enabled = glassEnabled
             ) {
-                content()
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    Box(modifier = Modifier.widthIn(max = PlaylistWideContentMaxWidth).fillMaxWidth()) {
+                        content()
+                    }
+                }
             }
         }
     }
@@ -1508,14 +1577,28 @@ internal fun PlaylistModernListItemSurface(
 ) {
     val visualColors = rememberPlaylistHeroVisualColors(coverUrl, offlineMode)
     CompositionLocalProvider(LocalPlaylistHeroVisualColors provides visualColors) {
+        // 宽屏上背景照常铺满, 行内容限宽居中, 避免时长和菜单被甩到屏幕最右
         Box(
             modifier = modifier.fillMaxWidth(),
-            content = content
-        )
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = PlaylistWideContentMaxWidth)
+                    .fillMaxWidth(),
+                content = content
+            )
+        }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Content column of playlist details on wide windows; phones are narrower and never hit it */
+internal val PlaylistWideContentMaxWidth = 880.dp
+
+/**
+ * 歌单操作栏: 左侧切换随机模式, 中间一枚带文字的主播放胶囊跟随模式, 右侧多选和更多;
+ * Material 用胶囊和圆钮, Clean 用小圆角矩形, 循环模式和导出都收进更多菜单
+ */
 @Composable
 internal fun PlaylistModernPlaybackActions(
     songCount: Int,
@@ -1526,118 +1609,239 @@ internal fun PlaylistModernPlaybackActions(
     onShufflePlay: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
-    onExportToLocalPlaylist: () -> Unit
+    onExportToLocalPlaylist: () -> Unit,
+    onEnterSelection: (() -> Unit)? = null
 ) {
+    val clean = NeriDesign.isClean
     val canUseSongs = songCount > 0
     val visualColors = LocalPlaylistHeroVisualColors.current
-    val accentColor = visualColors.readableAccentOr(MaterialTheme.colorScheme.primary)
-    val onAccentColor = resolvePlaylistContentColor(accentColor)
-    val controlContentColor = visualColors.controlContentOr(MaterialTheme.colorScheme.onSurface)
-    val playLabel = stringResource(playlistPlayLabelRes(shuffleEnabled))
-    val onPlay = if (shuffleEnabled) onShufflePlay else onPlayInOrder
+    val onHero = LocalPlaylistHeroInPane.current
+    // 侧栏里按钮落在深色头部上, 封面取色的强调色常和底色太近, 主按钮改用白底头部色字
+    val accentColor = if (onHero) {
+        Color.White
+    } else {
+        visualColors.readableAccentOr(MaterialTheme.colorScheme.primary)
+    }
+    val onAccentColor = if (onHero) {
+        visualColors.backgroundOr(Color.Black)
+    } else {
+        resolvePlaylistContentColor(accentColor)
+    }
+    val shape = if (clean) PlaylistCleanActionShape else CircleShape
+    var showMenu by remember { mutableStateOf(false) }
 
-    FlowRow(
+    PlaylistPlaybackBarLayout(
+        spacing = 10.dp,
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 18.dp, top = 8.dp, end = 22.dp, bottom = 8.dp),
-        itemVerticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(end = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            HapticFilledIconButton(
-                onClick = onPlay,
-                enabled = canUseSongs,
-                modifier = Modifier.size(PlaylistActionBarHeight),
-                shape = CircleShape,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = accentColor,
-                    contentColor = onAccentColor
-                )
-            ) {
-                Icon(
-                    Icons.Filled.PlayArrow,
-                    contentDescription = playLabel,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            Text(
-                text = playLabel,
-                style = MaterialTheme.typography.titleMedium,
-                color = controlContentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PlaylistCompactIconButton(
+            .padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 8.dp),
+        leading = {
+            PlaylistGroupIconButton(
                 imageVector = Icons.Outlined.Shuffle,
                 contentDescription = stringResource(playlistShuffleModeLabelRes(shuffleEnabled)),
                 enabled = canUseSongs,
                 active = shuffleEnabled,
+                shape = shape,
                 onClick = onToggleShuffle
             )
-            PlaylistCompactIconButton(
-                imageVector = playlistRepeatModeIcon(repeatMode),
-                contentDescription = stringResource(playlistRepeatModeLabelRes(repeatMode)),
-                active = repeatMode != Player.REPEAT_MODE_OFF,
-                onClick = onCycleRepeatMode
+        },
+        pill = {
+            PlaylistPlayButton(
+                label = stringResource(playlistPlayLabelRes(shuffleEnabled)),
+                icon = if (shuffleEnabled) Icons.Outlined.Shuffle else Icons.Filled.PlayArrow,
+                enabled = canUseSongs,
+                containerColor = accentColor,
+                contentColor = onAccentColor,
+                shape = shape,
+                onClick = if (shuffleEnabled) onShufflePlay else onPlayInOrder
             )
-            PlaylistCompactIconButton(
-                imageVector = Icons.AutoMirrored.Outlined.PlaylistAdd,
-                contentDescription = stringResource(CoreCommonR.string.playlist_export_to_local),
-                enabled = shouldEnableLocalPlaylistQuickExport(songCount),
-                onClick = onExportToLocalPlaylist,
-            )
+        },
+        trailing = {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (onEnterSelection != null) {
+                    PlaylistGroupIconButton(
+                        imageVector = Icons.Outlined.Checklist,
+                        contentDescription = stringResource(CoreCommonR.string.playlist_multi_select),
+                        enabled = canUseSongs,
+                        shape = shape,
+                        onClick = onEnterSelection
+                    )
+                }
+                Box {
+                    PlaylistGroupIconButton(
+                        imageVector = Icons.Filled.MoreHoriz,
+                        contentDescription = stringResource(CoreCommonR.string.playlist_playback_more_options),
+                        shape = shape,
+                        onClick = { showMenu = true }
+                    )
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(playlistRepeatModeLabelRes(repeatMode))) },
+                            leadingIcon = { Icon(playlistRepeatModeIcon(repeatMode), contentDescription = null) },
+                            // 循环模式连续切换时保持菜单展开, 文字直接反映当前档位
+                            onClick = onCycleRepeatMode
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(CoreCommonR.string.playlist_export_to_local)) },
+                            leadingIcon = {
+                                Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, contentDescription = null)
+                            },
+                            enabled = shouldEnableLocalPlaylistQuickExport(songCount),
+                            onClick = {
+                                showMenu = false
+                                onExportToLocalPlaylist()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+/** 主按钮放得下文字时排成一行; 大字号或窄宽度下主按钮独占一行, 次要按钮换到下一行 */
+@Composable
+private fun PlaylistPlaybackBarLayout(
+    spacing: Dp,
+    modifier: Modifier,
+    leading: @Composable () -> Unit,
+    pill: @Composable () -> Unit,
+    trailing: @Composable () -> Unit
+) {
+    Layout(
+        contents = listOf(leading, pill, trailing),
+        modifier = modifier
+    ) { (leadingMeasurables, pillMeasurables, trailingMeasurables), constraints ->
+        val gap = spacing.roundToPx()
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val leadingPlaceables = leadingMeasurables.map { it.measure(loose) }
+        val trailingPlaceables = trailingMeasurables.map { it.measure(loose) }
+        val leadingWidth = leadingPlaceables.sumOf { it.width }
+        val trailingWidth = trailingPlaceables.sumOf { it.width }
+        val sideHeight = (leadingPlaceables + trailingPlaceables).maxOfOrNull { it.height } ?: 0
+        val pillNeeded = pillMeasurables.maxOfOrNull { it.maxIntrinsicWidth(Constraints.Infinity) } ?: 0
+        val sideWidth = leadingWidth + trailingWidth + gap * 2
+        val width = if (constraints.hasBoundedWidth) constraints.maxWidth else sideWidth + pillNeeded
+        // 平板单列时可用宽度很大, 主按钮封顶, 整组靠起始边排列
+        val inlinePillWidth = (width - sideWidth).coerceAtMost(PlaylistPlayPillMaxWidth.roundToPx())
+        val inline = inlinePillWidth > 0 && pillNeeded <= inlinePillWidth
+        val pillWidth = if (inline) inlinePillWidth else width
+        val pillPlaceables = pillMeasurables.map { it.measure(Constraints.fixedWidth(pillWidth)) }
+        val pillHeight = pillPlaceables.maxOfOrNull { it.height } ?: 0
+        val height = if (inline) maxOf(sideHeight, pillHeight) else pillHeight + gap + sideHeight
+        layout(width, height) {
+            if (inline) {
+                var x = 0
+                leadingPlaceables.forEach { it.placeRelative(x, (height - it.height) / 2); x += it.width }
+                x += gap
+                pillPlaceables.forEach { it.placeRelative(x, (height - it.height) / 2) }
+                x += pillWidth + gap
+                trailingPlaceables.forEach { it.placeRelative(x, (height - it.height) / 2); x += it.width }
+            } else {
+                pillPlaceables.forEach { it.placeRelative(0, 0) }
+                val rowTop = pillHeight + gap
+                var x = 0
+                leadingPlaceables.forEach {
+                    it.placeRelative(x, rowTop + (sideHeight - it.height) / 2)
+                    x += it.width
+                }
+                var trailingX = width - trailingWidth
+                trailingPlaceables.forEach {
+                    it.placeRelative(trailingX, rowTop + (sideHeight - it.height) / 2)
+                    trailingX += it.width
+                }
+            }
         }
     }
 }
 
+/** 主播放胶囊: 图标加一个短标签, 标签过长时省略而不挤压两侧按钮 */
 @Composable
-private fun PlaylistCompactIconButton(
-    imageVector: ImageVector,
-    contentDescription: String,
-    enabled: Boolean = true,
-    active: Boolean = false,
-    onClick: () -> Unit
+private fun PlaylistPlayButton(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    containerColor: Color,
+    contentColor: Color,
+    shape: Shape,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val visualColors = LocalPlaylistHeroVisualColors.current
-    val colorScheme = MaterialTheme.colorScheme
-    val containerColor = visualColors.compactIconContainerColor(colorScheme, active)
-    val contentColor = visualColors.compactIconContentColor(colorScheme, enabled, active)
-
-    HapticIconButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier
-            .size(PlaylistCompactActionButtonSize)
-            .clip(neriRoundedShape(22.dp))
-            .background(containerColor)
+    val context = LocalContext.current
+    val tint = if (enabled) contentColor else contentColor.copy(alpha = 0.38f)
+    Row(
+        modifier = modifier
+            .height(PlaylistActionBarHeight)
+            .clip(shape)
+            .background(if (enabled) containerColor else containerColor.copy(alpha = containerColor.alpha * 0.4f))
+            .clickable(enabled = enabled, role = Role.Button) {
+                context.performHapticFeedback()
+                onClick()
+            }
+            .semantics { contentDescription = label }
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
     ) {
-        Icon(
-            imageVector = imageVector,
-            contentDescription = contentDescription,
-            tint = contentColor,
-            modifier = Modifier.size(20.dp)
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = tint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
 
+@Composable
+private fun PlaylistGroupIconButton(
+    imageVector: ImageVector,
+    contentDescription: String,
+    enabled: Boolean = true,
+    active: Boolean = false,
+    shape: Shape = CircleShape,
+    onClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val visualColors = LocalPlaylistHeroVisualColors.current
+    val colorScheme = MaterialTheme.colorScheme
+    val contentColor = visualColors.compactIconContentColor(colorScheme, enabled, active)
+    val container = visualColors.compactIconContainerColor(colorScheme, active, LocalPlaylistHeroInPane.current)
+
+    // 不用 IconButton: 它会把触控区撑到 48dp 并画出超出底色的水波纹, 相邻按钮按下时互相压住
+    Box(
+        modifier = Modifier
+            .size(PlaylistActionBarHeight)
+            .clip(shape)
+            .background(container)
+            .clickable(enabled = enabled, role = Role.Button) {
+                context.performHapticFeedback()
+                onClick()
+            }
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+private val PlaylistCleanActionShape = RoundedCornerShape(14.dp)
+
 private fun PlaylistHeroVisualColors?.compactIconContainerColor(
     colorScheme: ColorScheme,
-    active: Boolean
+    active: Boolean,
+    onHero: Boolean
 ): Color = when {
     this == null && active -> colorScheme.primary.copy(alpha = 0.18f)
     this == null -> colorScheme.onSurface.copy(alpha = 0.09f)
     active -> accent.copy(alpha = 0.24f)
+    onHero -> Color.White.copy(alpha = 0.14f)
     else -> controlContent.copy(alpha = 0.09f)
 }
 
@@ -1693,7 +1897,8 @@ internal fun LocalPlaylistPlaybackActions(
     onShufflePlay: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeatMode: () -> Unit,
-    onExportToLocalPlaylist: () -> Unit
+    onExportToLocalPlaylist: () -> Unit,
+    onEnterSelection: (() -> Unit)? = null
 ) {
     PlaylistModernPlaybackActions(
         songCount = songCount,
@@ -1704,6 +1909,7 @@ internal fun LocalPlaylistPlaybackActions(
         onShufflePlay = onShufflePlay,
         onToggleShuffle = onToggleShuffle,
         onCycleRepeatMode = onCycleRepeatMode,
-        onExportToLocalPlaylist = onExportToLocalPlaylist
+        onExportToLocalPlaylist = onExportToLocalPlaylist,
+        onEnterSelection = onEnterSelection
     )
 }

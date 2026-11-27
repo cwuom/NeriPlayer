@@ -104,7 +104,6 @@ import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BL
 import moe.ouom.neriplayer.data.settings.appearance.PreviewThemePromptRepository
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
-import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
 import moe.ouom.neriplayer.data.settings.background.BackgroundImageStorage
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
 import moe.ouom.neriplayer.ui.animation.LocalSharedCoverFlight
@@ -227,7 +226,7 @@ fun StartupOnboardingScreen(
     val enhancedAdvancedBlurEnabled by repo.enhancedAdvancedBlurEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
     val enhancedAdvancedBlurRadiusDp by repo.enhancedAdvancedBlurRadiusDpFlow
         .collectAsStateWithLifecycle(initialValue = DEFAULT_ENHANCED_ADVANCED_BLUR_RADIUS_DP)
-    val initialAdvancedBlurQuality = remember { AdvancedBlurQualityPreference.defaultForDevice(isCurrentBuildDimensity()) }
+    val initialAdvancedBlurQuality = remember(context) { AdvancedBlurQualityPreference.defaultForCurrentDevice(context) }
     val advancedBlurQuality by repo.advancedBlurQualityFlow.collectAsStateWithLifecycle(initialValue = initialAdvancedBlurQuality)
     val liquidGlassEnabled by repo.liquidGlassEnabledFlow.collectAsStateWithLifecycle(initialValue = true)
     val enhancedVisualEffectsEnabled by repo.enhancedVisualEffectsEnabledFlow.collectAsStateWithLifecycle(initialValue = true)

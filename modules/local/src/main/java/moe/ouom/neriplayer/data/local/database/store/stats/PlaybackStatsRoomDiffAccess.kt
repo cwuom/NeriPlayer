@@ -17,6 +17,7 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapsho
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toEntity
 import moe.ouom.neriplayer.data.local.database.entity.stats.toSnapshotData
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHours
 import moe.ouom.neriplayer.data.model.sync.SyncTrackStat
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackStatBucket
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
@@ -133,7 +134,7 @@ internal class PlaybackStatsRoomDiffAccess(private val store: PlaybackStatsRoomS
                     trimLocal = { local -> SyncPlaybackStatsMergePolicy.mergeBucket(null, local.toSync(), clearedAt) })
                 when (target) {
                     PlaybackDiffTarget.Keep -> consume(previous, previous)
-                    is PlaybackDiffTarget.Write -> consume(previous, target.value?.toBucketRows(previous?.bucket))
+                    is PlaybackDiffTarget.Write -> consume(previous, target.value?.toBucketRows(previous?.bucket, clearedAt))
                 }
             }
         }
@@ -292,8 +293,8 @@ private data class BucketRows(val bucket: PlaybackStatBucketEntity, val counters
     fun toSync() = SyncPlaybackStatMapper.fromPlaybackStatBucket(bucket.toDomain(), counters.map { it.toDomain() })
 }
 
-private fun SyncPlaybackStatBucket.toBucketRows(local: PlaybackStatBucketEntity?): BucketRows {
-    val row = toPrimaryEntity(local)
+private fun SyncPlaybackStatBucket.toBucketRows(local: PlaybackStatBucketEntity?, clearedAt: Long): BucketRows {
+    val row = toPrimaryEntity(local, clearedAt)
     return BucketRows(row, normalizeCounters(counterShards).map { it.toDailyEntity(row.dayStartAt, row.identityKey) })
 }
 
@@ -358,9 +359,11 @@ private fun SyncTrackStat.toPrimaryEntity(local: PlaybackStatEntity?) = Playback
     albumId, coverUrl, durationMs, totalListenMs, playCount, lastPlayedAt, firstPlayedAt, mediaUri,
     local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl)
 
-private fun SyncPlaybackStatBucket.toPrimaryEntity(local: PlaybackStatBucketEntity?) = PlaybackStatBucketEntity(dayStartAt, identityKey,
+internal fun SyncPlaybackStatBucket.toPrimaryEntity(local: PlaybackStatBucketEntity?, clearedAt: Long) = PlaybackStatBucketEntity(dayStartAt, identityKey,
     id, name, artist, album, albumId, coverUrl, durationMs, totalListenMs, playCount, lastPlayedAt, firstPlayedAt, mediaUri,
-    local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl)
+    local?.localFilePath, local?.localFileName, local?.customName, local?.customArtist, local?.customCoverUrl, recordedLocalDate,
+    hourlyTotals = SyncPlaybackHours.merge(local?.hourlyTotals, hourlyTotals, clearedAt),
+    localHourlyTotals = SyncPlaybackHours.merge(local?.localHourlyTotals, clearedAt = clearedAt))
 
 private data class DiffBucketTotals(val listenMs: Long, val playCount: Int, val firstPlayedAt: Long, val lastPlayedAt: Long, val latest: PlaybackStatBucketEntity) {
     fun plus(row: PlaybackStatBucketEntity) = copy(

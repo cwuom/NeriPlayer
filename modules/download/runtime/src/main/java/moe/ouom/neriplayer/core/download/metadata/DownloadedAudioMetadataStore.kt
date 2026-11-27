@@ -248,7 +248,7 @@ internal class DownloadedAudioMetadataStore(
         val persistedSidecars = sidecars.copy(
             coverReference = materializedCover?.reference ?: sidecars.coverReference
         )
-        val metadataSong = preserveMissingDownloadedMetadataLyrics(
+        val metadataSong = preserveMissingDownloadedSongMetadata(
             song = song,
             metadata = existingMetadata,
             explicitLyrics = clearRestorableOverrides.lyrics,
@@ -700,6 +700,7 @@ internal class DownloadedAudioMetadataStore(
             put("channelId", song.channelId)
             put("audioId", song.audioId)
             put("subAudioId", song.subAudioId)
+            put("youtubeContentLabel", song.youtubeContentLabel?.name)
             put("playlistContextId", song.playlistContextId)
             put("coverPath", coverReference)
             put("lyricPath", lyricReference)
@@ -901,7 +902,7 @@ internal fun resolveDownloadedMetadataCreatedAt(
     )
 }
 
-internal fun preserveMissingDownloadedMetadataLyrics(
+internal fun preserveMissingDownloadedSongMetadata(
     song: SongItem,
     metadata: DownloadedAudioMetadata?,
     explicitLyrics: Boolean = false,
@@ -909,6 +910,8 @@ internal fun preserveMissingDownloadedMetadataLyrics(
 ): SongItem {
     if (metadata == null) return song
     return song.copy(
+        youtubeContentLabel = song.youtubeContentLabel
+            ?: metadata.takeIf { it.stableKey == song.stableKey() }?.youtubeContentLabel,
         matchedLyric = if (explicitLyrics) song.matchedLyric else {
             song.matchedLyric ?: metadata.matchedLyric
         },

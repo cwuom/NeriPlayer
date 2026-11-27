@@ -200,7 +200,7 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         ) != null
     if (!hasIdentity && metadata.durationMs <= 0L && resolvedCover == null && metadata.sourceModifiedAtMs == null &&
         metadata.originalLyric == null && metadata.originalTranslatedLyric == null &&
-        metadata.originalRomanizedLyric == null
+        metadata.originalRomanizedLyric == null && metadata.youtubeContentLabel == null
     ) return LocalMediaSupport.retainEmbeddedSongCovers(context, song)
     // 授予目录写权限不会更新旧侧载，已有的应用内自定义信息继续优先
     val preferAppOverrides = (song.customName != null || song.customArtist != null || song.customCoverUrl != null) &&
@@ -242,6 +242,7 @@ private fun LocalAudioImportManager.hydrateLocalSongFromMetadataSidecar(
         channelId = metadata.channelId?.takeIf(String::isNotBlank) ?: song.channelId,
         audioId = metadata.audioId?.takeIf(String::isNotBlank) ?: song.audioId,
         subAudioId = metadata.subAudioId?.takeIf(String::isNotBlank) ?: song.subAudioId,
+        youtubeContentLabel = metadata.youtubeContentLabel ?: song.youtubeContentLabel,
         playlistContextId = metadata.playlistContextId?.takeIf(String::isNotBlank)
             ?: song.playlistContextId,
         sourceStableKey = metadata.stableKey?.takeIf(String::isNotBlank)

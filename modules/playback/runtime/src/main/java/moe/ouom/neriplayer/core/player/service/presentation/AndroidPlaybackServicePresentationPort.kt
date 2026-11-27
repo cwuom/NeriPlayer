@@ -330,7 +330,7 @@ internal class AndroidPlaybackServicePresentationPort(
             .setStyle(
                 Notification.MediaStyle()
                     .setMediaSession(requireSession().sessionToken)
-                    .setShowActionsInCompactView(0, 1, 3),
+                    .setShowActionsInCompactView(0, 1, 2),
             )
             .applyForegroundServiceBehavior()
 
@@ -345,12 +345,13 @@ internal class AndroidPlaybackServicePresentationPort(
             servicePendingIntent(AudioPlayerService.ACTION_PREV, 1),
         ))
         builder.addAction(playbackControlNotificationAction(inputs))
-        builder.addAction(favoriteNotificationAction(inputs, contentIntent))
+        // Flyme 等按通知 actions 原样排布的系统需与 MediaSession 顺序一致：传输控制在前，自定义动作在后
         builder.addAction(mediaNotificationAction(
             CoreCommonR.drawable.round_skip_next_24,
             localizedContext.getString(CoreCommonR.string.player_next),
             servicePendingIntent(AudioPlayerService.ACTION_NEXT, 4),
         ))
+        builder.addAction(favoriteNotificationAction(inputs, contentIntent))
         builder.addAction(floatingLyricsNotificationAction(inputs.floatingLyricsEnabled))
     }
 

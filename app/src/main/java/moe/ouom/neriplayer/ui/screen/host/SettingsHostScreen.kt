@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui.screen.host
 
 import androidx.compose.animation.AnimatedContent
 import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import androidx.compose.animation.SizeTransform
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Surface
@@ -36,6 +38,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -65,7 +68,25 @@ internal fun <T> selectSettingsHostPage(
     SettingsScreenState.DownloadProgress -> downloadProgress
 }
 
-private fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
+internal fun SettingsScreenState.saveableKey(): String = "settings_host:${name}"
+
+/**
+ * 重选设置 Tab。下载页是从设置的子页进入的，直接切回会恢复那个子页；
+ * 此时设置页不在组合中，丢掉它保存的状态，一次重选就能回到设置根页面。
+ */
+internal fun reselectSettingsHost(
+    requestedState: SettingsScreenState,
+    saveableStateHolder: SaveableStateHolder,
+    returnToSettings: () -> Unit,
+    dispatchToSettingsRoot: () -> Unit
+) {
+    if (requestedState == SettingsScreenState.Settings) {
+        dispatchToSettingsRoot()
+        return
+    }
+    saveableStateHolder.removeState(SettingsScreenState.Settings.saveableKey())
+    returnToSettings()
+}
 
 private val SettingsScreenState.navigationDepth: Int
     get() = when (this) {
@@ -111,7 +132,8 @@ internal fun isSettingsScreenSettled(
 @Composable
 internal fun SettingsHostScreen(
     bindings: AppSettingsHostBindings,
-    renderScene: HostSceneRenderer
+    renderScene: HostSceneRenderer,
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val coherentFeedbackEnabled = bindings.environment.coherentFeedbackEnabled
 
@@ -149,6 +171,22 @@ internal fun SettingsHostScreen(
             captureSettingsListPosition()
         }
         requestedScreenState = target
+    }
+
+    val settingsReselectRequests = remember { MainTabReselectRequests() }
+    MainTabReselectEffect(reselectRequests) {
+        reselectSettingsHost(
+            requestedState = requestedScreenState,
+            saveableStateHolder = saveableStateHolder,
+            returnToSettings = {
+                // 子页状态连同折叠的顶部栏一起重置，首页列表也回顶，避免列表停在旧位置而栏已展开
+                pendingSettingsListRestoreIndex = null
+                pendingSettingsListRestoreOffset = 0
+                settingsListState.requestScrollToItem(0)
+                requestScreen(SettingsScreenState.Settings)
+            },
+            dispatchToSettingsRoot = settingsReselectRequests::dispatch
+        )
     }
 
     val backScreenState = requestedScreenState.nextTowards(SettingsScreenState.Settings)
@@ -243,6 +281,7 @@ internal fun SettingsHostScreen(
                                 listState = settingsListState,
                                 bindings = bindings,
                                 isActive = requestedScreenState == SettingsScreenState.Settings,
+                                reselectRequests = settingsReselectRequests,
                                 onNavigateToDownloadManager = {
                                     requestScreen(SettingsScreenState.DownloadManager)
                                 }

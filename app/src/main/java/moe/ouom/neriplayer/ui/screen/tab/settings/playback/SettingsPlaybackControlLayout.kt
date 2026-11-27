@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.playback
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AspectRatio
@@ -19,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.playback.NowPlayingControlPlacement
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlLayoutPreferences
@@ -158,7 +158,7 @@ private fun PlacementDialog(owner: PlaybackControlLayoutOwner) {
         onDismissRequest = owner::dismiss,
         title = { Text(stringResource(CoreCommonR.string.settings_nowplaying_control_placement)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 val dockSubtitle = stringResource(
                     CoreCommonR.string.settings_nowplaying_toolbar_dock_disabled_by_control_position
                 )
@@ -198,7 +198,7 @@ private fun NowPlayingSizeDialog(owner: PlaybackControlLayoutOwner) {
         onDismissRequest = owner::dismiss,
         title = { Text(stringResource(CoreCommonR.string.settings_nowplaying_control_size)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 PlaybackControlSize.entries.forEach { size ->
                     ControlSizeChoiceRow(
                         size = size,
@@ -225,7 +225,7 @@ private fun LyricsSizeDialog(owner: PlaybackControlLayoutOwner) {
         onDismissRequest = owner::dismiss,
         title = { Text(stringResource(CoreCommonR.string.settings_lyrics_control_size)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 PlaybackControlSize.entries.forEach { size ->
                     ControlSizeChoiceRow(
                         size = size,

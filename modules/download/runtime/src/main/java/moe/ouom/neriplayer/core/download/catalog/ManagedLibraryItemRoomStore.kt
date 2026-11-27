@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.core.download.catalog
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.data.identity.stableKey
 
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -36,6 +37,7 @@ internal object ManagedLibraryItemRoomStore {
         val preview = ManagedLibraryItemEntity(
                 rootKey = libraryId,
                 stableKey = stableKey,
+                youtubeContentLabel = song.youtubeContentLabel?.name,
                 artifactId = "managed:$libraryId:$stableKey",
                 state = state,
                 audioName = audio.logicalName,
@@ -82,6 +84,7 @@ internal object ManagedLibraryItemRoomStore {
         val preview = ManagedLibraryItemEntity(
                 rootKey = libraryId,
                 stableKey = stableKey,
+                youtubeContentLabel = song.youtubeContentLabel?.name,
                 artifactId = "managed:$libraryId:$stableKey",
                 state = state,
                 audioReference = reference,
@@ -140,6 +143,7 @@ internal object ManagedLibraryItemRoomStore {
                     downloadTime = row.downloadedAtMs ?: row.updatedAtMs,
                     mediaUri = reference.takeIf { it.startsWith("content://") },
                     stableKey = row.stableKey,
+                    youtubeContentLabel = YouTubeContentLabel.fromName(row.youtubeContentLabel),
                     localFileName = row.audioName
                 )
             }.toList()
@@ -190,6 +194,7 @@ internal object ManagedLibraryItemRoomStore {
                 val preview = ManagedLibraryItemEntity(
                     rootKey = libraryId,
                     stableKey = stableKey,
+                    youtubeContentLabel = song.youtubeContentLabel?.name,
                     artifactId = "managed:$libraryId:$stableKey",
                     state = state,
                     audioReference = reference,
@@ -262,6 +267,7 @@ internal object ManagedLibraryItemRoomStore {
                 val preview = ManagedLibraryItemEntity(
                     rootKey = libraryId,
                     stableKey = stableKey,
+                    youtubeContentLabel = song.youtubeContentLabel?.name,
                     artifactId = "managed:$libraryId:$stableKey",
                     state = state,
                     audioReference = reference,
@@ -321,6 +327,7 @@ internal object ManagedLibraryItemRoomStore {
             locatorHint = locatorHint,
             titlePreview = titlePreview,
             artistPreview = artistPreview,
+            youtubeContentLabel = item.youtubeContentLabel,
             coverKeyPreview = coverKeyPreview,
             metadataRevision = metadataRevision
         )

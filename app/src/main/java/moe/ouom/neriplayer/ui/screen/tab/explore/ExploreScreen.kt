@@ -23,6 +23,17 @@ package moe.ouom.neriplayer.ui.screen.tab.explore
  * Created: 2025/8/8
  */
 
+import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.Role
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldShape
+import moe.ouom.neriplayer.ui.theme.neriSearchFieldColors
 import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
@@ -86,6 +97,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.QueueMusic
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Clear
@@ -104,11 +116,9 @@ import androidx.compose.material3.MaterialTheme
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -166,12 +176,12 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.platform.youtube.config.YouTubeFeatureGate
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
+import moe.ouom.neriplayer.platform.youtube.auth.buildRefreshObserverFingerprint
 import moe.ouom.neriplayer.data.search.ExploreSearchHistoryRepository
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryRecordKeyword
 import moe.ouom.neriplayer.data.search.exploreSearchHistoryForDisplay
 import moe.ouom.neriplayer.data.search.resolveExploreSearchKeyword
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
-import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.local.playlist.system.LocalFilesPlaylist
@@ -182,6 +192,11 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportAddedResult
 import moe.ouom.neriplayer.ui.component.playlist.showPlaylistBatchExportCreatedResult
@@ -208,8 +223,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import moe.ouom.neriplayer.R as AppR
 
 private const val SEARCH_INPUT_DEBOUNCE_MS = 300L
-private val ExplorePrimaryTabShape = RoundedCornerShape(20.dp)
-private val ExploreSearchFieldShape = RoundedCornerShape(16.dp)
 
 internal fun exploreSearchSourceDisplayOrder(
     isInternational: Boolean,
@@ -243,12 +256,6 @@ internal fun shouldClearExploreSearchQuery(
             current == SearchSource.LINK_RECOGNITION
         )
 }
-
-internal fun shouldDefaultExploreToYouTube(
-    isInternational: Boolean,
-    youtubeEnabled: Boolean,
-    searchQuery: String
-): Boolean = isInternational && youtubeEnabled && searchQuery.isBlank()
 
 @Composable
 internal fun ExploreSearchPagerEffect(
@@ -405,6 +412,9 @@ private fun youtubeSearchTypeLabel(type: YouTubeExploreSearchType): String {
     return when (type) {
         YouTubeExploreSearchType.SONG -> stringResource(CoreCommonR.string.explore_search_type_song)
         YouTubeExploreSearchType.VIDEO -> stringResource(CoreCommonR.string.explore_search_type_video)
+        YouTubeExploreSearchType.ALBUM -> stringResource(CoreCommonR.string.artist_tab_albums)
+        YouTubeExploreSearchType.FEATURED_PLAYLIST -> stringResource(AppR.string.youtube_featured_playlists)
+        YouTubeExploreSearchType.COMMUNITY_PLAYLIST -> stringResource(AppR.string.youtube_community_playlists)
         YouTubeExploreSearchType.CREATOR -> stringResource(CoreCommonR.string.explore_search_type_creator)
     }
 }
@@ -413,6 +423,9 @@ private fun youtubeSearchTypeIcon(type: YouTubeExploreSearchType): ImageVector {
     return when (type) {
         YouTubeExploreSearchType.SONG -> Icons.Outlined.MusicNote
         YouTubeExploreSearchType.VIDEO -> Icons.Filled.PlayCircle
+        YouTubeExploreSearchType.ALBUM -> Icons.Filled.Album
+        YouTubeExploreSearchType.FEATURED_PLAYLIST,
+        YouTubeExploreSearchType.COMMUNITY_PLAYLIST -> Icons.AutoMirrored.Outlined.QueueMusic
         YouTubeExploreSearchType.CREATOR -> Icons.Filled.AccountCircle
     }
 }
@@ -438,7 +451,8 @@ fun ExploreScreen(
     onSongPlayPreservingQueue: (SongItem) -> Unit = {},
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
-    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> }
+    onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val context = LocalContext.current
     val composeResources = LocalResources.current
@@ -510,8 +524,9 @@ fun ExploreScreen(
 
     var showExportSheet by remember { mutableStateOf(false) }
 
-    val isInternational by AppContainer.settingsRepo.internationalizationEnabledFlow
-        .collectAsStateWithLifecycle(initialValue = false)
+    val internationalSetting by AppContainer.settingsRepo.internationalizationEnabledFlow
+        .collectAsStateWithLifecycle(initialValue = null)
+    val isInternational = internationalSetting == true
     val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow
         .collectAsStateWithLifecycle(initialValue = YouTubeFeatureGate.isEnabled())
     val orderedSearchSources = remember(isInternational, youtubeEnabled) {
@@ -536,14 +551,21 @@ fun ExploreScreen(
     var previousSearchSource by remember { mutableStateOf(ui.selectedSearchSource) }
     // history and type chips stay put while results scroll; collapsing them mid-gesture
     // shifted the list under the finger
-    val shouldShowSearchHistory = shouldShowExploreSearchHistory(
+    var searchFieldFocused by remember { mutableStateOf(false) }
+    val searchActive = isExploreSearchActive(query = searchQuery, focused = searchFieldFocused)
+    // 空闲时只露出历史, 进入搜索后换成类型筛选, 两排不再同时堆在搜索框下面
+    val shouldShowSearchHistory = searchQuery.isEmpty() && shouldShowExploreSearchHistory(
         history = visibleSearchHistory,
         contentScrolled = false
     )
-    val searchTypeBarSource = exploreSearchTypeBarSource(
-        selectedSearchSource = ui.selectedSearchSource,
-        contentScrolled = false
-    )
+    val searchTypeBarSource = if (searchActive) {
+        exploreSearchTypeBarSource(
+            selectedSearchSource = ui.selectedSearchSource,
+            contentScrolled = false
+        )
+    } else {
+        null
+    }
 
     val shouldLoadMoreSearch by remember(
         searchListState,
@@ -572,23 +594,27 @@ fun ExploreScreen(
         selectedParts = emptySet()
     }
 
-    LaunchedEffect(Unit) {
-        if (ui.playlists.isEmpty()) vm.loadHighQuality()
-    }
-
     ExploreSearchPagerEffect(pagerState, orderedSearchSources, ui.selectedSearchSource, vm::setSearchSource)
-    LaunchedEffect(ui.selectedSearchSource) {
-        if (ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC && ui.ytMusicPlaylists.isEmpty()) {
-            vm.loadYtMusicPlaylists()
-        }
+    var browseReady by remember(internationalSetting, youtubeEnabled) { mutableStateOf(false) }
+    LaunchedEffect(internationalSetting, youtubeEnabled) {
+        if (internationalSetting == null) return@LaunchedEffect
+        vm.applyBrowseDefault(orderedSearchSources.first(), searchQuery)
+        browseReady = true
     }
-
-    // 国际化模式默认跳到 YouTube Music 标签
-    LaunchedEffect(isInternational, youtubeEnabled) {
-        if (shouldDefaultExploreToYouTube(isInternational, youtubeEnabled, searchQuery)) {
-            if (ui.selectedSearchSource != SearchSource.YOUTUBE_MUSIC) {
-                vm.setSearchSource(SearchSource.YOUTUBE_MUSIC)
-            }
+    val contentPreferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val catalogKey = contentPreferences.catalogKey(YouTubeContentSettings.systemLocale())
+    val auth by AppContainer.youtubeAuthRepo.authFlow.collectAsStateWithLifecycle(
+        initialValue = remember { AppContainer.youtubeAuthRepo.getAuthOnce() }
+    )
+    val accountKey = remember(auth) { auth.buildRefreshObserverFingerprint() }
+    LaunchedEffect(browseReady, ui.selectedSearchSource, catalogKey, accountKey) {
+        if (!browseReady) return@LaunchedEffect
+        vm.updateYouTubeBrowseContext(catalogKey, accountKey)
+        val state = vm.uiState.value
+        when (state.selectedSearchSource) {
+            SearchSource.YOUTUBE_MUSIC -> if (state.ytMusicPlaylists.isEmpty() && !state.ytMusicPlaylistsLoading) vm.loadYtMusicPlaylists()
+            SearchSource.NETEASE -> if (state.playlists.isEmpty() && !state.loading) vm.loadHighQuality()
+            else -> Unit
         }
     }
 
@@ -703,6 +729,7 @@ fun ExploreScreen(
     LaunchedEffect(
         shouldLoadMoreSearch,
         ui.searchItems.size,
+        ui.searchPage,
         ui.selectedSearchSource,
         ui.selectedBilibiliSearchType,
         ui.selectedNeteaseSearchType,
@@ -766,6 +793,20 @@ fun ExploreScreen(
         }
     )
 
+    // 与顶部栏折叠判定使用同一套「当前列表」规则
+    val scrollExploreToTop: suspend () -> Unit = {
+        scrollMainTabToTop(topAppBarState) {
+            when {
+                searchQuery.isNotEmpty() -> searchListState.scrollToTopForReselect()
+                ui.selectedSearchSource == SearchSource.NETEASE -> gridState.scrollToTopForReselect()
+                ui.selectedSearchSource == SearchSource.YOUTUBE_MUSIC ->
+                    youtubeGridState.scrollToTopForReselect()
+                else -> Unit
+            }
+        }
+    }
+    MainTabReselectEffect(reselectRequests, scrollExploreToTop)
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -784,6 +825,7 @@ fun ExploreScreen(
         topBar = {
             LargeTopAppBar(
                 title = { Text(stringResource(AppR.string.nav_explore)) },
+                modifier = Modifier.scrollToTopOnTitleBarTap(scrollExploreToTop),
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -805,7 +847,6 @@ fun ExploreScreen(
                     .fillMaxWidth()
                     .padding(horizontal = searchPanelHorizontalPadding, vertical = 8.dp)
             ) {
-                    val cleanSearchField = NeriDesign.isClean
                     val searchFieldLabel = stringResource(
                         if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
                             CoreCommonR.string.explore_link_input_label
@@ -813,17 +854,15 @@ fun ExploreScreen(
                             CoreCommonR.string.search_keyword
                         }
                     )
+                    // 两种风格都用无浮动标签的搜索胶囊, 与媒体库, 设置的搜索框同源
                     NeriSearchFieldGlass(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = if (cleanSearchField) NeriDesign.tokens.groupShape else ExploreSearchFieldShape
+                        shape = neriSearchFieldShape()
                     ) {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = {
                             onSearchQueryChange(it)
-                        },
-                        label = if (cleanSearchField) null else {
-                            { Text(searchFieldLabel) }
                         },
                         placeholder = {
                             when {
@@ -833,26 +872,17 @@ fun ExploreScreen(
                                 ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn -> {
                                     Text(stringResource(CoreCommonR.string.netease_login_required_search_placeholder))
                                 }
-                                cleanSearchField -> Text(searchFieldLabel)
+                                else -> Text(searchFieldLabel)
                             }
                         },
-                        colors = if (cleanSearchField) {
-                            OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-                                unfocusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                unfocusedBorderColor = Color.Transparent
-                            )
-                        } else {
-                            OutlinedTextFieldDefaults.colors()
-                        },
-                        leadingIcon = { Icon(Icons.Default.Search, "Search") },
+                        colors = neriSearchFieldColors(),
+                        leadingIcon = { Icon(Icons.Default.Search, stringResource(CoreCommonR.string.action_search)) },
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 HapticIconButton(onClick = {
                                     onSearchQueryChange("")
                                     vm.search("")
-                                }) { Icon(Icons.Default.Clear, "Clear") }
+                                }) { Icon(Icons.Default.Clear, stringResource(CoreCommonR.string.cd_clear)) }
                             }
                         },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -860,12 +890,45 @@ fun ExploreScreen(
                             submitExploreSearch()
                         }),
                         singleLine = true,
-                        shape = if (cleanSearchField) NeriDesign.tokens.groupShape else ExploreSearchFieldShape,
-                        modifier = Modifier.fillMaxWidth()
+                        shape = neriSearchFieldShape(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { searchFieldFocused = it.isFocused }
                     )
                     }
                     // only the search field stays pinned; everything below scrolls with the list
                     Column(Modifier.fillMaxWidth().exploreCollapsingHeader(collapsingHeader)) {
+                    Spacer(Modifier.height(10.dp))
+                    if (NeriDesign.isClean) {
+                        val sourceLabels = orderedSearchSources.map { searchSourceLabel(it) }
+                        CleanSegmentedTabs(
+                            labels = sourceLabels,
+                            selectedIndex = pagerState.currentPage,
+                            onSelected = { index ->
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            }
+                        )
+                    } else {
+                        ExploreMaterialSourceSwitcher(
+                            labels = orderedSearchSources.map { searchSourceLabel(it) },
+                            selectedIndex = pagerState.currentPage,
+                            onSelected = { index ->
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            }
+                        )
+                    }
+                    if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
+                        ExploreInlineNotice(
+                            text = stringResource(CoreCommonR.string.netease_login_required_search),
+                            warning = true
+                        )
+                    }
+                    if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
+                        ExploreInlineNotice(
+                            text = stringResource(CoreCommonR.string.explore_link_input_hint),
+                            warning = false
+                        )
+                    }
                     ExploreSearchHistoryRow(
                         history = visibleSearchHistory,
                         visible = shouldShowSearchHistory,
@@ -882,65 +945,6 @@ fun ExploreScreen(
                             }
                         }
                     )
-                    if (ui.selectedSearchSource == SearchSource.NETEASE && !ui.isNeteaseLoggedIn) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = stringResource(CoreCommonR.string.netease_login_required_search),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    if (ui.selectedSearchSource == SearchSource.LINK_RECOGNITION) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = stringResource(CoreCommonR.string.explore_link_input_hint),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    if (NeriDesign.isClean) {
-                        val sourceLabels = orderedSearchSources.map { searchSourceLabel(it) }
-                        CleanSegmentedTabs(
-                            labels = sourceLabels,
-                            selectedIndex = pagerState.currentPage,
-                            onSelected = { index ->
-                                scope.launch { pagerState.animateScrollToPage(index) }
-                            }
-                        )
-                    } else AdvancedGlassSurface(
-                        role = AdvancedGlassRole.ScreenTopTab,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(ExplorePrimaryTabShape),
-                        shape = ExplorePrimaryTabShape
-                    ) {
-                        PrimaryScrollableTabRow(
-                            selectedTabIndex = pagerState.currentPage,
-                            edgePadding = 0.dp,
-                            containerColor = Color.Transparent,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ) {
-                            orderedSearchSources.forEachIndexed { index, source ->
-                                Tab(
-                                    selected = pagerState.currentPage == index,
-                                    onClick = {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(index)
-                                        }
-                                    },
-                                    text = {
-                                        Text(
-                                            text = searchSourceLabel(source),
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                    }
                     ExploreSearchTypeBar(
                         source = searchTypeBarSource,
                         selectedBilibiliSearchType = ui.selectedBilibiliSearchType,
@@ -990,7 +994,17 @@ fun ExploreScreen(
                                         .fillMaxSize()
                                         .padding(bottom = miniPlayerHeight),
                                     Alignment.Center
-                                ) { Text(stringResource(CoreCommonR.string.search_no_result)) }
+                                ) {
+                                    val loadError = ui.searchLoadMoreError
+                                    when {
+                                        ui.searchLoadingMore -> SearchLoadingMoreRow()
+                                        loadError != null -> SearchLoadMoreErrorRow(loadError.asString(), vm::loadMoreSearchResults)
+                                        ui.searchHasMore -> HapticTextButton(onClick = vm::loadMoreSearchResults) {
+                                            Text(stringResource(CoreCommonR.string.youtube_creator_load_more))
+                                        }
+                                        else -> Text(stringResource(CoreCommonR.string.search_no_result))
+                                    }
+                                }
                             }
                             else -> {
                                 val songs = ui.searchResults
@@ -1449,6 +1463,85 @@ fun ExploreScreen(
     }
 }
 
+/** 输入框有字或正在输入时才算进入搜索态 */
+internal fun isExploreSearchActive(query: String, focused: Boolean): Boolean =
+    query.isNotEmpty() || focused
+
+/** Material 的来源切换: 一排可横滑的胶囊, 选中项用强调色调, 比细下划线更容易一眼看清 */
+@Composable
+private fun ExploreMaterialSourceSwitcher(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        labels.forEachIndexed { index, label ->
+            val selected = index == selectedIndex
+            val container by animateColorAsState(
+                if (selected) colors.secondaryContainer else colors.surfaceContainerHigh,
+                label = "explore_source_container"
+            )
+            val content by animateColorAsState(
+                if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant,
+                label = "explore_source_content"
+            )
+            Box(
+                modifier = Modifier
+                    .height(40.dp)
+                    .clip(CircleShape)
+                    .background(container)
+                    .selectable(selected = selected, role = Role.Tab) { onSelected(index) }
+                    .padding(horizontal = 18.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = content,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExploreInlineNotice(text: String, warning: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (warning) colors.errorContainer.copy(alpha = 0.6f)
+                else colors.surfaceContainerHigh
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (warning) Icons.Outlined.ErrorOutline else Icons.Outlined.Info,
+            contentDescription = null,
+            tint = if (warning) colors.onErrorContainer else colors.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (warning) colors.onErrorContainer else colors.onSurfaceVariant
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ExploreOfflineContent(topAppBarState: TopAppBarState) {
@@ -1725,6 +1818,7 @@ internal fun ExploreSearchTypeBar(
     unselectedAlpha: Float,
     borderAlpha: Float
 ) {
+    val preferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
     AnimatedContent(
         targetState = source,
         modifier = Modifier.testTag(EXPLORE_SEARCH_TYPE_BAR_CONTAINER_TAG),
@@ -1845,7 +1939,8 @@ internal fun ExploreSearchTypeBar(
                     { bilibiliSearchTypeLabel(it) }, ::bilibiliSearchTypeIcon, onBilibiliSearchTypeClick
                 )
                 SearchSource.YOUTUBE_MUSIC -> typeChips(
-                    YouTubeExploreSearchType.entries, selectedYouTubeSearchType,
+                    YouTubeExploreSearchType.entries.filterNot { it == YouTubeExploreSearchType.VIDEO && preferences.hideMusicVideos },
+                    selectedYouTubeSearchType,
                     { youtubeSearchTypeLabel(it) }, ::youtubeSearchTypeIcon, onYouTubeSearchTypeClick
                 )
             }

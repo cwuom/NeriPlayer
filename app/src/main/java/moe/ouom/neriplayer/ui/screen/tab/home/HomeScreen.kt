@@ -23,6 +23,11 @@ package moe.ouom.neriplayer.ui.screen.tab.home
  * Created: 2025/8/8
  */
 
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
+import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
+import moe.ouom.neriplayer.ui.theme.LocalHasCustomBackground
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import moe.ouom.neriplayer.ui.i18n.UiText
 import moe.ouom.neriplayer.ui.i18n.asString
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -39,6 +44,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,7 +54,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -68,10 +73,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Radar
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material3.CircularProgressIndicator
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenu
 import moe.ouom.neriplayer.ui.component.overlay.DropdownMenuItem
@@ -111,9 +116,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -123,6 +127,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
@@ -145,6 +150,9 @@ import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollMainTabToTop
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.HomeNeteasePlaylistSectionState
@@ -155,13 +163,12 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
-import moe.ouom.neriplayer.ui.viewmodel.tab.favoriteId
 import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.util.currentWindowWidthDp
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
-import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeShelf
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicHomeItem
 import moe.ouom.neriplayer.platform.youtube.api.parser.YouTubeMusicParser
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
@@ -170,7 +177,7 @@ import moe.ouom.neriplayer.util.media.isRemoteImageSource
 import moe.ouom.neriplayer.util.format.formatPlayCount
 import kotlin.math.ceil
 import kotlin.math.min
-import java.util.Locale
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -187,6 +194,7 @@ fun HomeScreen(
     onContinuePagerPageChanged: (Int) -> Unit = {},
     onItemClick: (PlaylistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
+    onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     gridState: LazyGridState,
     radarPlaylistListState: LazyListState,
     topAppBarState: TopAppBarState,
@@ -200,7 +208,9 @@ fun HomeScreen(
     /** 点击网易云歌曲小模块标题，进入该小模块的详情页。 */
     onNeteaseSongSectionMore: (NeteaseHomeSongSource) -> Unit = {},
     /** 点击网易云歌单小模块标题，进入该分类的更多歌单页。 */
-    onNeteasePlaylistSectionMore: (NeteaseHomePlaylistSource) -> Unit = {}
+    onNeteasePlaylistSectionMore: (NeteaseHomePlaylistSource) -> Unit = {},
+    onOpenLanguageSettings: () -> Unit = {},
+    onOpenGeneralSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -208,7 +218,7 @@ fun HomeScreen(
         factory = viewModelFactory {
             initializer {
                 val app = appContext as Application
-                HomeViewModel(app)
+                HomeViewModel(app, initialOfflineMode = offlineMode)
             }
         }
     )
@@ -325,8 +335,8 @@ fun HomeScreen(
     val appBarTitle = titleOptions[titleSeed % titleOptions.size]
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(
         state = topAppBarState,
-        // follow the finger and stay put; a release snap reads as an unwanted bounce
-        snapAnimationSpec = null,
+        // 松手吸附到完全展开或完全收起, 半折叠时大标题会被裁成一道残影; 临界阻尼不回弹
+        snapAnimationSpec = spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow),
         canScroll = {
             shouldAllowCollapsingTopAppBar(
                 canScrollForward = gridState.canScrollForward,
@@ -337,58 +347,35 @@ fun HomeScreen(
     )
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val guessYouLikeTitle = stringResource(CoreCommonR.string.home_ytmusic_guess_you_like)
-    val dailyDiscoverTitle = stringResource(CoreCommonR.string.home_ytmusic_daily_discover)
-    val moreRecommendationsTitle = stringResource(CoreCommonR.string.home_ytmusic_more_recommendations)
     val favoriteAddedText = stringResource(CoreCommonR.string.favorite_added)
     val favoriteRemovedText = stringResource(CoreCommonR.string.favorite_removed)
-    val ytmSections = remember(ui.ytMusicHomeShelves.items) {
-        classifyYouTubeMusicShelves(ui.ytMusicHomeShelves.items)
-    }
-    val hasVisibleYtMusicFeed = remember(ytmSections) {
-        ytmSections.guessYouLike != null ||
-            ytmSections.dailyDiscover != null ||
-            ytmSections.remaining.any { shelf ->
-                shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
-            }
+    val isInternational = ui.internationalizationEnabled
+    val internationalLayout = ui.internationalHomeLayout
+    val shelves = remember(ui.ytMusicHomeShelves.items) { buildInternationalHomeShelves(ui.ytMusicHomeShelves.items) }
+    var homeKind by rememberSaveable(isInternational) { mutableStateOf<InternationalHomeKind?>(null) }
+    val feed = remember(shelves, homeKind, internationalLayout.hiddenFeedKinds) {
+        InternationalHomeFeed(shelves, internationalLayout, homeKind)
     }
     val scope = rememberCoroutineScope()
     val showContinue = shouldShowHomeContinueSection(
-        showContinueCard = showContinueCard,
+        showContinueCard = if (isInternational) InternationalHomeSectionIds.CONTINUE in internationalLayout.visibleSections else showContinueCard,
         usageLoaded = usageLoaded,
         hasUsage = usageEntries.isNotEmpty()
     )
-    val isInternational = ui.internationalizationEnabled
     val showBiliMusic = showBilibiliCard && ui.biliMusicHomeEnabled
     val showNeteaseTrending = showTrendingCard
     val showNeteaseRadar = showRadarCard
     val showOnlineFeeds = !offlineMode
-    var wasOffline by remember { mutableStateOf(offlineMode) }
     val windowWidthDp = currentWindowWidthDp()
     val isTabletLayout = windowWidthDp >= 720.dp
     val isTabletDevice =
         LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP
-    // clean style trades a little density for calmer rhythm: wider gutters, larger tablet tiles
     val cleanStyle = NeriDesign.isClean
-    val pageHorizontalPadding = if (isTabletLayout) 28.dp else 16.dp
-    val gridMinCellSize = when {
-        isTabletLayout && cleanStyle -> 172.dp
-        isTabletLayout -> 156.dp
-        // two large tiles per row on phones reads calmer than three thumbnails
-        cleanStyle -> 150.dp
-        else -> 120.dp
-    }
-    val gridContentPadding = if (isTabletLayout) 14.dp else 8.dp
-    val gridSpacing = when {
-        isTabletLayout && cleanStyle -> 18.dp
-        isTabletLayout -> 14.dp
-        cleanStyle -> 14.dp
-        else -> 10.dp
-    }
-    val gridColumns = remember(gridMinCellSize, cleanStyle, isTabletLayout) {
-        if (cleanStyle && !isTabletLayout) HomePhoneGridCells(gridMinCellSize)
-        else GridCells.Adaptive(gridMinCellSize)
-    }
+    val gridSpec = homeGridSpec(isTabletLayout, cleanStyle)
+    val pageHorizontalPadding = gridSpec.pageHorizontalPadding
+    val gridContentPadding = gridSpec.contentPadding
+    val gridSpacing = gridSpec.spacing
+    val gridColumns = remember(gridSpec) { gridSpec.columns }
     // 大标题与卡片左边缘对齐，扣掉 TopAppBar 自带的标题内边距
     val appBarTitleInset = (pageHorizontalPadding + gridContentPadding - TopAppBarTitleInset).coerceAtLeast(0.dp)
 
@@ -414,21 +401,13 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(offlineMode, isInternational) {
-        vm.setOfflineMode(offlineMode)
-        if (offlineMode) {
-            wasOffline = true
-            return@LaunchedEffect
-        }
+    LaunchedEffect(offlineMode) { vm.setOfflineMode(offlineMode) }
 
-        if (!wasOffline) return@LaunchedEffect
-
-        wasOffline = false
-        if (isInternational) {
-            vm.refreshYtMusicHome()
-        } else {
-            vm.refreshNeteaseHome()
+    if (!ui.homeSourceReady) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
         }
+        return
     }
 
     val hasVisibleBiliMusicSections = showBiliMusic && showOnlineFeeds && (
@@ -441,16 +420,19 @@ fun HomeScreen(
             )
 
     // 大模块顺序来自设置页
-    val majorOrder = remember(ui.layout.majorOrder, isInternational) {
-        resolveHomeMajorOrder(
-            order = ui.layout.majorOrder,
-            internationalEnabled = isInternational
-        )
+    var previousHomeMode by rememberSaveable { mutableStateOf(isInternational) }
+    LaunchedEffect(isInternational) {
+        if (previousHomeMode != isInternational) {
+            gridState.requestScrollToItem(0)
+            topAppBarState.heightOffset = 0f
+            topAppBarState.contentOffset = 0f
+            previousHomeMode = isInternational
+        }
     }
-
-    val hasVisibleSections =
-            showContinue || hasVisibleBiliMusicSections ||
-                    (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard || isInternational))
+    val majorOrder = ui.layout.majorOrder
+    val hasVisibleSections = if (isInternational) internationalLayout.visibleSections.isNotEmpty() else
+        showContinue || hasVisibleBiliMusicSections ||
+            (showOnlineFeeds && (showNeteaseTrending || showNeteaseRadar || showRecommendedCard))
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -460,42 +442,47 @@ fun HomeScreen(
                 .padding(top = if (isTabletDevice) 8.dp else 0.dp)
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
         ) {
+            val toolbarColors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent
+            )
+            val homeActions: @Composable RowScope.() -> Unit = {
+                if (isInternational) {
+                    HapticIconButton(onClick = onOpenLanguageSettings) {
+                        Icon(Icons.Outlined.Language, stringResource(CoreCommonR.string.settings_page_language))
+                    }
+                }
+                HapticIconButton(
+                    enabled = !offlineMode && (!isInternational || (ui.youtubeHomeEnabled && internationalLayout.hasOnlineSections)),
+                    onClick = {
+                        if (isInternational) {
+                            vm.refreshYtMusicHome()
+                        } else {
+                            vm.refreshNeteaseHome()
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
+                    )
+                }
+            }
             LargeTopAppBar(
                 title = { Text(appBarTitle, modifier = Modifier.padding(start = appBarTitleInset)) },
-                actions = {
-                    HapticIconButton(
-                        enabled = !offlineMode,
-                        onClick = {
-                            if (isInternational) {
-                                vm.refreshYtMusicHome()
-                            } else {
-                                vm.refreshNeteaseHome()
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Refresh,
-                            contentDescription = stringResource(CoreCommonR.string.recommend_refresh)
-                        )
-                    }
+                modifier = Modifier.scrollToTopOnTitleBarTap {
+                    scrollMainTabToTop(topAppBarState) { gridState.scrollToTopForReselect() }
                 },
-                scrollBehavior = scrollBehavior,
-                windowInsets = WindowInsets(0),
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = Color.Transparent
-                )
+                actions = homeActions, scrollBehavior = scrollBehavior,
+                windowInsets = WindowInsets(0), colors = toolbarColors
             )
-            val openSearch = LocalHomeOpenSearch.current
-            if (cleanStyle && openSearch != null) {
-                HomeSearchPill(
-                    onClick = openSearch,
-                    modifier = Modifier
-                        .widthIn(max = 1240.dp)
-                        .align(Alignment.CenterHorizontally)
-                        .padding(horizontal = pageHorizontalPadding + gridContentPadding, vertical = 4.dp)
-                )
-            }
+            HomeGreetingLine(
+                text = rememberHomeGreeting(),
+                collapsedFraction = { topAppBarState.collapsedFraction },
+                modifier = Modifier
+                    .widthIn(max = 1240.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(horizontal = pageHorizontalPadding + gridContentPadding)
+            )
 
             Box(
                 modifier = Modifier
@@ -553,6 +540,7 @@ fun HomeScreen(
                     onSongClick = onSongClick,
                     onItemClick = onItemClick,
                     onYouTubeMusicPlaylistClick = onYouTubeMusicPlaylistClick,
+                    onYouTubeCreatorClick = onYouTubeCreatorClick,
                     favoriteSongLookup = favoriteSongLookup,
                     downloadPresenceVersion = downloadPresenceVersion,
                     favoriteKeys = favoriteKeys,
@@ -561,10 +549,6 @@ fun HomeScreen(
                     offlineMode = offlineMode,
                     radarPlaylistListState = radarPlaylistListState,
                     loadingText = homeLoadingText,
-                    guessYouLikeTitle = guessYouLikeTitle,
-                    dailyDiscoverTitle = dailyDiscoverTitle,
-                    moreRecommendationsTitle = moreRecommendationsTitle,
-                    ytmSections = ytmSections,
                     registerKey = ::registerGridItemKey,
                     onBiliMusicRankMore = { onBiliMusicRankMore(ui.biliMusicRank.type) },
                     onBiliMusicHotMore = onBiliMusicHotMore,
@@ -590,29 +574,21 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(gridSpacing),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    majorOrder.forEach { majorId ->
+                    if (isInternational) {
+                        addInternationalHome(
+                            env = majorEnv, shelves = shelves, recommendations = feed,
+                            onSelectKind = { homeKind = it }, onRetry = vm::refreshYtMusicHome,
+                            onRetryContinuation = vm::retryYouTubeHomeContinuation,
+                            onEnableYouTube = onOpenGeneralSettings
+                        )
+                    } else majorOrder.forEach { majorId ->
                         when (majorId) {
                             HomeMajorSectionIds.CONTINUE -> addHomeContinueBlock(majorEnv)
                             HomeMajorSectionIds.BILIBILI -> addHomeBiliMusicBlock(majorEnv)
-                            HomeMajorSectionIds.TRENDING -> if (isInternational) {
-                                addHomeYouTubeMusicTrendingBlock(majorEnv)
-                            } else {
-                                addHomeTrendingBlock(majorEnv)
-                            }
-                            HomeMajorSectionIds.RADAR -> if (isInternational) {
-                                addHomeYouTubeMusicRadarBlock(majorEnv)
-                            } else {
-                                addHomeRadarBlock(majorEnv)
-                            }
-                            HomeMajorSectionIds.RECOMMENDED -> if (isInternational) {
-                                addHomeYouTubeMusicRecommendedBlock(majorEnv)
-                            } else {
-                                addHomeRecommendedBlock(majorEnv)
-                            }
+                            HomeMajorSectionIds.TRENDING -> addHomeTrendingBlock(majorEnv)
+                            HomeMajorSectionIds.RADAR -> addHomeRadarBlock(majorEnv)
+                            HomeMajorSectionIds.RECOMMENDED -> addHomeRecommendedBlock(majorEnv)
                         }
-                    }
-                    if (isInternational) {
-                        addHomeYouTubeMusicEmptyFeedBlock(majorEnv)
                     }
                 }
                 HomeScrollEdgeFadeOverlay(
@@ -776,22 +752,6 @@ internal fun LazyGridScope.addNeteasePlaylistSection(
     }
 }
 
-/**
- * 解析首页大模块的实际渲染顺序。
- */
-internal fun resolveHomeMajorOrder(
-    order: List<String>,
-    internationalEnabled: Boolean
-): List<String> {
-    val defaults = if (internationalEnabled) {
-        HomeMajorSectionIds.DEFAULT_ORDER.filterNot { it == HomeMajorSectionIds.BILIBILI }
-    } else {
-        HomeMajorSectionIds.DEFAULT_ORDER
-    }
-    val requested = order.filter { it in defaults }.distinct()
-    return requested + defaults.filterNot { it in requested }
-}
-
 internal fun neteaseSongSectionIcon(source: NeteaseHomeSongSource): ImageVector {
     return when (source) {
         NeteaseHomeSongSource.PERSONAL_RADAR -> Icons.Outlined.Radar
@@ -847,7 +807,7 @@ internal fun shouldUseHomeOnlineRemoteCoverFastPath(
     isRemoteImageSource(directCover)
 
 @Composable
-private fun rememberHomeOnlineSongCoverUrl(
+internal fun rememberHomeOnlineSongCoverUrl(
     song: SongItem,
     downloadPresenceVersion: Int
 ): String? {
@@ -900,14 +860,18 @@ private fun SongRowMini(
             .fillMaxWidth()
             .clip(neriRoundedShape(8.dp))
             .clickable { onClick() }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // 序号居中占一格, 和卡片左缘拉开距离, 两位数时也不贴边
         Text(
             text = index.toString(),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(28.dp),
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .width(28.dp)
+                .padding(end = 6.dp),
             maxLines = 1,
             overflow = TextOverflow.Clip
         )
@@ -977,7 +941,7 @@ private fun SongRowMini(
 }
 
 @Composable
-private fun SongRowMiniMenu(
+internal fun SongRowMiniMenu(
     expanded: Boolean,
     song: SongItem,
     isFavorite: Boolean,
@@ -1339,7 +1303,7 @@ fun PlaylistCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(neriRoundedShape(8.dp))
+                        .clip(neriRoundedShape(8.dp))
             )
             Column(modifier = Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp, bottom = 4.dp)) {
                 Text(
@@ -1374,93 +1338,15 @@ fun PlaylistCard(
     }
 }
 
-internal data class ClassifiedYouTubeMusicShelves(
-    val guessYouLike: YouTubeMusicHomeShelf?,
-    val dailyDiscover: YouTubeMusicHomeShelf?,
-    val remaining: List<YouTubeMusicHomeShelf>
-) {
-    /** 是否存在任何可渲染的 YouTube Music 内容。 */
-    fun hasVisibleFeed(): Boolean {
-        return guessYouLike != null ||
-            dailyDiscover != null ||
-            remaining.any { shelf ->
-                shelf.shouldRenderAsSongShelf() || shelf.hasRenderablePlaylistItems()
-            }
-    }
-}
+internal fun YouTubeMusicHomeItem.isPlaylistItem(): Boolean =
+    browseId.isNotBlank() && (pageType.endsWith("_PLAYLIST") || pageType.endsWith("_ALBUM") ||
+        (pageType.isBlank() && (browseId.startsWith("VL") || browseId.startsWith("MPRE"))))
 
-private val YouTubeMusicGuessYouLikeKeywords = listOf(
-    "猜你喜欢",
-    "guess you like",
-    "recommended for you"
-)
-
-private val YouTubeMusicDailyDiscoverKeywords = listOf(
-    "每日发现",
-    "daily discover",
-    "discover daily"
-)
-
-private val YouTubeMusicSongShelfKeywords = listOf(
-    "再听一遍",
-    "老歌重温",
-    "翻唱与混音",
-    "每日发现",
-    "猜你喜欢",
-    "listen again",
-    "oldies",
-    "covers and remixes",
-    "daily discover"
-)
-
-private fun classifyYouTubeMusicShelves(
-    shelves: List<YouTubeMusicHomeShelf>
-): ClassifiedYouTubeMusicShelves {
-    val guessYouLike = shelves.firstOrNull { shelf ->
-        shelf.shouldRenderAsSongShelf() &&
-            shelf.title.matchesYouTubeMusicShelfKeywords(YouTubeMusicGuessYouLikeKeywords)
-    }
-    val dailyDiscover = shelves.firstOrNull { shelf ->
-        shelf != guessYouLike &&
-            shelf.shouldRenderAsSongShelf() &&
-            shelf.title.matchesYouTubeMusicShelfKeywords(YouTubeMusicDailyDiscoverKeywords)
-    }
-    val remaining = shelves.filterNot { shelf ->
-        shelf == guessYouLike || shelf == dailyDiscover
-    }
-    return ClassifiedYouTubeMusicShelves(
-        guessYouLike = guessYouLike,
-        dailyDiscover = dailyDiscover,
-        remaining = remaining
-    )
-}
-
-internal fun YouTubeMusicHomeShelf.shouldRenderAsSongShelf(): Boolean {
-    if (items.isEmpty()) {
-        return false
-    }
-    val playableCount = items.count { it.videoId.isNotBlank() }
-    if (playableCount == 0) {
-        return false
-    }
-    if (playableCount == items.size) {
-        return true
-    }
-    return title.matchesYouTubeMusicShelfKeywords(YouTubeMusicSongShelfKeywords)
-}
-
-internal fun YouTubeMusicHomeShelf.hasRenderablePlaylistItems(): Boolean {
-    return items.any { it.isPlaylistItem() }
-}
-
-internal fun YouTubeMusicHomeItem.isPlaylistItem(): Boolean {
-    val normalizedPageType = pageType.uppercase(Locale.US)
-    return when {
-        normalizedPageType.contains("PLAYLIST") -> true
-        normalizedPageType.isNotBlank() -> false
-        else -> browseId.startsWith("VL")
-    }
-}
+internal fun YouTubeMusicHomeItem.toCreator(): YouTubeMusicCreatorSummary? =
+    if (browseId.isNotBlank() && (pageType.endsWith("_ARTIST") || pageType.endsWith("_USER_CHANNEL") ||
+            (pageType.isBlank() && browseId.startsWith("UC")))) {
+        YouTubeMusicCreatorSummary(browseId, title, subtitle, coverUrl)
+    } else null
 
 internal fun YouTubeMusicHomeItem.toPlaylist(): YouTubeMusicPlaylist? {
     if (!isPlaylistItem()) {
@@ -1476,16 +1362,6 @@ internal fun YouTubeMusicHomeItem.toPlaylist(): YouTubeMusicPlaylist? {
     )
 }
 
-private fun String.matchesYouTubeMusicShelfKeywords(keywords: List<String>): Boolean {
-    val normalized = lowercase(Locale.ROOT)
-        .replace(Regex("[\\s·•・/\\\\|:_-]+"), "")
-    return keywords.any { keyword ->
-        val normalizedKeyword = keyword.lowercase(Locale.ROOT)
-            .replace(Regex("[\\s·•・/\\\\|:_-]+"), "")
-        normalized.contains(normalizedKeyword)
-    }
-}
-
 internal fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): SongItem? {
     if (videoId.isBlank()) {
         return null
@@ -1496,10 +1372,11 @@ internal fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): Song
     )
     val playlistId = browseId.removePrefix("VL").ifBlank { null }
     return SongItem(
+        youtubeContentLabel = contentLabel,
         id = stableYouTubeMusicId(videoId),
         name = title,
-        artist = metadata.artist,
-        album = metadata.album,
+        artist = artist.ifBlank { metadata.artist },
+        album = album.ifBlank { if (artist.isNotBlank()) sectionTitle else metadata.album },
         albumId = stableYouTubeMusicId((playlistId ?: sectionTitle).ifBlank { videoId }),
         durationMs = durationMs,
         coverUrl = coverUrl.ifBlank { null },
@@ -1508,76 +1385,23 @@ internal fun YouTubeMusicHomeItem.toPlayableSongItem(sectionTitle: String): Song
             playlistId = playlistId
         ),
         originalName = title,
-        originalArtist = metadata.artist,
-        originalCoverUrl = coverUrl.ifBlank { null }
+        originalArtist = artist.ifBlank { metadata.artist },
+        originalCoverUrl = coverUrl.ifBlank { null },
+        channelId = "youtubeMusic",
+        audioId = videoId
     )
 }
 
-internal fun LazyGridScope.addYouTubeMusicSongShelfSection(
-    sectionKey: String,
-    registerKey: (String) -> String,
-    shelf: YouTubeMusicHomeShelf,
-    icon: ImageVector,
-    title: String,
-    onSongClick: (List<SongItem>, Int) -> Unit,
-    favoriteSongLookup: FavoriteSongLookup,
-    downloadPresenceVersion: Int,
-    onFavoriteToggle: (SongItem, Boolean) -> Unit,
-    onShowSnackbar: (String) -> Unit,
-    offlineMode: Boolean
-) {
-    val songs = shelf.items.mapNotNull { it.toPlayableSongItem(shelf.title) }
-    if (songs.isEmpty()) {
-        return
-    }
-    item(
-        key = registerKey("$sectionKey:header"),
-        span = { GridItemSpan(maxLineSpan) },
-        contentType = HomeContentTypeHeader
-    ) {
-        SectionHeader(
-            icon = icon,
-            title = title
-        )
-    }
-    item(
-        key = registerKey("$sectionKey:content"),
-        span = { GridItemSpan(maxLineSpan) },
-        contentType = HomeContentTypeSongPager
-    ) {
-        val warmupKey = remember(songs) {
-            songs.joinToString("|") { song ->
-                song.audioId ?: song.mediaUri.orEmpty()
-            }
-        }
-        LaunchedEffect(warmupKey) {
-            PlayerManager.prefetchYouTubePlayableUrlWindow(
-                playlist = songs,
-                startIndex = 0,
-                source = "yt_home_shelf_visible"
-            )
-        }
-        ResponsiveSongPagerList(
-            songs = songs,
-            onSongClick = onSongClick,
-            favoriteSongLookup = favoriteSongLookup,
-            downloadPresenceVersion = downloadPresenceVersion,
-            onFavoriteToggle = onFavoriteToggle,
-            onShowSnackbar = onShowSnackbar,
-            offlineMode = offlineMode
-        )
-    }
-}
-
 @Composable
-private fun ResponsiveSongPagerList(
+internal fun ResponsiveSongPagerList(
     songs: List<SongItem>,
     onSongClick: (List<SongItem>, Int) -> Unit,
     favoriteSongLookup: FavoriteSongLookup,
     downloadPresenceVersion: Int,
     onFavoriteToggle: (SongItem, Boolean) -> Unit,
     onShowSnackbar: (String) -> Unit,
-    offlineMode: Boolean
+    offlineMode: Boolean,
+    maxVisibleSongs: Int = HomeSongPagerMaxSongs
 ) {
     val widthDp = currentWindowWidthDp().value
     val columns = when {
@@ -1585,30 +1409,56 @@ private fun ResponsiveSongPagerList(
         widthDp >= 600 -> 2
         else -> 1
     }
-    val rowsPerColumn = 3
+    val rowsPerColumn = HomeSongPagerRowsPerColumn
     val perPage = (columns * rowsPerColumn).coerceAtLeast(1)
+    val clean = NeriDesign.isClean
+    val overImage = LocalHasCustomBackground.current
+    // 背景图上两种风格都给榜单垫一层卡片: 高动效走毛玻璃, 低动效退回半透明底色
+    val chartCard = !clean || overImage
+    val chartCardShape = if (clean) NeriDesign.tokens.cardShape else HomeSongPagerCardShape
+    val chartCardColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(
+        alpha = if (overImage) HomeOverImageCardAlpha else 1f
+    )
 
-    val pageCount = ceil(songs.size / perPage.toFloat()).toInt().coerceAtLeast(1)
+    val visibleCount = min(songs.size, maxVisibleSongs)
+    val pageCount = ceil(visibleCount / perPage.toFloat()).toInt().coerceAtLeast(1)
     val pagerState = rememberPagerState(pageCount = { pageCount })
 
+    Column(modifier = Modifier.fillMaxWidth()) {
     HorizontalPager(
         state = pagerState,
         key = { page -> page },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp)
+        // Material 的榜单卡与分区标题左缘对齐; Clean 是平铺行, 留出与标题文字对齐的缩进
+        contentPadding = PaddingValues(horizontal = if (clean) 8.dp else 0.dp),
+        pageSpacing = 12.dp,
+        modifier = Modifier.fillMaxWidth()
     ) { page ->
         val start = page * perPage
-        val end = min(start + perPage, songs.size)
+        val end = min(start + perPage, visibleCount)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             for (columnIndex in 0 until columns) {
-                Column(
+                if (!homeSongPagerColumnHasSongs(start, end, columnIndex, rowsPerColumn)) {
+                    // 末页凑不满时空列只占位保持列宽, 不画空卡片
+                    Spacer(Modifier.weight(1f))
+                    continue
+                }
+                AdvancedGlassSurface(
+                    role = AdvancedGlassRole.SettingsGroup,
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    shape = chartCardShape,
+                    fallbackColor = if (chartCard) chartCardColor else Color.Transparent,
+                    tintColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    enabled = overImage
+                ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (chartCard) Modifier.padding(vertical = 6.dp) else Modifier),
+                    verticalArrangement = Arrangement.spacedBy(if (chartCard) 2.dp else 6.dp)
                 ) {
                     for (rowIndex in 0 until rowsPerColumn) {
                         val absoluteIndex = start + (columnIndex * rowsPerColumn + rowIndex)
@@ -1629,10 +1479,35 @@ private fun ResponsiveSongPagerList(
                         }
                     }
                 }
+                }
             }
         }
     }
+    if (pageCount > 1) {
+        // 用页码点提示可以横滑, 不露出下一页的内容
+        HomePagerDots(
+            pageCount = pageCount,
+            currentPage = { pagerState.currentPage },
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(top = 10.dp)
+        )
+    }
+    }
 }
+
+internal fun homeSongPagerColumnHasSongs(
+    pageStart: Int,
+    pageEnd: Int,
+    columnIndex: Int,
+    rowsPerColumn: Int
+): Boolean = pageStart + columnIndex * rowsPerColumn < pageEnd
+
+private const val HomeSongPagerRowsPerColumn = 4
+internal const val HomeSongPagerMaxSongs = 28
+// 背景图上的容器底色: 低动效时直接显示这层半透明, 高动效时作为毛玻璃的底色
+internal const val HomeOverImageCardAlpha = 0.82f
+private val HomeSongPagerCardShape = RoundedCornerShape(24.dp)
 
 internal fun buildHomeSongInfo(song: SongItem): String {
     return "${song.displayName()}-${song.displayArtist()}"

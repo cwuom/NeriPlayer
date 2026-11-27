@@ -108,6 +108,7 @@ class HomeScreenGridLayoutTest {
         }
         val state = MutableStateFlow(
             HomeUiState(
+                homeSourceReady = true,
                 playlistSections = listOf(
                     HomeNeteasePlaylistSectionState(
                         source = NeteaseHomePlaylistSource.PERSONALIZED,

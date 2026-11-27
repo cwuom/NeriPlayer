@@ -60,7 +60,7 @@ internal fun SettingsPage.cleanGlyph(): SettingsPageGlyph = when (this) {
     SettingsPage.Accounts -> SettingsPageGlyph(Icons.Rounded.AccountCircle, Indigo)
     SettingsPage.MusicServers -> SettingsPageGlyph(Icons.Rounded.Storage, Indigo)
     SettingsPage.General -> SettingsPageGlyph(Icons.Rounded.Settings, Graphite)
-    SettingsPage.Language -> SettingsPageGlyph(Icons.Rounded.Translate, Blue)
+    SettingsPage.Language, SettingsPage.Content -> SettingsPageGlyph(Icons.Rounded.Translate, Blue)
     SettingsPage.Playback -> SettingsPageGlyph(Icons.Rounded.PlayCircle, Red)
     SettingsPage.AudioQuality -> SettingsPageGlyph(Icons.Rounded.HighQuality, Orange)
     SettingsPage.AudioEffects -> SettingsPageGlyph(Icons.Rounded.GraphicEq, Pink)

@@ -21,6 +21,7 @@ import moe.ouom.neriplayer.ui.settings.route.initialAppSettingsRouteState
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
@@ -85,6 +86,15 @@ class AppSettingsRouteStateTest {
                 assertEquals(international, updated.other.internationalizationEnabled)
                 assertEquals(bitPerfect, updated.playback.usbExclusivePreferences.bitPerfect)
                 assertEquals(showBilibili, updated.other.homeCards.showHomeBilibiliCard)
+
+                repository.setInternationalizationEnabled(true)
+                repository.setInternationalHomeSectionVisible(InternationalHomeSectionIds.FEED, false)
+                repository.setYouTubeEnabled(false)
+                val withoutYouTube = appSettingsRouteStateFlow(repository).first().other
+                assertEquals(true, withoutYouTube.internationalizationEnabled)
+                assertEquals(true, InternationalHomeSectionIds.FEED in withoutYouTube.homeCards.internationalLayout.hidden)
+                repository.setYouTubeEnabled(true)
+                assertEquals(withoutYouTube, appSettingsRouteStateFlow(repository).first().other)
             }
         } finally {
             context.dataStore.updateData { original }

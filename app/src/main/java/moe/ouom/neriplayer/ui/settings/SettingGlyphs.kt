@@ -243,6 +243,8 @@ internal fun settingGlyphFor(key: String): SettingGlyph? = when (key) {
     "netease_login" -> g(Icons.Rounded.MusicNote, Red)
     "bili_login" -> g(Icons.Rounded.LiveTv, Pink)
     "youtube_login" -> g(Icons.Rounded.SmartDisplay, Red)
+    "netease_play_history_sync_enabled" -> g(Icons.Rounded.History, Red)
+    "bili_play_history_sync_enabled" -> g(Icons.Rounded.History, Pink)
     "playlist_export" -> g(Icons.Rounded.IosShare, Blue)
     "playlist_import" -> g(Icons.Rounded.FileDownload, Green)
     "config_export" -> g(Icons.Rounded.Upload, Blue)

@@ -23,6 +23,7 @@ package moe.ouom.neriplayer.data.local.media
  * Updated: 2026/3/23
  */
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -275,7 +276,8 @@ data class LocalMetadataSidecar(
     val originalLyric: String?,
     val originalTranslatedLyric: String?,
     val matchedRomanizedLyric: String?,
-    val originalRomanizedLyric: String?
+    val originalRomanizedLyric: String?,
+    val youtubeContentLabel: YouTubeContentLabel? = null
 ) {
     val lyric: String?
         get() = matchedLyric ?: originalLyric

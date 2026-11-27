@@ -63,11 +63,9 @@ class SettingsHomeBilibiliVisibilityTest {
                     val enabled by repository.homeCardBilibiliFlow.collectAsState(initial = true)
                     val scope = rememberCoroutineScope()
                     val actions = AppHomeSettingsActions(repository, scope)
-                    val copy = settingsHomeCardCopy(false)
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         SettingsPersonalizationHomeCard(
                             internationalEnabled = false,
-                            copy = copy,
                             homeStartAvailable = isSettingsHomeStartAvailable(false, false, false, false, false, enabled),
                             state = AppHomeCardsSettingsState(false, false, false, false, enabled),
                             actions = actions,

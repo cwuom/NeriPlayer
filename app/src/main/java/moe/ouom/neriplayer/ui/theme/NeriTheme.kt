@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
@@ -54,7 +55,15 @@ import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.rememberDynamicColorScheme
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 
-private val NeriTypography = Typography()
+// Material 标题层级用 Medium 字重, 大标题栏与歌名更有分量, 正文保持默认
+private val NeriTypography = Typography().let { base ->
+    base.copy(
+        headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Medium),
+        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Medium),
+        headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Medium),
+        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.Medium)
+    )
+}
 // popups and menus read extraSmall; 4dp reads as a hard rectangle at modern densities
 private val NeriShapes = Shapes(extraSmall = RoundedCornerShape(12.dp), small = RoundedCornerShape(12.dp))
 private const val ThemeColorTransitionDurationMs = 420

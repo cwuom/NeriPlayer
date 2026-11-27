@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.ui.settings.route
 
 import android.app.Application
 import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -21,7 +22,8 @@ internal fun AppSettingsRoute(
     environment: AppSettingsHostEnvironment,
     onBackgroundImageAlphaPreview: (Float) -> Unit,
     snackbarHostState: SnackbarHostState,
-    renderScene: HostSceneRenderer
+    renderScene: HostSceneRenderer,
+    reselectRequests: MainTabReselectRequests? = null
 ) {
     val scope = rememberCoroutineScope()
     val settingsState = rememberAppSettingsRouteState(
@@ -59,6 +61,7 @@ internal fun AppSettingsRoute(
             ),
             environment = environment
         ),
-        renderScene = renderScene
+        renderScene = renderScene,
+        reselectRequests = reselectRequests
     )
 }

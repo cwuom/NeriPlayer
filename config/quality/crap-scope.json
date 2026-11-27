@@ -543,17 +543,18 @@
       "methods": [
         "SettingsHostScreen",
         "selectSettingsHostPage",
-        "SettingsHostScreen$lambda$19",
-        "SettingsHostScreen$lambda$19$1",
-        "SettingsHostScreen$lambda$19$1$2",
-        "SettingsHostScreen$lambda$19$1$2$0",
-        "SettingsHostScreen$lambda$19$1$2$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$0$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$1",
-        "SettingsHostScreen$lambda$19$1$2$0$1$0$0",
-        "SettingsHostScreen$lambda$19$1$2$0$1$1$0",
-        "SettingsHostScreen$lambda$19$1$2$0$2",
-        "SettingsHostScreen$lambda$19$1$2$0$2$0$0"
+        "reselectSettingsHost",
+        "SettingsHostScreen$lambda$21",
+        "SettingsHostScreen$lambda$21$1",
+        "SettingsHostScreen$lambda$21$1$2",
+        "SettingsHostScreen$lambda$21$1$2$0",
+        "SettingsHostScreen$lambda$21$1$2$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$0$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$1",
+        "SettingsHostScreen$lambda$21$1$2$0$1$0$0",
+        "SettingsHostScreen$lambda$21$1$2$0$1$1$0",
+        "SettingsHostScreen$lambda$21$1$2$0$2",
+        "SettingsHostScreen$lambda$21$1$2$0$2$0$0"
       ]
     },
     {
@@ -561,16 +562,16 @@
       "class": "moe.ouom.neriplayer.ui.NeriAppKt",
       "methods": [
         "NeriAppContent",
-        "NeriAppContent$lambda$181",
-        "NeriAppContent$lambda$181$4$0",
-        "NeriAppContent$lambda$181$RenderMainTabRoute",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$24",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$25",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$26",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$27",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$28",
-        "NeriAppContent$lambda$181$RenderMainTabRoute$28$1",
-        "NeriAppContent$lambda$181$30"
+        "NeriAppContent$lambda$185",
+        "NeriAppContent$lambda$185$3$0",
+        "NeriAppContent$lambda$185$RenderMainTabRoute",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$27",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$28",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$29",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$30",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$31",
+        "NeriAppContent$lambda$185$RenderMainTabRoute$31$2",
+        "NeriAppContent$lambda$185$33"
       ]
     },
     {
@@ -1130,17 +1131,17 @@
         "NowPlayingScreen",
         "NowPlayingImmersivePortraitLayout-EUb7tLY",
         "resolveNowPlayingCoverPagePresentation",
-        "NowPlayingScreen$lambda$156$0$2$0$1",
-        "NowPlayingScreen$lambda$156$0$2$0$1$22",
-        "NowPlayingScreen$lambda$156$0$2$0$1$23",
-        "NowPlayingScreen$lambda$156$0$2$0$1$24",
-        "NowPlayingScreen$lambda$156$0$2$0$1$25",
-        "NowPlayingScreen$lambda$156$0$2$0$1$26",
-        "NowPlayingScreen$lambda$156$0$2$0$1$27",
-        "NowPlayingScreen$lambda$156$0$2$0$1$28",
-        "NowPlayingScreen$lambda$156$0$2$0$1$29",
-        "NowPlayingScreen$lambda$156$0$2$0$1$30",
-        "NowPlayingScreen$lambda$156$0$2$0$1$24$0"
+        "NowPlayingScreen$lambda$155$0$2$0$1",
+        "NowPlayingScreen$lambda$155$0$2$0$1$22",
+        "NowPlayingScreen$lambda$155$0$2$0$1$23",
+        "NowPlayingScreen$lambda$155$0$2$0$1$24",
+        "NowPlayingScreen$lambda$155$0$2$0$1$25",
+        "NowPlayingScreen$lambda$155$0$2$0$1$26",
+        "NowPlayingScreen$lambda$155$0$2$0$1$27",
+        "NowPlayingScreen$lambda$155$0$2$0$1$28",
+        "NowPlayingScreen$lambda$155$0$2$0$1$29",
+        "NowPlayingScreen$lambda$155$0$2$0$1$30",
+        "NowPlayingScreen$lambda$155$0$2$0$1$24$0"
       ]
     },
     {

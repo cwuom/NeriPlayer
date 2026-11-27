@@ -1,5 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store.stats
 
+import java.time.ZoneId
+import java.time.Instant
 import androidx.sqlite.db.SupportSQLiteProgram
 import androidx.sqlite.db.SupportSQLiteQuery
 import moe.ouom.neriplayer.data.model.stats.PlaybackStatsPeriod
@@ -27,7 +29,7 @@ class PlaybackStatsSqlQueryBindingTest {
     }
 
     @Test
-    fun `bucket backed period binds the bucket window three times before the legacy window`() {
+    fun `bucket backed period binds indexed candidates civil dates and the legacy window`() {
         val range = PlaybackStatsPeriod.WEEK.resolvePlaybackStatsTimeRange(NOW)
         val start = checkNotNull(range.startInclusive)
         val query = PlaybackStatsQuery(PlaybackStatsPeriod.WEEK, minimumListenMs = 5, nowMillis = NOW)
@@ -41,7 +43,13 @@ class PlaybackStatsSqlQueryBindingTest {
         assertTrue(summary.sql.contains("UNION ALL SELECT * FROM playback_stat WHERE"))
         assertTrue(summary.sql.contains("AND NOT EXISTS (SELECT 1 FROM playback_stat_bucket b WHERE b.identity_key = playback_stat.identity_key)"))
         assertEquals(
-            listOf<Any?>(start, range.endExclusive, start, range.endExclusive, start, range.endExclusive, start, range.endExclusive, 5L),
+            listOf<Any?>(
+                start - 2 * 86_400_000L, range.endExclusive + 2 * 86_400_000L,
+                start, range.endExclusive,
+                Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                Instant.ofEpochMilli(range.endExclusive).atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                start, range.endExclusive, 5L
+            ),
             summary.boundValues()
         )
     }

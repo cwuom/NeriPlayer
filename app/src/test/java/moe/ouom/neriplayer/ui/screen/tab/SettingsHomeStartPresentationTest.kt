@@ -1,10 +1,11 @@
 package moe.ouom.neriplayer.ui.screen.tab
 
 import moe.ouom.neriplayer.common.R as CoreCommonR
-import moe.ouom.neriplayer.ui.screen.tab.settings.home.SettingsHomeCardCopy
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.effectiveSettingsStartDestination
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.isSettingsHomeStartAvailable
-import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.ui.screen.tab.settings.home.internationalHomeSectionTitles
 import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsStartDestinationLabelRes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,15 +31,14 @@ class SettingsHomeStartPresentationTest {
     }
 
     @Test
-    fun `international mode excludes Bilibili from home availability without hiding other sections`() {
-        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, true, true))
-        assertFalse(isSettingsHomeStartAvailable(false, false, false, false, false, false, true))
-        assertTrue(isSettingsHomeStartAvailable(false, false, false, false, false, true, false))
-        assertTrue(isSettingsHomeStartAvailable(true, false, false, false, false, true, true))
-        assertTrue(isSettingsHomeStartAvailable(false, true, false, false, false, true, true))
-        assertTrue(isSettingsHomeStartAvailable(false, false, true, false, false, true, true))
-        assertTrue(isSettingsHomeStartAvailable(false, false, false, true, true, true, true))
-        assertFalse(isSettingsHomeStartAvailable(false, false, false, true, false, true, true))
+    fun `international availability follows its own sections and local history`() {
+        val layout = InternationalHomeLayout()
+        val continueOnly = layout.copy(hidden = setOf(InternationalHomeSectionIds.SPOTLIGHT, InternationalHomeSectionIds.FEED))
+        val none = layout.copy(hidden = layout.order.toSet())
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, false, false, false, layout))
+        assertTrue(isSettingsHomeStartAvailable(false, false, false, false, true, false, continueOnly))
+        assertFalse(isSettingsHomeStartAvailable(true, true, true, true, false, true, continueOnly))
+        assertFalse(isSettingsHomeStartAvailable(true, true, true, true, true, true, none))
     }
 
     @Test
@@ -49,25 +49,14 @@ class SettingsHomeStartPresentationTest {
     }
 
     @Test
-    fun `home copy switches the complete card family for international mode`() {
-        val domestic = settingsHomeCardCopy(false)
-        val international = settingsHomeCardCopy(true)
-
+    fun `each international section has its own editor label`() {
         assertEquals(
-            SettingsHomeCardCopy(
-                CoreCommonR.string.settings_home_card_netease_trending,
-                CoreCommonR.string.settings_home_card_netease_radar,
-                CoreCommonR.string.settings_home_card_netease_recommended
+            mapOf(
+                InternationalHomeSectionIds.SPOTLIGHT to CoreCommonR.string.international_home_spotlight,
+                InternationalHomeSectionIds.CONTINUE to CoreCommonR.string.player_continue,
+                InternationalHomeSectionIds.FEED to CoreCommonR.string.international_home_feed
             ),
-            domestic
-        )
-        assertEquals(
-            SettingsHomeCardCopy(
-                CoreCommonR.string.home_ytmusic_guess_you_like,
-                CoreCommonR.string.home_ytmusic_daily_discover,
-                CoreCommonR.string.home_ytmusic_more_recommendations
-            ),
-            international
+            internationalHomeSectionTitles
         )
     }
 

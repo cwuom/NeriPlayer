@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.ui.screen.playlist
  */
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.animation.PlayingBarSpec
+import moe.ouom.neriplayer.ui.animation.rememberPlayingBarsState
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import android.app.Application
@@ -32,15 +34,6 @@ import android.content.Context
 import android.content.res.Resources
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -80,6 +73,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -96,7 +91,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistLoadErrorDialog
@@ -113,6 +107,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -153,6 +151,8 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.navigation.rememberMainTabDetailVisibilityState
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.BatchDownloadManagerSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistExportSheet
 import moe.ouom.neriplayer.ui.component.playlist.PlaylistSelectionActions
@@ -471,12 +471,16 @@ fun DetailScreen(
         end = PlaylistModernHeroSearchHeight,
         fraction = searchVisibilityEased
     )
+    // 横屏平板两栏时头部固定在侧栏, 顶栏不随列表折叠, 搜索框也留在侧栏
+    val twoPane = rememberPlaylistTwoPaneLayout()
     val playlistChromeCollapseProgress by remember(
         listState,
         density,
-        playlistHeroHeight
+        playlistHeroHeight,
+        twoPane
     ) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 1f
             resolvePlaylistChromeCollapseProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -490,8 +494,9 @@ fun DetailScreen(
     val playlistChromeVisualProgress = resolvePlaylistEasedProgress(
         playlistChromeCollapseProgress
     )
-    val dockedSearchRevealProgress by remember(listState, density) {
+    val dockedSearchRevealProgress by remember(listState, density, twoPane) {
         derivedStateOf {
+            if (twoPane) return@derivedStateOf 0f
             resolvePlaylistDockedSearchRevealProgress(
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemScrollOffsetPx = listState.firstVisibleItemScrollOffset,
@@ -514,7 +519,7 @@ fun DetailScreen(
     )
     val headerSearchAlpha = resolvePlaylistHeaderSearchAlpha(
         searchVisibilityProgress = searchVisibilityProgress,
-        chromeCollapseProgress = playlistChromeCollapseProgress
+        chromeCollapseProgress = if (twoPane) 0f else playlistChromeCollapseProgress
     )
     val headerSearchVisible = shouldComposePlaylistSearchSlot(
         searchVisible = searchVisible,
@@ -590,9 +595,16 @@ fun DetailScreen(
                     // 顶部栏: 普通模式 / 多选模式
                     if (!selectionMode) {
                         TopAppBar(
+                            modifier = Modifier.scrollToTopOnTitleBarTap {
+                                listState.scrollToTopForReselect()
+                            },
                             title = {
                                 Text(
                                     text = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title),
+                                    // 标题已在头部大字展示, 顶栏只在头部滚走后淡入, 避免同屏出现两遍
+                                    modifier = Modifier.graphicsLayer {
+                                        alpha = if (twoPane) 0f else playlistChromeVisualProgress
+                                    },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -756,17 +768,39 @@ fun DetailScreen(
                     )
                     val trackCount = ui.header?.trackCount ?: ui.tracks.size
                     val heroTitle = ui.header?.name ?: stringResource(CoreCommonR.string.playlist_title)
-                    val heroSubtitle = if (ui.header?.isAlbum == true) {
-                        stringResource(
-                            CoreCommonR.string.collection_track_count_format,
-                            trackCount
-                        )
+                    val trackCountText = pluralStringResource(
+                        CoreCommonR.plurals.playlist_meta_song_count,
+                        trackCount,
+                        trackCount
+                    )
+                    val playCountText = formatPlayCount(context, ui.header?.playCount ?: 0)
+                    val playCountDescription = stringResource(
+                        CoreCommonR.string.playlist_meta_play_count,
+                        playCountText
+                    )
+                    val isAlbum = ui.header?.isAlbum == true
+                    val heroSubtitle = if (isAlbum) {
+                        stringResource(CoreCommonR.string.collection_track_count_format, trackCount)
                     } else {
                         stringResource(
                             CoreCommonR.string.playlist_play_count_format,
-                            formatPlayCount(context, ui.header?.playCount ?: 0),
+                            playCountText,
                             trackCount
                         )
+                    }
+                    val heroMeta = remember(isAlbum, trackCountText, playCountText, playCountDescription) {
+                        buildList {
+                            if (!isAlbum) {
+                                add(
+                                    PlaylistHeroMeta(
+                                        text = playCountText,
+                                        icon = Icons.Rounded.Headphones,
+                                        contentDescription = playCountDescription
+                                    )
+                                )
+                            }
+                            add(PlaylistHeroMeta(text = trackCountText, icon = Icons.Rounded.MusicNote))
+                        }
                     }
                     fun playCollection(shuffle: Boolean) {
                         val startIndex = resolvePlaylistPlaybackStartIndex(
@@ -789,20 +823,14 @@ fun DetailScreen(
                             coverUrl = displayCoverUrl,
                             offlineMode = offlineMode
                         ) {
-                            LazyColumn(
-                                state = listState,
-                                contentPadding = PaddingValues(
-                                    bottom = 24.dp + miniPlayerHeight
-                                ),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                item {
-                                    PlaylistModernHeroHeader(
+                            val heroBlock: @Composable () -> Unit = {
+                                PlaylistModernHeroHeader(
                                         displayName = heroTitle,
                                         coverUrl = displayCoverUrl,
                                         subtitle = heroSubtitle,
                                         offlineMode = offlineMode,
                                         height = playlistHeroHeight,
+                                        metaItems = heroMeta,
                                         actionsRevealProgress = searchVisibilityEased,
                                         coverContentDescription = heroTitle,
                                         actions = if (headerSearchVisible) {
@@ -830,12 +858,8 @@ fun DetailScreen(
                                             null
                                         }
                                     )
-                                }
-
-                            item(
-                                key = PLAYLIST_ACTIONS_KEY,
-                                contentType = "playlist_actions"
-                            ) {
+                            }
+                            val actionsBlock: @Composable () -> Unit = {
                                 PlaylistModernActionSheet(
                                     coverUrl = displayCoverUrl,
                                     offlineMode = offlineMode,
@@ -855,9 +879,39 @@ fun DetailScreen(
                                             },
                                             onExportToLocalPlaylist = {
                                                 showExportAllSheet = true
+                                            },
+                                            onEnterSelection = {
+                                                selectedIds = emptySet()
+                                                selectionMode = true
                                             }
                                         )
                                 }
+                            }
+                            PlaylistTwoPaneBody(
+                                twoPane = twoPane,
+                                modifier = Modifier.fillMaxSize(),
+                                pane = {
+                                    heroBlock()
+                                    actionsBlock()
+                                }
+                            ) {
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(
+                                    bottom = 24.dp + miniPlayerHeight
+                                ),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                item {
+                                // 两栏时头部和操作区搬进侧栏, 这里留空位保住索引, 定位和恢复滚动仍按固定偏移计算
+                                if (twoPane) PlaylistTwoPaneListTopGap() else heroBlock()
+                            }
+
+                            item(
+                                key = PLAYLIST_ACTIONS_KEY,
+                                contentType = "playlist_actions"
+                            ) {
+                                if (!twoPane) actionsBlock()
                             }
 
                             val loadError = ui.error
@@ -955,6 +1009,7 @@ fun DetailScreen(
                                 }
                             }
                         }
+                            }
                         }
 
                         if (currentIndex >= 0) {
@@ -1395,82 +1450,42 @@ internal fun copySongInfoAction(
     }
 }
 
+private val PlayingIndicatorBarSpecs = listOf(
+    PlayingBarSpec(from = 0.3f, to = 1f, durationMillis = 300),
+    PlayingBarSpec(from = 0.5f, to = 1f, durationMillis = 350),
+    PlayingBarSpec(from = 0.4f, to = 1f, durationMillis = 400)
+)
+private const val PlayingIndicatorFlatHeight = 0.35f
+private val PlayingIndicatorBarWidth = 3.dp
+private val PlayingIndicatorBarGap = 1.dp
+private val PlayingIndicatorBarMaxHeight = 12.dp
+
 @Composable
 fun PlayingIndicator(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
     animate: Boolean = true
 ) {
-    val transition = rememberInfiniteTransition(label = "playing")
-    val flatHeight = 0.35f
-    val transitionSpec: FiniteAnimationSpec<Float> =
-        if (animate) snap() else tween(durationMillis = 180, easing = FastOutSlowInEasing)
-    val animatedValues = listOf(
-        transition.animateFloat(
-            initialValue = 0.3f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 300),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar1"
-        ),
-        transition.animateFloat(
-            initialValue = 0.5f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 350),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar2"
-        ),
-        transition.animateFloat(
-            initialValue = 0.4f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 400),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar3"
-        )
+    val bars = rememberPlayingBarsState(PlayingIndicatorBarSpecs, PlayingIndicatorFlatHeight, animate)
+    // 在绘制阶段读取高度并按布局同样的整像素取整, 每帧只重绘不重组
+    Spacer(
+        modifier
+            .height(PlayingIndicatorBarMaxHeight)
+            .width(PlayingIndicatorBarWidth * 3 + PlayingIndicatorBarGap * 2)
+            // 独立图层: 每帧只重录这三根条, 不连带整行列表文字一起重录
+            .graphicsLayer()
+            .drawBehind {
+                val barWidthPx = PlayingIndicatorBarWidth.roundToPx().toFloat()
+                val stepPx = barWidthPx + PlayingIndicatorBarGap.roundToPx()
+                for (index in 0 until bars.size) {
+                    val barHeightPx = (PlayingIndicatorBarMaxHeight * bars[index]).roundToPx().toFloat()
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(index * stepPx, size.height - barHeightPx),
+                        size = Size(barWidthPx, barHeightPx),
+                        cornerRadius = CornerRadius(minOf(barWidthPx, barHeightPx) / 2f)
+                    )
+                }
+            }
     )
-    val barHeights = listOf(
-        animateFloatAsState(
-            targetValue = playingBarHoldTarget(animate, animatedValues[0], flatHeight),
-            animationSpec = transitionSpec,
-            label = "bar1Hold"
-        ).value,
-        animateFloatAsState(
-            targetValue = playingBarHoldTarget(animate, animatedValues[1], flatHeight),
-            animationSpec = transitionSpec,
-            label = "bar2Hold"
-        ).value,
-        animateFloatAsState(
-            targetValue = playingBarHoldTarget(animate, animatedValues[2], flatHeight),
-            animationSpec = transitionSpec,
-            label = "bar3Hold"
-        ).value
-    )
-
-    val barWidth = 3.dp
-    val barMaxHeight = 12.dp
-
-    Row(
-        modifier = modifier.height(barMaxHeight),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(1.dp)
-    ) {
-        barHeights.forEach { barHeight ->
-            Box(
-                Modifier
-                    .width(barWidth)
-                    .height(barMaxHeight * barHeight)
-                    .clip(RoundedCornerShape(50))
-                    .background(color)
-            )
-        }
-    }
 }
-
-private fun playingBarHoldTarget(animate: Boolean, animated: State<Float>, flatHeight: Float): Float =
-    if (animate) animated.value else flatHeight

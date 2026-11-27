@@ -15,6 +15,14 @@ import org.junit.rules.TemporaryFolder
 class PlaybackStatsJournalCodecTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun oldJournalRetainsItsDayTotalsWithoutAssumingALocalHour() {
+        val original = snapshot().copy(playedZone = null)
+        val frame = temporary.newFile().apply {
+            writeBytes(PlaybackStatsJournalCodec.frame(PlaybackStatsJournalCodec.payload(original)))
+        }
+        assertEquals(original, PlaybackStatsJournalCodec.read(frame))
+    }
+
     @Test
     fun `explicit wire preserves signed timestamp extremes nullable identity and empty metadata`() {
         val original = snapshot().copy(playedAt = Long.MIN_VALUE, observedClearedAt = Long.MAX_VALUE,

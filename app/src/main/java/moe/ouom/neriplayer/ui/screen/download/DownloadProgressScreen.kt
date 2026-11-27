@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +87,8 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.downloadStageLabelResource
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassRole
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassSurface
@@ -606,7 +609,7 @@ fun DownloadProgressScreen(
             title = { Text(stringResource(CoreCommonR.string.download_clear_confirm_title)) },
             text = { Text(stringResource(CoreCommonR.string.download_clear_confirm_message)) },
             confirmButton = {
-                TextButton(
+                DialogActionTextButton(
                     onClick = {
                         context.performHapticFeedback()
                         clearTriggeredFromScreen = true
@@ -698,6 +701,7 @@ fun DownloadProgressScreen(
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(CoreCommonR.string.action_back))
                 }
             },
+            modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = Color.Transparent,
                 scrolledContainerColor = Color.Transparent

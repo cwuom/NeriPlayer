@@ -25,6 +25,8 @@ package moe.ouom.neriplayer.ui.screen.host
 
 import androidx.compose.animation.AnimatedContent
 import moe.ouom.neriplayer.ui.navigation.HostSceneRenderer
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectEffect
+import moe.ouom.neriplayer.ui.navigation.MainTabReselectRequests
 import moe.ouom.neriplayer.ui.navigation.PassThroughHostSceneRenderer
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -151,6 +153,8 @@ internal fun resolveExploreSelectedDetailBackTarget(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ExploreHostScreen(
+    onOpenYouTubePlaylist: (YouTubeMusicPlaylist) -> Unit,
+    onOpenYouTubeCreator: (YouTubeMusicCreatorSummary) -> Unit,
     onBiliUploaderClick: (BiliUploaderSummary) -> Unit,
     offlineMode: Boolean = false,
     onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
@@ -162,6 +166,7 @@ internal fun ExploreHostScreen(
     onSongPlayNext: (SongItem) -> Unit = {},
     onSongAddToQueueEnd: (SongItem) -> Unit = {},
     onPlayParts: (VideoBasicInfo, Int, String) -> Unit = { _, _, _ -> },
+    reselectRequests: MainTabReselectRequests? = null,
     coherentFeedbackEnabled: Boolean = false,
     renderScene: HostSceneRenderer = PassThroughHostSceneRenderer
 ) {
@@ -217,6 +222,17 @@ internal fun ExploreHostScreen(
         if (offlineMode) {
             cancelPendingNeteaseCoverWarmup()
             selected = null
+        }
+    }
+
+    // 根页面才知道当前展示的是哪条列表（歌单网格 / YouTube 网格 / 搜索结果），回顶交给它处理
+    val exploreRootReselectRequests = remember { MainTabReselectRequests() }
+    MainTabReselectEffect(reselectRequests) {
+        cancelPendingNeteaseCoverWarmup()
+        if (selected != null) {
+            selected = null
+        } else {
+            exploreRootReselectRequests.dispatch()
         }
     }
 
@@ -336,6 +352,7 @@ internal fun ExploreHostScreen(
                             ExploreScreen(
                                 gridState = gridState,
                                 topAppBarState = topAppBarState,
+                                reselectRequests = exploreRootReselectRequests,
                                 searchQuery = searchQuery,
                                 onSearchQueryChange = { searchQuery = it },
                                 searchListState = searchListState,
@@ -522,6 +539,8 @@ internal fun ExploreHostScreen(
                                 YouTubeMusicCreatorItemsScreen(
                                     section = current.section,
                                     creatorName = current.creator.title,
+                                    onPlaylistClick = onOpenYouTubePlaylist,
+                                    onCreatorClick = onOpenYouTubeCreator,
                                     onBack = ::closeSelectedDetail,
                                     onSongClick = onSongClick,
                                     offlineMode = offlineMode

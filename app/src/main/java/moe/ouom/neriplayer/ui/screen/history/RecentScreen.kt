@@ -24,20 +24,14 @@ package moe.ouom.neriplayer.ui.screen.history
  */
 
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
+import moe.ouom.neriplayer.ui.animation.PlayingBarSpec
+import moe.ouom.neriplayer.ui.animation.rememberPlayingBarsState
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
@@ -55,6 +49,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -93,6 +88,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -104,6 +103,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -120,6 +120,8 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.component.download.SongDownloadSubtitle
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
@@ -194,6 +196,7 @@ fun RecentScreen(
 
     val displayed = rememberRecentSearchResults(recentSongs, query, context, showSearch)
     val displayedSongs = displayed.songs
+    val listState = rememberLazyListState()
 
     // 多选
     var selectionMode by remember { mutableStateOf(false) }
@@ -256,7 +259,8 @@ fun RecentScreen(
                             }
                         },
                         onSongClick = onSongClick,
-                        onRequestClear = { showClearConfirm = true }
+                        onRequestClear = { showClearConfirm = true },
+                        modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() }
                     )
                 } else {
                     RecentSelectionTopBar(
@@ -306,6 +310,7 @@ fun RecentScreen(
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
+                    state = listState,
                     contentPadding = PaddingValues(bottom = 16.dp + mini)
                 ) {
                     itemsIndexed(
@@ -500,10 +505,12 @@ internal fun RecentBrowseTopBar(
     onBack: () -> Unit,
     onToggleSearch: () -> Unit,
     onSongClick: (List<SongItem>, Int) -> Unit,
-    onRequestClear: () -> Unit
+    onRequestClear: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     TopAppBar(
         title = { Text(stringResource(CoreCommonR.string.recent_title)) },
+        modifier = modifier,
         navigationIcon = {
             HapticIconButton(onClick = onBack) {
                 Icon(
@@ -826,77 +833,42 @@ private fun RecentRowText(
 }
 
 
+private val RecentPlayingBarSpecs = listOf(
+    PlayingBarSpec(from = 6f, to = 18f, durationMillis = 520),
+    PlayingBarSpec(from = 10f, to = 22f, durationMillis = 680),
+    PlayingBarSpec(from = 8f, to = 16f, durationMillis = 600, delayMillis = 90)
+)
+private const val RecentPlayingFlatHeight = 8f
+private val RecentPlayingBarWidth = 3.dp
+private val RecentPlayingBarGap = 3.dp
+private val RecentPlayingMaxBarHeight = 22.dp
+
 /** 播放中指示 */
 @Composable
 private fun PlayingIndicator(color: Color, animate: Boolean) {
-    // 三条不同节奏/相位的无限动画
-    val t = rememberInfiniteTransition(label = "playing")
-    val flatHeight = 8f
-    val transitionSpec: FiniteAnimationSpec<Float> =
-        if (animate) snap() else tween(durationMillis = 180, easing = FastOutSlowInEasing)
-    val animatedH1 by t.animateFloat(
-        initialValue = 6f, targetValue = 18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 520, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bar1"
+    val bars = rememberPlayingBarsState(RecentPlayingBarSpecs, RecentPlayingFlatHeight, animate)
+    val barShape = neriRoundedShape(1.dp)
+    // 固定为最高条的高度并在绘制阶段居中, 外层 Box 居中对齐, 条的位置与按帧改高度的 Row 一致
+    Spacer(
+        Modifier
+            .width(24.dp)
+            .height(RecentPlayingMaxBarHeight)
+            // 独立图层: 每帧只重录这三根条, 不连带整行列表文字一起重录
+            .graphicsLayer()
+            .drawBehind {
+                val barWidthPx = RecentPlayingBarWidth.roundToPx().toFloat()
+                val stepPx = barWidthPx + RecentPlayingBarGap.roundToPx()
+                for (index in 0 until bars.size) {
+                    val barHeightPx = bars[index].dp.roundToPx().toFloat()
+                    val barSize = Size(barWidthPx, barHeightPx)
+                    val radius = barShape.topStart.toPx(barSize, this).coerceAtMost(barSize.minDimension / 2f)
+                    drawRoundRect(
+                        color = color,
+                        topLeft = Offset(index * stepPx, ((size.height - barHeightPx) / 2f).roundToInt().toFloat()),
+                        size = barSize,
+                        cornerRadius = CornerRadius(radius)
+                    )
+                }
+            }
     )
-    val animatedH2 by t.animateFloat(
-        initialValue = 10f, targetValue = 22f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 680, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bar2"
-    )
-    val animatedH3 by t.animateFloat(
-        initialValue = 8f, targetValue = 16f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 600, easing = FastOutSlowInEasing, delayMillis = 90),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bar3"
-    )
-    val h1 by animateFloatAsState(
-        targetValue = if (animate) animatedH1 else flatHeight,
-        animationSpec = transitionSpec,
-        label = "bar1Hold"
-    )
-    val h2 by animateFloatAsState(
-        targetValue = if (animate) animatedH2 else flatHeight,
-        animationSpec = transitionSpec,
-        label = "bar2Hold"
-    )
-    val h3 by animateFloatAsState(
-        targetValue = if (animate) animatedH3 else flatHeight,
-        animationSpec = transitionSpec,
-        label = "bar3Hold"
-    )
-
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.width(24.dp)) {
-        Box(
-            Modifier
-                .width(3.dp)
-                .height(h1.dp)
-                .clip(neriRoundedShape(1.dp))
-                .background(color)
-        )
-        Spacer(Modifier.width(3.dp))
-        Box(
-            Modifier
-                .width(3.dp)
-                .height(h2.dp)
-                .clip(neriRoundedShape(1.dp))
-                .background(color)
-        )
-        Spacer(Modifier.width(3.dp))
-        Box(
-            Modifier
-                .width(3.dp)
-                .height(h3.dp)
-                .clip(neriRoundedShape(1.dp))
-                .background(color)
-        )
-    }
 }

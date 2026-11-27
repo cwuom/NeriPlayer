@@ -1,5 +1,10 @@
 package moe.ouom.neriplayer.ui.onboarding
 
+import org.junit.Assert.assertTrue
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.Box
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -34,6 +39,7 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.data.settings.lyrics.MAX_LYRIC_FONT_SCALE
 import moe.ouom.neriplayer.data.settings.lyrics.MIN_LYRIC_FONT_SCALE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -254,20 +260,29 @@ class StartupOnboardingExtrasComposeTest {
     }
 
     @Test
+    @Config(sdk = [35, 36], qualifiers = "w1280dp-h800dp-land-mdpi")
     fun `tablet landscape step keeps only options that apply beside the lyrics and points to portrait`() {
         val changes = mutableListOf<PlaybackControlLayoutPreferences>()
         val scales = mutableListOf<Float>()
         var previewRequests = 0
         setStep {
-            StartupNowPlayingLandscapeContent(
-                preferences = PlaybackControlLayoutPreferences(),
-                lyricFontScale = 1f,
-                onLyricFontScaleChange = { scales += it },
-                onPreferencesChange = { changes += it },
-                onOpenPreview = { previewRequests += 1 }
-            )
+            StartupOnboardingLayout(header = {}, actions = {}) {
+                StartupNowPlayingLandscapeContent(
+                    preferences = PlaybackControlLayoutPreferences(),
+                    lyricFontScale = 1f,
+                    onLyricFontScaleChange = { scales += it },
+                    onPreferencesChange = { changes += it },
+                    onOpenPreview = { previewRequests += 1 }
+                )
+            }
         }
 
+        val controls = composeRule.onNodeWithText(string(AppR.string.onboarding_controls_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        val lyrics = composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_lyrics_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(controls.top, lyrics.top, 1f)
+        assertTrue(controls.right < lyrics.left)
         composeRule.onNodeWithTag(StartupLandscapePortraitHintTag).assertExists()
         composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_portrait_hint_title)).assertExists()
         // 横屏播放页里不生效的选项不能出现
@@ -291,6 +306,30 @@ class StartupOnboardingExtrasComposeTest {
             changes
         )
         assertEquals(listOf(1.2f), scales)
+    }
+
+    @Test
+    fun `wide two pane landscape step lays options in two columns without intrinsic measurement`() {
+        setStep {
+            CompositionLocalProvider(LocalStartupOnboardingTwoPane provides true) {
+                Box(Modifier.requiredWidth(900.dp)) {
+                    StartupNowPlayingLandscapeContent(
+                        preferences = PlaybackControlLayoutPreferences(),
+                        lyricFontScale = 1f,
+                        onLyricFontScaleChange = {},
+                        onPreferencesChange = {},
+                        onOpenPreview = {}
+                    )
+                }
+            }
+        }
+
+        // 选项卡里带 BoxWithConstraints, 双列 FlowRow 一旦按权重测量就会因固有尺寸查询崩溃
+        val size = composeRule.onNodeWithText(string(AppR.string.onboarding_controls_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        val lyrics = composeRule.onNodeWithText(string(AppR.string.onboarding_landscape_lyrics_size_title))
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue("两个选项应并排成两列", lyrics.left > size.right)
     }
 
     @Test

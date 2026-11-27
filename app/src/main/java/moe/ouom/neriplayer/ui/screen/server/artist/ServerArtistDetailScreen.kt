@@ -53,6 +53,8 @@ import moe.ouom.neriplayer.platform.subsonic.repository.ServerAlbum
 import moe.ouom.neriplayer.platform.subsonic.repository.ServerArtist
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailAdaptiveLayout
 import moe.ouom.neriplayer.ui.screen.artist.CreatorDetailProfileCard
 import moe.ouom.neriplayer.ui.screen.playlist.PlaylistModernDockedSearchField
@@ -123,6 +125,11 @@ fun ServerArtistDetailScreen(
                     HapticIconButton(onClick = vm::refresh, enabled = !loading) {
                         Icon(Icons.Outlined.Refresh, stringResource(CoreCommonR.string.server_refresh))
                     }
+                },
+                modifier = Modifier.scrollToTopOnTitleBarTap {
+                    // 用户主动回顶后，不能再让待恢复的旧位置在数据到达时把列表拉回去
+                    scrollState.cancelPendingRestore()
+                    scrollState.listState.scrollToTopForReselect()
                 },
                 windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)

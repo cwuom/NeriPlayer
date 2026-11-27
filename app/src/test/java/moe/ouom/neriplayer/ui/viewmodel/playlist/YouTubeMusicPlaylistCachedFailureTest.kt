@@ -22,7 +22,9 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playlist.LocalPlaylist
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistDetail
 import moe.ouom.neriplayer.data.model.youtube.cache.CachedYouTubeMusicPlaylistTrack
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.platform.youtube.playlist.YouTubeMusicPlaylistCacheRepository
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicLibraryGateway
 import moe.ouom.neriplayer.ui.viewmodel.youtube.YouTubeMusicPlaylistDetail
@@ -31,6 +33,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -54,13 +57,82 @@ class YouTubeMusicPlaylistCachedFailureTest {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         runBlocking { `when`(localRepo.awaitInitialized()).thenReturn(true) }
         `when`(localRepo.playlists).thenReturn(MutableStateFlow(emptyList<LocalPlaylist>()))
-        `when`(cacheRepo.read("VL41")).thenReturn(cached(savedAtMs = 1L))
+        `when`(cacheRepo.read("VL41", includeHiddenTracks = true)).thenReturn(cached(savedAtMs = 1L))
     }
 
     @After
     fun closeOwnedResources() {
         viewModels.forEach { it.viewModelScope.cancel() }
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `filtered playlist keeps complete favorite snapshot and prefetches only visible tracks`() = runBlocking {
+        YouTubeContentSettings.initialize(application)
+        val original = YouTubeContentSettings.preferences.value
+        val hidden = remoteDetail().tracks.single().copy(contentLabel = YouTubeContentLabel.EXPLICIT)
+        val visible = hidden.copy(videoId = "clean", name = "Clean song", contentLabel = null)
+        val preview = remoteDetail().copy(trackCount = 2, tracks = listOf(hidden, visible))
+        val vm = viewModel(FakeGateway(previewResult = CompletableDeferred(preview)))
+        try {
+            YouTubeContentSettings.publish(original.copy(hideExplicit = true))
+            vm.start(playlist())
+            awaitJobs(vm)
+            val filtered = vm.uiState.value
+            assertEquals(listOf("Clean song"), filtered.tracks.map { it.name })
+            assertEquals(1, filtered.playlist?.trackCount)
+            assertEquals(filtered.tracks, prefetches.single())
+            assertEquals(listOf("Remote song", "Clean song"), filtered.favoriteSnapshot?.songs?.map { it.name })
+            assertEquals(2, filtered.favoriteSnapshot?.trackCount)
+
+            YouTubeContentSettings.publish(original.copy(hideExplicit = false))
+            vm.start(playlist(), forceRefresh = true)
+            awaitJobs(vm)
+            assertEquals(filtered.favoriteSnapshot?.songs, vm.uiState.value.tracks)
+        } finally {
+            YouTubeContentSettings.publish(original)
+        }
+    }
+
+    @Test
+    fun `filtering every track replaces stale tracks with a successful empty playlist`() = runBlocking {
+        YouTubeContentSettings.initialize(application)
+        val original = YouTubeContentSettings.preferences.value
+        val hidden = remoteDetail().tracks.single().copy(contentLabel = YouTubeContentLabel.MUSIC_VIDEO)
+        val gateway = FakeGateway(previewResult = CompletableDeferred(remoteDetail().copy(tracks = listOf(hidden))))
+        val vm = viewModel(gateway)
+        try {
+            YouTubeContentSettings.publish(original.copy(hideMusicVideos = true))
+            vm.start(playlist())
+            awaitJobs(vm)
+            val state = vm.uiState.value
+            assertTrue(state.allTracksLoaded)
+            assertTrue(state.filteredEmpty)
+            assertTrue(state.tracks.isEmpty())
+            assertEquals(0, state.playlist?.trackCount)
+            assertEquals(listOf("Remote song"), state.favoriteSnapshot?.songs?.map { it.name })
+            assertNull(state.error)
+            assertEquals(0, gateway.detailRequests)
+            assertEquals(0, prefetches.size)
+        } finally {
+            YouTubeContentSettings.publish(original)
+        }
+    }
+
+    @Test
+    fun `offline filtered only cache cannot replace favorites and refreshes online`() = runBlocking {
+        val filteredCache = cached(System.currentTimeMillis()).copy(catalogKey = "en/US/true/false")
+        `when`(cacheRepo.read("VL41", includeHiddenTracks = true)).thenReturn(filteredCache)
+        val gateway = FakeGateway(previewResult = CompletableDeferred(remoteDetail()))
+        val vm = viewModel(gateway)
+        vm.start(playlist(), offlineMode = true)
+        awaitJobs(vm)
+        assertEquals(listOf("Cached song"), vm.uiState.value.tracks.map { it.name })
+        assertNull(vm.uiState.value.favoriteSnapshot)
+        vm.start(playlist(), offlineMode = false)
+        awaitJobs(vm)
+        assertEquals(1, gateway.previewRequests)
+        assertEquals(listOf("Remote song"), vm.uiState.value.favoriteSnapshot?.songs?.map { it.name })
     }
 
     @Test
@@ -94,7 +166,7 @@ class YouTubeMusicPlaylistCachedFailureTest {
 
     @Test
     fun `fresh cache remains a successful local read without a gateway request`() = runBlocking {
-        `when`(cacheRepo.read("VL41")).thenReturn(cached(System.currentTimeMillis()))
+        `when`(cacheRepo.read("VL41", includeHiddenTracks = true)).thenReturn(cached(System.currentTimeMillis()))
         val gateway = FakeGateway(previewFailure = IOException("should not request"))
         val vm = viewModel(gateway)
 
@@ -147,7 +219,7 @@ class YouTubeMusicPlaylistCachedFailureTest {
 
     @Test
     fun `offline playlist without cache reports a local error without gateway loading`() = runBlocking {
-        `when`(cacheRepo.read("VL41")).thenReturn(null)
+        `when`(cacheRepo.read("VL41", includeHiddenTracks = true)).thenReturn(null)
         val gateway = FakeGateway()
         val vm = viewModel(gateway)
 

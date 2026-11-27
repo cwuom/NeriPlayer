@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomePlaylistSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.NeteaseHomeSongSource
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.resolveVisibleHomeSubSectionIds
 
 /**
@@ -69,6 +70,7 @@ internal class HomeMajorSectionEnv(
     val onSongClick: (List<SongItem>, Int) -> Unit = { _, _ -> },
     val onItemClick: (PlaylistSummary) -> Unit = {},
     val onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
+    val onYouTubeCreatorClick: (YouTubeMusicCreatorSummary) -> Unit = {},
     val favoriteSongLookup: FavoriteSongLookup = FavoriteSongLookup(emptyList()),
     val downloadPresenceVersion: Int = 0,
     val favoriteKeys: Set<String> = emptySet(),
@@ -77,14 +79,6 @@ internal class HomeMajorSectionEnv(
     val offlineMode: Boolean = false,
     val radarPlaylistListState: LazyListState,
     val loadingText: String,
-    val guessYouLikeTitle: String = "",
-    val dailyDiscoverTitle: String = "",
-    val moreRecommendationsTitle: String = "",
-    val ytmSections: ClassifiedYouTubeMusicShelves = ClassifiedYouTubeMusicShelves(
-        guessYouLike = null,
-        dailyDiscover = null,
-        remaining = emptyList()
-    ),
     val registerKey: (String) -> String,
     val onBiliMusicRankMore: () -> Unit = {},
     val onBiliMusicHotMore: () -> Unit = {},

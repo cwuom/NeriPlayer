@@ -121,6 +121,116 @@ class YouTubeMusicClientSessionTest {
     }
 
     @Test
+    fun `explore opens public recommendations for guests and preserves the signed in library`() = runTest {
+        val home = browseTab(
+            """{"musicCarouselShelfRenderer":{"header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"simpleText":"Mixes"}}},"contents":[
+                {"musicTwoRowItemRenderer":{"title":{"simpleText":"Discovery"},"navigationEndpoint":{"browseEndpoint":{"browseId":"VLPLguest"}}}}
+            ]}}"""
+        )
+        val guest = libraryHttp(loggedInBootstrap = { false }, home = home)
+        val signedIn = libraryHttp(loggedInBootstrap = { true }, home = home)
+        val emptyLibrary = libraryHttp(loggedInBootstrap = { true }, library = libraryPage(), home = home)
+
+        assertEquals("VLPLguest", YouTubeMusicClient(FakeYouTubeAuth(GUEST_AUTH), guest.client).getExplorePlaylists().single().browseId)
+        assertEquals(listOf("FEmusic_home"), guest.browseIds())
+        assertEquals("VLPLmix", YouTubeMusicClient(FakeYouTubeAuth(LOGIN_AUTH), signedIn.client).getExplorePlaylists().single().browseId)
+        assertEquals(listOf("FEmusic_liked_playlists"), signedIn.browseIds())
+        assertEquals("VLPLguest", YouTubeMusicClient(FakeYouTubeAuth(LOGIN_AUTH), emptyLibrary.client).getExplorePlaylists().single().browseId)
+    }
+
+    @Test
+    fun `guest home preserves the next page locale and stops on a repeated token`() = runTest {
+        val continuation = """{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"page2"}}}}"""
+        val shelf = """{"musicShelfRenderer":{"title":{"simpleText":"Songs"},"contents":[${songRow("song-2", "Second")}]}}"""
+        val http = YouTubeMusicTestHttp { call ->
+            when {
+                call.isBootstrap -> bootstrapPage(loggedIn = false)
+                call.payload?.optString("browseId") == "FEmusic_home" -> json(browseTab(
+                    """{"musicShelfRenderer":{"title":{"simpleText":"Songs"},"contents":[${songRow("song-1", "First")}]}}""",
+                    continuation
+                ))
+                call.payload?.optString("continuation") == "page2" -> json(
+                    """{"onResponseReceivedActions":[{"appendContinuationItemsAction":{"continuationItems":[$shelf,$continuation]}}]}"""
+                )
+                else -> error("unexpected browse request")
+            }
+        }
+        val client = YouTubeMusicClient(FakeYouTubeAuth(GUEST_AUTH), http.client)
+        val first = client.getHomeFeedPage()
+        assertEquals("song-1", first.shelves.single().items.single().videoId)
+        assertEquals("page2", first.next?.token)
+        assertEquals(1, http.innertubeCalls("browse").size)
+        Locale.setDefault(Locale.FRANCE)
+        val second = client.getHomeFeedPage(requireNotNull(first.next))
+        assertEquals("song-2", second.shelves.single().items.single().videoId)
+        assertNull(second.next)
+        val contexts = http.innertubeCalls("browse").map { it.payload!!.getJSONObject("context").getJSONObject("client") }
+        assertEquals(contexts.first().getString("gl"), contexts.last().getString("gl"))
+        assertNull(http.innertubeCalls("browse").last().request.header("Authorization"))
+    }
+
+    @Test
+    fun `home publishes each browse page and then fills each same named shelf independently`() = runTest {
+        fun continuation(token: String) =
+            """{"continuationItemRenderer":{"continuationEndpoint":{"continuationCommand":{"token":"$token"}}}}"""
+        fun shelf(contents: String) =
+            """{"musicShelfRenderer":{"title":{"simpleText":"Mixes"},"contents":[$contents]}}"""
+        fun append(items: String) =
+            json("""{"onResponseReceivedActions":[{"appendContinuationItemsAction":{"continuationItems":[$items]}}]}""")
+
+        val shared = continuation("shared")
+        val gridNext = continuation("grid-next")
+        val sharedResponses = ArrayDeque(listOf(
+            append(shelf(songRow("c", "Third shelf")) + "," + shared),
+            json("""{"continuationContents":{"gridContinuation":{"items":[${songRow("a", "First shelf")},$gridNext]}}}"""),
+            json("""{"continuationContents":{"musicCarouselShelfContinuation":{"contents":[${songRow("b2", "Second followup")}]}}}""")
+        ))
+        val http = YouTubeMusicTestHttp { call ->
+            when {
+                call.isBootstrap -> bootstrapPage()
+                call.payload?.optString("browseId") == "FEmusic_home" -> json(browseTab(
+                    shelf(shared), shelf(songRow("b", "Second shelf") + "," + shared), shared
+                ))
+                call.payload?.optString("continuation") == "shared" -> sharedResponses.removeFirst()
+                call.payload?.optString("continuation") == "grid-next" ->
+                    append(songRow("a2", "First followup") + "," + gridNext)
+                else -> error("unexpected browse request")
+            }
+        }
+        val client = YouTubeMusicClient(FakeYouTubeAuth(GUEST_AUTH), http.client)
+
+        val firstPage = client.getHomeFeedPage()
+        assertEquals(1, http.innertubeCalls("browse").size)
+        val (first, second) = firstPage.shelves
+        assertTrue(first.items.isEmpty())
+        assertEquals("b", second.items.single().videoId)
+        assertEquals(first.title, second.title)
+        val firstKey = requireNotNull(first.continuationKey)
+        val secondKey = requireNotNull(second.continuationKey)
+        assertFalse(firstKey == secondKey)
+        val top = requireNotNull(firstPage.next)
+        assertEquals(null to "shared", top.requestIdentity)
+
+        val topPage = client.getHomeFeedPage(top)
+        assertEquals("c", topPage.shelves.single().items.single().videoId)
+        val firstShelf = requireNotNull(topPage.next)
+        assertEquals(firstKey to "shared", firstShelf.requestIdentity)
+        val gridPage = client.getHomeFeedPage(firstShelf)
+        assertEquals(firstKey, gridPage.shelves.single().continuationKey)
+        assertEquals("a", gridPage.shelves.single().items.single().videoId)
+        val actionPage = client.getHomeFeedPage(requireNotNull(gridPage.next))
+        assertEquals(firstKey, actionPage.shelves.single().continuationKey)
+        assertEquals("a2", actionPage.shelves.single().items.single().videoId)
+        val secondShelf = requireNotNull(actionPage.next)
+        assertEquals(secondKey to "shared", secondShelf.requestIdentity)
+        val end = client.getHomeFeedPage(secondShelf)
+        assertEquals(secondKey, end.shelves.single().continuationKey)
+        assertEquals("b2", end.shelves.single().items.single().videoId)
+        assertNull(end.next)
+        assertEquals(5, http.innertubeCalls("browse").size)
+    }
+
+    @Test
     fun `cookie context without a login forces one bootstrap refresh`() = runTest {
         val http = libraryHttp(loggedInBootstrap = { false })
         val client = YouTubeMusicClient(FakeYouTubeAuth(PREFERENCE_ONLY_AUTH), http.client)

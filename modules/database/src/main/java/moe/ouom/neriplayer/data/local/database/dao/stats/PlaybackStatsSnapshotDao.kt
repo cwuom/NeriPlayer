@@ -18,6 +18,7 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsPending
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsEventReceiptEntity
 
 private const val PLAYBACK_STAT_PAYLOAD_COLUMNS = "id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url"
+private const val PLAYBACK_BUCKET_PAYLOAD_COLUMNS = "$PLAYBACK_STAT_PAYLOAD_COLUMNS, recorded_local_date, hourly_totals, local_hourly_totals"
 
 @Dao
 interface PlaybackStatsSnapshotDao {
@@ -80,10 +81,10 @@ interface PlaybackStatsSnapshotDao {
     @Query("INSERT INTO playback_stat (identity_key, " + PLAYBACK_STAT_PAYLOAD_COLUMNS + ") SELECT identity_key, " + PLAYBACK_STAT_PAYLOAD_COLUMNS + " FROM playback_stat_snapshot_track s WHERE snapshot_id = :id AND NOT EXISTS (SELECT 1 FROM playback_stat p WHERE p.identity_key = s.identity_key)")
     suspend fun insertDiffTracks(id: String)
 
-    @Query("UPDATE playback_stat_bucket SET (" + PLAYBACK_STAT_PAYLOAD_COLUMNS + ") = (SELECT " + PLAYBACK_STAT_PAYLOAD_COLUMNS + " FROM playback_stat_snapshot_bucket s WHERE s.snapshot_id = :id AND s.day_start_at = playback_stat_bucket.day_start_at AND s.identity_key = playback_stat_bucket.identity_key) WHERE (day_start_at, identity_key) IN (SELECT day_start_at, identity_key FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id)")
+    @Query("UPDATE playback_stat_bucket SET (" + PLAYBACK_BUCKET_PAYLOAD_COLUMNS + ") = (SELECT " + PLAYBACK_BUCKET_PAYLOAD_COLUMNS + " FROM playback_stat_snapshot_bucket s WHERE s.snapshot_id = :id AND s.day_start_at = playback_stat_bucket.day_start_at AND s.identity_key = playback_stat_bucket.identity_key) WHERE (day_start_at, identity_key) IN (SELECT day_start_at, identity_key FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id)")
     suspend fun updateDiffBuckets(id: String)
 
-    @Query("INSERT INTO playback_stat_bucket (day_start_at, identity_key, " + PLAYBACK_STAT_PAYLOAD_COLUMNS + ") SELECT day_start_at, identity_key, " + PLAYBACK_STAT_PAYLOAD_COLUMNS + " FROM playback_stat_snapshot_bucket s WHERE snapshot_id = :id AND NOT EXISTS (SELECT 1 FROM playback_stat_bucket p WHERE p.day_start_at = s.day_start_at AND p.identity_key = s.identity_key)")
+    @Query("INSERT INTO playback_stat_bucket (day_start_at, identity_key, " + PLAYBACK_BUCKET_PAYLOAD_COLUMNS + ") SELECT day_start_at, identity_key, " + PLAYBACK_BUCKET_PAYLOAD_COLUMNS + " FROM playback_stat_snapshot_bucket s WHERE snapshot_id = :id AND NOT EXISTS (SELECT 1 FROM playback_stat_bucket p WHERE p.day_start_at = s.day_start_at AND p.identity_key = s.identity_key)")
     suspend fun insertDiffBuckets(id: String)
 
     @Query("SELECT id FROM playback_stats_snapshot WHERE owner_process_id != :owner LIMIT :limit")
@@ -101,10 +102,12 @@ interface PlaybackStatsSnapshotDao {
     @Query("DELETE FROM playback_stat_snapshot_track WHERE snapshot_id = :id")
     suspend fun deleteTrack(id: String)
 
-    @Query("INSERT INTO playback_stat_snapshot_bucket (snapshot_id, day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url) SELECT :id, day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url FROM playback_stat_bucket")
+    @Query("INSERT INTO playback_stat_snapshot_bucket (snapshot_id, day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS) " +
+        "SELECT :id, day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS FROM playback_stat_bucket")
     suspend fun freezeBucket(id: String)
 
-    @Query("INSERT INTO playback_stat_bucket (day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url) SELECT day_start_at, identity_key, id, name, artist, album, album_id, cover_url, duration_ms, total_listen_ms, play_count, last_played_at, first_played_at, media_uri, local_file_path, local_file_name, custom_name, custom_artist, custom_cover_url FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id")
+    @Query("INSERT INTO playback_stat_bucket (day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS) " +
+        "SELECT day_start_at, identity_key, $PLAYBACK_BUCKET_PAYLOAD_COLUMNS FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id")
     suspend fun publishBucket(id: String)
 
     @Query("DELETE FROM playback_stat_snapshot_bucket WHERE snapshot_id = :id")
@@ -125,10 +128,10 @@ interface PlaybackStatsSnapshotDao {
         "AND parent.identity_key = playback_stat_snapshot_counter.identity_key)")
     suspend fun deleteLegacyOrphanCounters(id: String)
 
-    @Query("INSERT INTO playback_stat_snapshot_daily_counter (snapshot_id, day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at) SELECT :id, day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at FROM playback_stat_daily_counter_shard")
+    @Query("INSERT INTO playback_stat_snapshot_daily_counter (snapshot_id, day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at, recorded_local_date) SELECT :id, day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at, recorded_local_date FROM playback_stat_daily_counter_shard")
     suspend fun freezeDailyCounter(id: String)
 
-    @Query("INSERT INTO playback_stat_daily_counter_shard (day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at) SELECT day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at FROM playback_stat_snapshot_daily_counter WHERE snapshot_id = :id")
+    @Query("INSERT INTO playback_stat_daily_counter_shard (day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at, recorded_local_date) SELECT day_start_at, identity_key, device_id, epoch_started_at, total_listen_ms, play_count, first_played_at, last_played_at, recorded_local_date FROM playback_stat_snapshot_daily_counter WHERE snapshot_id = :id")
     suspend fun publishDailyCounter(id: String)
 
     @Query("DELETE FROM playback_stat_snapshot_daily_counter WHERE snapshot_id = :id")

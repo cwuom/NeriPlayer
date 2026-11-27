@@ -51,6 +51,8 @@ class YouTubeMusicPlaylistDetailMappingTest {
             filled
         )
         assertEquals(30, detail(trackCount = 30).toYouTubeMusicPlaylist(fallback).trackCount)
+        val filtered = detail(trackCount = 30, tracks = emptyList()).copy(filteredEmpty = true)
+        assertEquals(0, filtered.toYouTubeMusicPlaylist(fallback).trackCount)
     }
 
     @Test
@@ -75,6 +77,8 @@ class YouTubeMusicPlaylistDetailMappingTest {
         assertEquals("Fallback subtitle", withoutCreator.subtitle)
         assertEquals(1, withoutCreator.trackCount)
         assertEquals("Cached Creator", withCreator.creatorName)
+        val filtered = cached.copy(trackCount = 9, tracks = emptyList(), filteredEmpty = true)
+        assertEquals(0, filtered.toYouTubeMusicPlaylist(fallback).trackCount)
     }
 
     @Test

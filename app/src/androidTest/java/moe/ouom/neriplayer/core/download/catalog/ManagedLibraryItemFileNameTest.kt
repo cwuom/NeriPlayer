@@ -10,7 +10,9 @@ import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadMigrationTestDocumentProvider
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.metadata.DownloadedAudioMetadataStore
+import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.download.DownloadedSong
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.core.download.policy.toPlaybackSongItem
 import moe.ouom.neriplayer.data.local.database.NeriUserDataDatabase
 import org.json.JSONObject
@@ -130,6 +132,30 @@ class ManagedLibraryItemFileNameTest {
             ManagedLibraryItemRoomStore.clearPreviews(context, database)
             ManagedLibraryItemRoomStore.upsertPreview(context, unknown, database = database)
             assertNull(dao.findAll(rootKey).single().audioName)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun incompletePreviewUpdatesPreserveKnownYouTubeLabelsAcrossRestore() = runBlocking {
+        val database = Room.inMemoryDatabaseBuilder(context, NeriUserDataDatabase::class.java).build()
+        try {
+            val source = SongItem(
+                7L, "Song", "Artist", "Album", 0L, 1000L, null,
+                mediaUri = "ytmusic://video/example", channelId = "youtubeMusic",
+                audioId = "example", youtubeContentLabel = YouTubeContentLabel.EXPLICIT
+            )
+            val reference = "/music/song.mp3"
+            val audio = ManagedDownloadStorage.StoredEntry("song.mp3", reference, reference, reference, 8L, 1L)
+            val song = GlobalDownloadManager.buildOptimisticDownloadedSong(source, audio)
+            assertEquals(YouTubeContentLabel.EXPLICIT, song.toPlaybackSongItem().youtubeContentLabel)
+            ManagedLibraryItemRoomStore.replacePreviews(context, listOf(song), database, metadataRevision = 10L)
+            ManagedLibraryItemRoomStore.upsertPreview(context, song.copy(youtubeContentLabel = null),
+                metadataRevision = 11L, database = database)
+            val restored = requireNotNull(ManagedLibraryItemRoomStore.restore(context, database)).single().toPlaybackSongItem()
+            assertEquals("youtubeMusic", restored.channelId)
+            assertEquals(YouTubeContentLabel.EXPLICIT, restored.youtubeContentLabel)
         } finally {
             database.close()
         }

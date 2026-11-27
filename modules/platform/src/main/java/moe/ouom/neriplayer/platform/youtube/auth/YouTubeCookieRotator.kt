@@ -30,6 +30,10 @@ import moe.ouom.neriplayer.platform.youtube.api.transport.YOUTUBE_TEXT_RESPONSE_
 import moe.ouom.neriplayer.platform.youtube.api.transport.readTextWithLimit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -81,6 +85,13 @@ class SharedPreferencesYouTubeCookieRotationStateStore(
 ) : YouTubeCookieRotationStateStore {
     private val preferences: SharedPreferences = context.applicationContext
         .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+
+    fun observe(): Flow<YouTubeCookieRotationState> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(read()) }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(read())
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.conflate()
 
     override fun read(): YouTubeCookieRotationState {
         return YouTubeCookieRotationState(
@@ -178,7 +189,7 @@ internal fun parseYouTubeRotationIntervalMs(responseBody: String): Long {
         ?.groupValues
         ?.getOrNull(1)
         ?.toLongOrNull()
-    return seconds?.takeIf { it > 0L }?.times(1000L) ?: ROTATION_DEFAULT_INTERVAL_MS
+    return seconds?.takeIf { it > 0L }?.let(TimeUnit.SECONDS::toMillis) ?: ROTATION_DEFAULT_INTERVAL_MS
 }
 
 /**
@@ -232,7 +243,7 @@ internal fun shouldRotateYouTubeCookies(
     nowMs: Long,
     minIntervalMs: Long = ROTATION_MIN_INTERVAL_MS
 ): Boolean {
-    if (lastRotatedAtMs <= 0L) {
+    if (lastRotatedAtMs <= 0L || nowMs < lastRotatedAtMs) {
         return true
     }
     return nowMs - lastRotatedAtMs >= minIntervalMs
@@ -354,7 +365,11 @@ class YouTubeCookieRotator(
         }
         restoreRotationState()
         val now = nowMsProvider()
-        val retryIntervalMs = nextYouTubeRotationBackoffMs(consecutiveRejections)
+        val retryIntervalMs = if (!force && consecutiveRejections == 0) {
+            rotationIntervalMs.coerceAtLeast(ROTATION_MIN_INTERVAL_MS)
+        } else {
+            nextYouTubeRotationBackoffMs(consecutiveRejections)
+        }
         if (shouldThrottleYouTubeCookieRotation(force, lastRotatedAtMs, now, retryIntervalMs)) {
             NPLogger.d(
                 TAG,

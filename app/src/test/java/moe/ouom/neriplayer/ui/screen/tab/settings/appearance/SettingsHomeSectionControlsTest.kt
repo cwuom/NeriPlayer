@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -22,12 +23,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
-import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
 import moe.ouom.neriplayer.data.settings.SettingsRepository
-import moe.ouom.neriplayer.ui.screen.tab.settings.home.settingsHomeCardCopy
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.ui.settings.route.AppHomeCardsSettingsState
 import moe.ouom.neriplayer.ui.settings.route.AppHomeSettingsActions
 import moe.ouom.neriplayer.ui.theme.NeriTheme
@@ -58,11 +60,10 @@ class SettingsHomeSectionControlsTest {
     @Test
     fun majorSwitchesDispatchToTheirOwnVisibilitySetting() {
         render(initial.copy(showHomeRadarCard = false, showHomeRecommendedCard = false))
-        val copy = settingsHomeCardCopy(false)
         switch(CoreCommonR.string.player_continue).assertIsOn().performClick()
-        switch(copy.trendingLabelRes).assertIsOn().performClick()
-        switch(copy.radarLabelRes).assertIsOff().performClick()
-        switch(copy.recommendedLabelRes).assertIsOff().performClick()
+        switch(CoreCommonR.string.settings_home_card_netease_trending).assertIsOn().performClick()
+        switch(CoreCommonR.string.settings_home_card_netease_radar).assertIsOff().performClick()
+        switch(CoreCommonR.string.settings_home_card_netease_recommended).assertIsOff().performClick()
         switch(CoreCommonR.string.settings_home_card_bilibili).assertIsOn().performClick()
         composeRule.waitForIdle()
 
@@ -77,20 +78,19 @@ class SettingsHomeSectionControlsTest {
 
     @Test
     fun expandedGroupsKeepTheirOwnHiddenSectionsAndReorderWithinTheGroup() {
-        val copy = settingsHomeCardCopy(false)
         render(initial.copy(trendingHidden = setOf(HomeTrendingSubSectionIds.TOP_HOT)))
 
-        expand(copy.trendingLabelRes)
+        expand(CoreCommonR.string.settings_home_card_netease_trending)
         switch(CoreCommonR.string.home_netease_hot_rank).assertIsOff().performClick()
         move(CoreCommonR.string.recommend_trending, CoreCommonR.string.home_move_down)
-        composeRule.onNodeWithText(context.getString(copy.trendingLabelRes)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_trending)).performClick()
 
-        expand(copy.radarLabelRes)
+        expand(CoreCommonR.string.settings_home_card_netease_radar)
         switch(CoreCommonR.string.home_netease_radar_playlists).assertIsOn().performClick()
         move(CoreCommonR.string.home_netease_radar_playlists, CoreCommonR.string.home_move_up)
-        composeRule.onNodeWithText(context.getString(copy.radarLabelRes)).performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_radar)).performClick()
 
-        expand(copy.recommendedLabelRes)
+        expand(CoreCommonR.string.settings_home_card_netease_recommended)
         switch(CoreCommonR.string.home_netease_high_quality_playlists).assertIsOn().performClick()
         move(CoreCommonR.string.home_netease_daily_playlists, CoreCommonR.string.home_move_up)
         composeRule.waitForIdle()
@@ -115,28 +115,94 @@ class SettingsHomeSectionControlsTest {
     }
 
     @Test
-    fun internationalReorderKeepsTheHiddenBilibiliSlotAndDisablesFirstMoveUp() {
-        val order = listOf(
-            HomeMajorSectionIds.CONTINUE, HomeMajorSectionIds.BILIBILI, HomeMajorSectionIds.RADAR,
-            HomeMajorSectionIds.TRENDING, HomeMajorSectionIds.RECOMMENDED
-        )
-        render(initial.copy(majorOrder = order), international = true)
-        openReorderMenu(CoreCommonR.string.player_continue)
+    fun internationalOrderUsesItsSavedSlotsAndDisablesFirstMoveUp() {
+        val ids = InternationalHomeSectionIds
+        val saved = InternationalHomeLayout(order = listOf(ids.FEED, ids.SPOTLIGHT, ids.CONTINUE))
+        render(initial.copy(internationalLayout = saved), international = true)
+        openReorderMenu(CoreCommonR.string.international_home_feed)
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.home_move_up)).assertIsNotEnabled()
         composeRule.onNodeWithText(context.getString(CoreCommonR.string.home_move_down)).performClick()
         composeRule.waitForIdle()
         runBlocking {
-            verify(repository).setHomeMajorOrder(
-                listOf(
-                    HomeMajorSectionIds.RADAR, HomeMajorSectionIds.BILIBILI, HomeMajorSectionIds.CONTINUE,
-                    HomeMajorSectionIds.TRENDING, HomeMajorSectionIds.RECOMMENDED
-                )
-            )
+            verify(repository).setInternationalHomeOrder(listOf(ids.SPOTLIGHT, ids.FEED, ids.CONTINUE))
+        }
+    }
+
+    @Test
+    fun internationalModeOffersOnlyItsOwnVisibilitySettings() {
+        val ids = InternationalHomeSectionIds
+        val saved = InternationalHomeLayout(hidden = setOf(ids.FEED))
+        render(initial.copy(internationalLayout = saved, showHomeContinueCard = false), international = true)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_bilibili)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_trending)).assertDoesNotExist()
+        switch(CoreCommonR.string.international_home_spotlight).assertIsOn().performClick()
+        switch(CoreCommonR.string.player_continue).assertIsOn().performClick()
+        switch(CoreCommonR.string.international_home_feed).assertIsOff().performClick()
+        composeRule.waitForIdle()
+
+        runBlocking {
+            verify(repository).setInternationalHomeSectionVisible(ids.SPOTLIGHT, false)
+            verify(repository).setInternationalHomeSectionVisible(ids.CONTINUE, false)
+            verify(repository).setInternationalHomeSectionVisible(ids.FEED, true)
         }
     }
 
     private fun switch(titleRes: Int) =
         composeRule.onNode(isToggleable() and hasContentDescription(context.getString(titleRes))).performScrollTo()
+
+    @Test
+    fun internationalFeedExpandsAndWritesOnlyItsKindVisibility() {
+        val kinds = InternationalHomeFeedKindIds
+        val layout = InternationalHomeLayout(hiddenFeedKinds = setOf(kinds.ALBUM))
+        render(initial.copy(internationalLayout = layout), international = true)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.artist_tab_songs)).assertDoesNotExist()
+        expand(CoreCommonR.string.international_home_feed)
+        switch(CoreCommonR.string.artist_tab_songs).assertIsOn().performClick()
+        switch(CoreCommonR.string.library_netease_tab_playlists).assertIsOn()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_playlists)).performScrollTo().performClick()
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOff().performClick()
+        switch(CoreCommonR.string.explore_search_type_artist).assertIsOn().performClick()
+        composeRule.waitForIdle()
+        runBlocking {
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.TRACK, false)
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.PLAYLIST, false)
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.ALBUM, true)
+            verify(repository).setInternationalHomeFeedKindVisible(kinds.ARTIST, false)
+        }
+    }
+
+    @Test
+    fun cleanSearchReopensTheFeedAfterTheUserCollapsesIt() {
+        val pulse = mutableIntStateOf(1)
+        render(initial, international = true, style = UiStyle.Clean, target = "manual:international_home_feed_album") {
+            pulse.intValue
+        }
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOn()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_card_netease_radar)).assertDoesNotExist()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.international_home_feed)).performScrollTo().performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_albums)).assertDoesNotExist()
+        composeRule.runOnIdle { pulse.intValue++ }
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOn()
+    }
+
+    @Test
+    fun cleanHiddenHomeCanRestoreARecommendationFromItsRow() {
+        val sections = InternationalHomeSectionIds
+        val kinds = InternationalHomeFeedKindIds
+        val layout = InternationalHomeLayout(
+            hidden = setOf(sections.CONTINUE, sections.SPOTLIGHT),
+            hiddenFeedKinds = kinds.DEFAULT_ORDER.toSet()
+        )
+        render(initial.copy(internationalLayout = layout), international = true, style = UiStyle.Clean)
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.settings_home_hidden_notice)).assertExists()
+        expand(CoreCommonR.string.international_home_feed)
+        switch(CoreCommonR.string.library_netease_tab_albums).assertIsOff()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_albums)).performScrollTo().performClick()
+        composeRule.waitForIdle()
+        runBlocking { verify(repository).setInternationalHomeFeedKindVisible(kinds.ALBUM, true) }
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.international_home_feed)).performScrollTo().performClick()
+        composeRule.onNodeWithText(context.getString(CoreCommonR.string.library_netease_tab_albums)).assertDoesNotExist()
+    }
 
     private fun expand(titleRes: Int) {
         val description = context.getString(CoreCommonR.string.settings_home_sub_section_expand, context.getString(titleRes))
@@ -153,14 +219,20 @@ class SettingsHomeSectionControlsTest {
         composeRule.onNodeWithText(context.getString(directionRes)).performClick()
     }
 
-    private fun render(state: AppHomeCardsSettingsState, international: Boolean = false) {
+    private fun render(
+        state: AppHomeCardsSettingsState,
+        international: Boolean = false,
+        style: UiStyle = UiStyle.Material,
+        target: String? = null,
+        highlightPulse: () -> Int = { 0 }
+    ) {
         composeRule.setContent {
             NeriTheme(
                 followSystemDark = false,
                 forceDark = false,
                 dynamicColor = false,
                 seedColorHex = "#6750A4",
-                uiStyle = UiStyle.Material,
+                uiStyle = style,
                 animateColors = false
             ) {
                 val scope = rememberCoroutineScope()
@@ -168,12 +240,11 @@ class SettingsHomeSectionControlsTest {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     SettingsPersonalizationHomeCard(
                         internationalEnabled = international,
-                        copy = settingsHomeCardCopy(international),
-                        homeStartAvailable = true,
+                        homeStartAvailable = !international || state.internationalLayout.isHomeAvailable(hasRecentUsage = false),
                         state = state,
                         actions = actions,
-                        highlightTargetId = null,
-                        highlightPulse = 0,
+                        highlightTargetId = target,
+                        highlightPulse = highlightPulse(),
                         onHighlightFinished = null
                     )
                 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="nowplaying_netease_playlist_collect">收藏到网易云歌单</string>
+    <string name="nowplaying_netease_playlist_collect">添加到网易云</string>
     <string name="nowplaying_netease_playlist_adding">正在收藏到「%1$s」</string>
     <string name="nowplaying_netease_playlist_added">已收藏到「%1$s」</string>
     <string name="nowplaying_netease_playlist_existing">歌曲已在「%1$s」中</string>

@@ -12,8 +12,8 @@
   <a href="https://github.com/cwuom/NeriPlayer/releases">
     <img alt="Downloads" src="https://img.shields.io/github/downloads/cwuom/NeriPlayer/total?style=social" />
   </a>
-  <a href="https://github.com/cwuom/NeriPlayer/releases">
-    <img alt="Release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?include_prereleases&label=Release" />
+  <a href="https://github.com/cwuom/NeriPlayer/releases/latest">
+    <img alt="Stable release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?label=Release" />
   </a>
   <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
   <a href="https://t.me/ouom_pub">
@@ -55,7 +55,7 @@ user-owned data.
 >
 > The project provides no media content, keys, or paywall / DRM / region-bypass mechanisms, and no public cloud library, media proxy, or redistribution service.
 >
-> Online features depend on your authorization on third-party platforms, and VIP or restricted content follows the original platform's rules. YouTube Music capabilities in this document cover account sessions, playback compatibility, and error recovery only.
+> You can browse, search, and play public YouTube Music content available in the selected region as a guest. Personal libraries require account authorization. Member-only and restricted content remains subject to the provider's rules.
 >
 > This project and its maintainer do not accept any sponsorship, donation, or commercial funding.
 
@@ -85,13 +85,13 @@ user-owned data.
 
 ## About
 
-NeriPlayer is a native Android audio player built with **Jetpack Compose + Media3**. It brings **NetEase Cloud Music**, **Bilibili**, **YouTube Music**, **self-hosted music servers**, and **local audio** into one playback and library experience. Local playback needs no account; online features use your authorization on the corresponding platform.
+NeriPlayer is a native Android audio player built with **Jetpack Compose + Media3**. It brings **NetEase Cloud Music**, **Bilibili**, **YouTube Music**, **self-hosted music servers**, and **local audio** into one playback and library experience. Local playback and public YouTube Music content are available to guests. Personal libraries require signing in to the corresponding platform.
 
 - **Self-hosted music (Preview)**: connect Navidrome / OpenSubsonic under Library → Music servers to browse and search albums, songs, and artists, with the existing player, artwork, lyrics, local favorites, playlists, and original-file offline downloads (see [Connecting a music server](#connecting-a-music-server)).
 - **Local-first**: cache, downloads, playlists, history, settings, and auth data are stored on the device.
 - **Optional sync**: playlists, favorites, recent plays, and playback stats can sync to your own GitHub repository (private by default when created in-app) or a WebDAV remote.
 - **User-owned data**: synced data goes only to storage you control, never through a maintainer-operated server.
-- **Account safety**: to avoid triggering third-party risk control, NeriPlayer never uploads playback history or stats to those platforms.
+- **Account safety**: playback history and stats are not sent to third-party platforms by default. If you want platform rankings or watch history, turn on NetEase / Bilibili listening history sync separately in Settings → Third-party Sign-in.
 
 > 💡 **Three independent features**
 >
@@ -159,8 +159,8 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
   - Requires sign-in and a network connection.
   - The entry is hidden when playback falls back to Bilibili or local audio.
 - **Category browsing**: local, favorites, NetEase Cloud Music, YouTube Music, and Bilibili entries. YouTube Music can be disabled entirely, and Bilibili music can be hidden from the home page alone.
-- **Home discovery**: recently used playlists, charts, new songs, daily picks, Private FM, curated playlists, and radar playlists; a refresh updates every section.
-- **Search**: per-platform search, with paging on NetEase Cloud Music and Bilibili.
+- **Home discovery**: the domestic home shows charts, daily picks, and radar playlists. To choose which types of YouTube Music recommendations appear on the international home, open **Home & startup → Your recommendations** and toggle tracks, playlists, albums, or artists. Each home keeps its own layout.
+- **Search**: per-platform search, with paging on NetEase Cloud Music, Bilibili, and YouTube Music.
 - **Link recognition**: paste a share text with a title or short link to resolve NetEase Cloud Music, Bilibili, and YouTube Music content.
 - **Import and batch artwork**: share import and folder scanning, plus one-tap batch matching and embedding of lyrics and artwork for local songs.
 - **Local artists and playlists**: grouped by display artist, with sorting, block insertion, and undo for deletions.
@@ -178,7 +178,7 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 ### 🔄 Sync, stats, and backup
 
 - **GitHub / WebDAV sync**: playlists, favorites, recent plays, deletion records, and playback stats, stored on remotes you own.
-- **Playback stats**: play counts and listening time per track, with day / week / month / year views.
+- **Playback stats**: explore track, artist, and album rankings, listening days, and listening by weekday and hour. Browse by day, week, month, year, or a custom date range. With sync enabled, recorded hourly totals are available across devices. Each listening interval's exact start and end times stay on the device that recorded it.
 - **Traffic stats**: split into Wi-Fi, mobile, and roaming.
 - **Backup and restore**: playlist JSON import and export.
 - **Configuration export**: excludes login state by default; optionally encrypted with auth included.
@@ -211,9 +211,9 @@ See the [API contract](docs/music-server-api.md) for protocol and client behavio
 
 ## Getting Started
 
-### a. Download a Release build (recommended)
+### a. Download the stable release (recommended)
 
-Go to [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) and download the APK for your device architecture.
+Download the APK for your device architecture from the [latest stable release](https://github.com/cwuom/NeriPlayer/releases/latest).
 
 | APK Architecture (ABI) | Target Devices |
 | :--- | :--- |
@@ -222,16 +222,22 @@ Go to [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) and downlo
 | `x86` / `x86_64` | Desktop emulators, Intel devices, or Chromebooks |
 
 > [!IMPORTANT]
-> Releases are pushed manually after a batch of features is finished and may contain undiscovered issues.
+> We publish stable releases manually once a batch of features is complete and passes testing. Some issues may still go undetected.
 
-### b. Download a CI build
+### b. Download a Nightly prerelease
 
-1. Go to [GitHub Actions](https://github.com/cwuom/NeriPlayer/actions), download the Artifacts from the latest successful build, and extract them.
+Choose a prerelease marked **Nightly** on [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases). Each Nightly includes a signed APK for each of the four architectures listed above. CI checks the latest commit on the default branch daily at 22:00 (UTC+8) and publishes at most one Nightly per commit.
+
+If you run into a problem with a Nightly prerelease, you’re welcome to [report it anytime](https://github.com/cwuom/NeriPlayer/issues/new?template=bug-report.yml). Include the build version and steps to reproduce the problem so we can investigate.
+
+### c. Download a CI build
+
+1. Go to [Android CI](https://github.com/cwuom/NeriPlayer/actions/workflows/android_ci.yml), download the Artifacts from the latest successful build, and extract them.
 2. Or visit [NeriPlayer CI Builds](https://t.me/neriplayer_ci).
 
-> Master CI uploads an `arm64-v8a` APK by default; the manual Release workflow builds multi-ABI APKs.
+> CI on the master branch uploads an `arm64-v8a` APK by default.
 
-### c. Local build
+### d. Local build
 
 1. Clone the repository and initialize submodules:
    ```bash
@@ -283,7 +289,9 @@ For release build and signing details, see [CONTRIBUTING_EN.md](./CONTRIBUTING_E
 
 ### YouTube Music
 
-- Login, home and library playlist browsing, playlist details, search, and playback compatibility.
+- Enable international mode in Settings → Language and content to show YouTube Music recommendations on Home. Explore supports songs, videos, artists, albums, featured playlists, and community playlists.
+- You can change the app language at any time. With international mode on, select your content language and region on the same page. Under Content & discovery, choose how playlists are recommended and whether to hide explicit content or music videos. The globe icon on the international home screen opens this page. Devices with their system region set to mainland China default to Simplified Chinese for the content language and Japan for the content region.
+- Eligible signed-in sessions renew automatically. Account settings show the renewal status. Network settings support HTTP and SOCKS5 proxies and DNS over HTTPS (DoH).
 - Content access is subject to platform rules and account permissions.
 
 ### Self-Hosted Music Server (Navidrome / OpenSubsonic)
@@ -436,7 +444,8 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 
 ### Other
 
-- Long-audio position memory never overrides a start position you set, and is not written back to third-party platform history.
+- Long-audio position memory never overrides a start position you set, and is not itself written back to third-party platform history.
+- Listening history sync (off by default) is turned on per platform in Settings → Third-party Sign-in. A NetEase song counts toward listening records and rankings after 30 seconds or when it finishes; Bilibili receives playback progress, and nothing is sent while the account has history paused on Bilibili. Failed reports never affect playback and are not retried.
 - Bilibili SponsorBlock queries a public API and is disabled in Listen Together rooms.
 
 ---
@@ -448,7 +457,7 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 - Cache, downloads, local playlists, history, playback stats, settings, and auth data are stored on the device.
 - Metadata such as playlists, favorites, history, and playback stats syncs only when you enable GitHub or WebDAV sync.
 - Audio cache, downloaded files, cookies, and playback tokens are never uploaded to the developer.
-- For account safety, local playback history and stats are never written back to third-party music platforms.
+- Playback history and stats are not sent to third-party platforms by default. Only after you enable listening history sync in Settings → Third-party Sign-in are song / video IDs, listening time, and playback progress sent to NetEase Cloud Music or Bilibili under your account.
 - Configuration exports exclude login state by default; including it exports auth and sync credentials, so set a password and keep it private.
 - Android system cloud backup and device transfer are disabled by default.
 - Access logs and risk-control policies on third-party platforms are handled under those platforms' own privacy policies.
@@ -475,7 +484,7 @@ Shipped work is tracked in [Releases](https://github.com/cwuom/NeriPlayer/releas
 
 ## Contributing, Support, and License
 
-- **Contributing**: read [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md) first. Core playback, local data, sync, and recovery paths are maintained first, and Releases are pushed manually in feature batches.
+- **Contributing**: read [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md) first. Core playback, local data, sync, and recovery paths are maintained first, and stable releases are published manually in feature batches.
 - **Support**: donations are not accepted; issues, pull requests, and shared usage feedback are welcome.
 - **License**: NeriPlayer is released under **GPL-3.0**. You may use, modify, and distribute it, and modified distributions must stay under GPL-3.0. Full terms are in [LICENSE](./LICENSE).
 - **Native source license**: the [native source license note](./modules/native/src/main/cpp/README.md) grants an alternative license with attribution conditions for the NeriPlayer-owned native sources it lists. Third-party sources and unlisted content are excluded.

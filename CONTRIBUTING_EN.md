@@ -598,6 +598,12 @@ Package-level calculation domains are isolated by the compiled-bytecode gate.
   - It is unrelated to third-party platform playback history.
 - BilibiliSponsorBlock is off by default. It sends only a SHA-256 prefix of the current BV ID and skips locally.
 - BilibiliSponsorBlock stays off during Listen Together, and its public results are not written to sync or room state.
+- Listening history sync (`core/player/report`):
+  - NetEase and Bilibili each have a switch, off by default, shown on the accounts page rather than playback settings.
+  - It only observes `currentSongFlow`, `isPlayingFlow`, and `playbackPositionFlow`; do not add report calls inside the playback core.
+  - NetEase uses the clientlog eapi endpoint as `os=osx`; the old weapi weblog returns success but is dropped server side, so do not switch back.
+  - Bilibili heartbeats use the same parameters as PiliPlus and are skipped while the account has history paused.
+  - Failed reports are only logged, never retried, and must not be treated as an expired login.
 - 32-bit high-resolution system output keeps the high-precision pipeline of regular system output and bypasses loudness normalization, channel balance, audio visualization, and in-app speed. When changing it, check the settings copy and tests together.
 - Local scans first return quick metadata, then a background task fills in title, artist, album, and cover. The first scan result is not the final form.
 

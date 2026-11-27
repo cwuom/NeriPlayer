@@ -631,6 +631,8 @@ class LocalPlaylistHeaderScrollRegressionTest {
         val restingCover = coverBounds()
         checkNotNull(restingCover)
         coverInsetPx = restingCover.top - restingList.top
+        val restingStartSongTop = captureSongBounds(restingList)
+            .firstOrNull { it.index == StartingItemIndex - 2 }?.top
         list.performScrollToIndex(StartingItemIndex)
         composeRule.waitForIdle()
         val root = composeRule.onRoot()
@@ -640,7 +642,9 @@ class LocalPlaylistHeaderScrollRegressionTest {
             x = listBounds.center.x - rootBounds.left,
             y = listBounds.top - rootBounds.top + listBounds.height * 0.12f
         )
-        val distance = (384f * oneDpPx).coerceAtMost(listBounds.height * 0.72f)
+        // 下拉距离按实测头部高度算: 至少拉回起始歌曲上方的全部内容再多出一段回弹, 手指仍留在列表内
+        val pullToTop = restingStartSongTop?.let { it - restingList.top + OverscrollMarginDp * oneDpPx }
+        val distance = maxOf(384f * oneDpPx, pullToTop ?: 0f).coerceAtMost(listBounds.height * 0.86f)
         val step = distance / GestureFrameCount
         val samples = mutableListOf<HeaderFrameSample>()
         var pointerDown = false
@@ -887,7 +891,11 @@ class LocalPlaylistHeaderScrollRegressionTest {
                 backgroundBackdrop = backgroundBackdrop,
                 contentBackdrop = contentBackdrop
             ) {
-                CompositionLocalProvider(LocalOverscrollFactory provides recordingFactory) {
+                CompositionLocalProvider(
+                    LocalOverscrollFactory provides recordingFactory,
+                    // 这里验证单列头部随列表滚动, 横屏平板也不拆成两栏
+                    LocalPlaylistTwoPaneAllowed provides false
+                ) {
                     Box(Modifier.fillMaxSize()) {
                         Image(
                             bitmap = background.asImageBitmap(),
@@ -971,7 +979,11 @@ class LocalPlaylistHeaderScrollRegressionTest {
                     contentScale = motion.contentScale,
                     sceneDepth = scene.navigationDepth
                 ) {
-                    CompositionLocalProvider(LocalOverscrollFactory provides recordingFactory) {
+                    CompositionLocalProvider(
+                    LocalOverscrollFactory provides recordingFactory,
+                    // 这里验证单列头部随列表滚动, 横屏平板也不拆成两栏
+                    LocalPlaylistTwoPaneAllowed provides false
+                ) {
                         if (scene.item is LibrarySelectedItem.Local) {
                             LocalPlaylistDetailScreen(
                                 playlistId = playlistId,
@@ -1146,6 +1158,8 @@ class LocalPlaylistHeaderScrollRegressionTest {
         const val ShortReverseReleaseFrameCount = 40
         const val ShortReverseFrameCount = 3
         const val ShortReverseStepDp = 12f
+        // 与原先固定 384dp 下拉在旧头部高度下越过顶部的距离一致, 松手时仍留一点回弹并把甩动传给列表
+        const val OverscrollMarginDp = 122f
         const val HoldDurationMs = 128L
         const val FrameDurationMs = 16L
         const val LazyItemSemanticsStep = 500f

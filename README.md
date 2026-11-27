@@ -12,8 +12,8 @@
   <a href="https://github.com/cwuom/NeriPlayer/releases">
     <img alt="Downloads" src="https://img.shields.io/github/downloads/cwuom/NeriPlayer/total?style=social" />
   </a>
-  <a href="https://github.com/cwuom/NeriPlayer/releases">
-    <img alt="Release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?include_prereleases&label=Release" />
+  <a href="https://github.com/cwuom/NeriPlayer/releases/latest">
+    <img alt="Stable release" src="https://img.shields.io/github/v/release/cwuom/NeriPlayer?label=Release" />
   </a>
   <img alt="Android 9+" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
   <a href="https://t.me/ouom_pub">
@@ -40,6 +40,8 @@
 🛠️ <strong>Active development / 持续迭代中</strong>
 
 <a href="https://trendshift.io/repositories/23906" target="_blank"><img src="https://trendshift.io/api/badge/repositories/23906" alt="cwuom%2FNeriPlayer | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/23906?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-23906" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/23906/daily?language=Kotlin" alt="cwuom%2FNeriPlayer | Trendshift" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/23906?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-23906" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/23906/weekly?language=Kotlin" alt="cwuom%2FNeriPlayer | Trendshift" width="250" height="55"/></a>
 
 </div>
 
@@ -53,7 +55,7 @@
 >
 > 项目不提供媒体内容、密钥、规避付费 / DRM / 地区限制的方案，也不提供公共云端曲库、媒体代理或再分发服务。
 >
-> 在线功能依赖你在第三方平台上的账号授权，会员或受限内容须遵循原平台规则。文档中的 YouTube Music 能力仅涉及账号会话、播放兼容与错误恢复。
+> YouTube Music 支持游客浏览、搜索和播放所选地区的公开内容。个人媒体库需要账号授权，会员或受限内容须遵循原平台规则。
 >
 > 本项目及维护者不接受任何形式的赞助、捐赠或商业资助。
 
@@ -83,13 +85,13 @@
 
 ## 项目简介 / About
 
-NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放器，把 **网易云音乐**、**Bilibili**、**YouTube Music**、**自建音乐服务器** 与 **本地音乐** 整合进统一的播放与管理体验。本地播放无需任何账号，在线功能使用你在对应平台上的账号授权。
+NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放器，把 **网易云音乐**、**Bilibili**、**YouTube Music**、**自建音乐服务器** 与 **本地音乐** 整合进统一的播放与管理体验。本地播放和 YouTube Music 公开内容支持免登录使用，访问个人媒体库需要登录对应平台。
 
 - **自建音乐服务器（预览版）**：连接 Navidrome / OpenSubsonic，在“资源库 → 音乐服务器”浏览与搜索专辑、单曲、歌手，复用现有播放器、封面与歌词，支持本地收藏、歌单与原文件离线下载（见[连接音乐服务器](#连接音乐服务器)）。
 - **本地优先**：缓存、下载文件、歌单、历史记录、设置与授权信息保存在设备本地。
 - **可选同步**：歌单、收藏、最近播放与播放统计可同步到你自己的 GitHub 仓库（应用内新建时默认私有）或 WebDAV。
 - **数据自持**：同步数据只写入你控制的远端，不经过维护者服务器。
-- **账号安全**：为避免触发第三方平台的风控，NeriPlayer 不向第三方平台回写播放历史和统计。
+- **账号安全**：默认不向第三方平台回写播放历史和统计；需要平台听歌排行或观看历史时，可在“设置 → 第三方平台登录”单独开启网易云 / Bilibili 的播放记录同步。
 
 > 💡 **三者相互独立**
 >
@@ -157,8 +159,8 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
   - 需要登录并联网。
   - 切换到 Bilibili 或本地兜底音源后，入口隐藏。
 - **分类浏览**：本地、收藏、网易云音乐、YouTube Music、Bilibili 入口；YouTube Music 可完全禁用，Bilibili 音乐可单独关闭首页分区。
-- **首页推荐**：最近常用歌单、榜单、新歌、日推、私人 FM、精品歌单与雷达歌单，刷新会更新全部分区。
-- **搜索**：按平台独立搜索，网易云音乐与 Bilibili 支持触底分页。
+- **首页推荐**：国内首页展示榜单、日推与雷达歌单。国际首页展示 YouTube Music 推荐。在「首页与启动」展开「为你推荐」，可分别显示或隐藏歌曲、歌单、专辑和艺人。两种首页的布局独立保存。
+- **搜索**：按平台独立搜索，网易云音乐、Bilibili 和 YouTube Music 支持触底分页。
 - **链接识别**：粘贴含标题或短链接的分享文案，即可识别网易云音乐、Bilibili 与 YouTube Music 内容。
 - **导入与批量词图**：支持分享导入与文件夹扫描，可为本地歌曲一键批量匹配并嵌入歌词与封面。
 - **本地歌手与歌单**：按展示艺术家聚合，支持排序、整体插入与删除撤销。
@@ -176,7 +178,7 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 ### 🔄 同步、统计与备份
 
 - **GitHub / WebDAV 同步**：歌单、收藏、最近播放、删除记录与播放统计保存在你自己的远端。
-- **播放统计**：按歌曲记录播放次数与时长，支持日 / 周 / 月 / 年视图。
+- **播放统计**：查看曲目、艺人和专辑排行，以及收听天数、星期分布和小时分布。可按日、周、月、年或自选日期回看。开启同步后，已记录的小时收听时长可在其他设备上查看，每段收听的具体起止时间保留在录制设备上。
 - **流量统计**：区分 Wi-Fi、移动网络与漫游。
 - **备份与恢复**：歌单 JSON 导入导出。
 - **配置导出**：默认不含登录态，可选择加密并包含授权信息。
@@ -209,9 +211,9 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 
 ## 快速体验 / Getting Started
 
-### a. 下载 Release 版本（推荐）
+### a. 下载稳定版（推荐）
 
-前往 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases)，下载对应架构的 APK。
+在[最新稳定版](https://github.com/cwuom/NeriPlayer/releases/latest)页面下载适合设备架构的 APK。
 
 | APK 架构 (ABI) | 适用设备 |
 | :--- | :--- |
@@ -220,16 +222,22 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 | `x86` / `x86_64` | 桌面模拟器、Intel 设备或 Chromebook |
 
 > [!IMPORTANT]
-> Release 在一批功能完成后手动发布，可能包含尚未发现的问题。
+> 稳定版在一批功能完成并通过测试后手动发布，但可能仍然包含尚未发现的问题。
 
-### b. 下载 CI 版本
+### b. 下载 Nightly 预发布版
 
-1. 前往 [GitHub Actions](https://github.com/cwuom/NeriPlayer/actions)，下载最近一次成功构建的 Artifacts 并解压。
+在 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) 中选择标有 **Nightly** 的预发布版。每版提供上表四种架构的已签名 APK。CI 每天 22:00（UTC+8）检查默认分支的最新提交，每个提交只发布一次 Nightly。
+
+如果你在使用 Nightly 预发布版时遇到问题，也欢迎随时[提交问题报告](https://github.com/cwuom/NeriPlayer/issues/new?template=bug-report.yml)。请附上构建版本和复现步骤，方便我们定位问题。
+
+### c. 下载 CI 版本
+
+1. 前往 [Android CI](https://github.com/cwuom/NeriPlayer/actions/workflows/android_ci.yml)，下载最近一次成功构建的 Artifacts 并解压。
 2. 或访问 Telegram 频道 [NeriPlayer CI Builds](https://t.me/neriplayer_ci)。
 
-> master 分支 CI 默认上传 `arm64-v8a` APK，手动 Release 流程构建多 ABI APK。
+> master 分支 CI 默认上传 `arm64-v8a` APK。
 
-### c. 本地构建
+### d. 本地构建
 
 1. 克隆仓库并初始化子模块：
    ```bash
@@ -281,7 +289,9 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 
 ### YouTube Music
 
-- 登录、首页 / 媒体库歌单浏览、歌单详情、搜索与播放兼容。
+- 在「设置 → 语言与内容」开启国际化模式，首页会展示 YouTube Music 推荐。探索支持搜索歌曲、视频、艺人、专辑、精选歌单和社区歌单。
+- 界面语言可随时调整。开启国际化后，可在同一页选择内容语言和地区，并在「内容与发现」下设置歌单推荐依据、隐藏露骨内容或音乐视频。国际首页右上角的地球图标可直接打开此页。系统地区为中国大陆时，默认内容语言为简体中文，内容地区为日本。
+- 已登录的账号可在平台允许时自动续期，在账号管理中查看状态。网络设置支持 HTTP、SOCKS5 代理和 DNS over HTTPS（DoH）。
 - 内容访问受平台规则与账号权限约束。
 
 ### 自建音乐服务器（Navidrome / OpenSubsonic）
@@ -434,7 +444,8 @@ NeriPlayer 可把本地元数据同步到**你自己的** GitHub 仓库或 WebDA
 
 ### 其他
 
-- 长音频进度记忆不覆盖你手动指定的起播位置，也不回写第三方平台的播放历史。
+- 长音频进度记忆不覆盖你手动指定的起播位置，本身也不回写第三方平台的播放历史。
+- 播放记录同步（默认关闭）：在“设置 → 第三方平台登录”分别开启。网易云的歌听满 30 秒或播完后计入听歌记录与听歌排行；Bilibili 播放时上报观看进度，账号在 B 站暂停了历史记录时不上报。上报失败不影响播放，也不会重试。
 - Bilibili SponsorBlock 通过公开接口查询跳过区间，在一起听房间内自动禁用。
 
 ---
@@ -446,7 +457,7 @@ NeriPlayer 可把本地元数据同步到**你自己的** GitHub 仓库或 WebDA
 - 缓存、下载文件、本地歌单、历史记录、播放统计、设置与授权信息保存在设备本地。
 - 只有你主动开启 GitHub 或 WebDAV 同步时，才会同步歌单、收藏、历史和播放统计等元数据。
 - 音频缓存、下载文件、Cookie 与播放 Token 不会上传给开发者。
-- 出于账号安全考虑，本地播放历史和统计不会回写到第三方音乐平台。
+- 默认不向第三方平台回写播放历史和统计；只有你在“设置 → 第三方平台登录”开启播放记录同步后，才会以你的账号把歌曲 / 视频编号、收听时长和播放进度发送给网易云音乐或 Bilibili。
 - 配置导出默认不含登录态；选择包含时会携带授权与同步凭据，请设置密码并妥善保管。
 - 默认关闭 Android 系统云备份与设备迁移。
 - 第三方平台的访问日志与风控策略，由对应平台按其隐私政策处理。
@@ -473,7 +484,7 @@ NeriPlayer 可把本地元数据同步到**你自己的** GitHub 仓库或 WebDA
 
 ## 参与、支持与许可 / Contributing, Support & License
 
-- **参与贡献**：请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。核心播放、本地数据、同步与恢复链路优先维护，Release 按功能批次手动发布。
+- **参与贡献**：请先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。核心播放、本地数据、同步与恢复链路优先维护，稳定版按功能批次手动发布。
 - **支持项目**：暂不接受任何形式的捐赠，欢迎通过 Issue、PR 或分享使用体验支持项目。
 - **许可证**：NeriPlayer 使用 **GPL-3.0** 发布，可自由使用、修改和分发，分发修改版时须继续遵守 GPL-3.0，详细条款见 [LICENSE](./LICENSE)。
 - **Native 源码授权**：[说明](./modules/native/src/main/cpp/README.md)中列出的 NeriPlayer 自有 Native 源码另有附带署名条件的替代授权，第三方源码与未列入的内容不适用。

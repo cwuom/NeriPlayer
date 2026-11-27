@@ -27,6 +27,7 @@ import coil.Coil
 import coil.ImageLoader
 import java.io.File
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.ui.view.HyperBackgroundShaderView
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -113,7 +114,7 @@ class NowPlayingBackdropArtworkTest {
             composeRule.waitUntil(timeoutMillis = 10_000L) {
                 composeRule.runOnIdle { samplePixel(x, y) == Color.RED }
             }
-            val baselineViews = composeRule.runOnIdle { plainViews(hostView).toSet() }
+            val baselineViews = composeRule.runOnIdle { rendererViews(hostView).toSet() }
             composeRule.runOnIdle {
                 assertEquals("a pending URL must keep the actually decoded backdrop", Color.RED, samplePixel(x, y))
                 frame.value = frame.value.copy(cover = pendingCover.copy(url = oldCoverUrl, song = restored))
@@ -121,7 +122,7 @@ class NowPlayingBackdropArtworkTest {
             composeRule.waitForIdle()
             composeRule.runOnIdle {
                 assertNotEquals("explicitly empty artwork must stop painting retained blur", Color.RED, samplePixel(x, y))
-                assertEquals("the dynamic renderer must not replace the cleared blur with old artwork", baselineViews, plainViews(hostView).toSet())
+                assertEquals("the dynamic renderer must not replace the cleared blur with old artwork", baselineViews, rendererViews(hostView).toSet())
                 frame.value = frame.value.copy(
                     hasCoverBlur = false,
                     background = frame.value.background.copy(blurEnabled = false)
@@ -129,13 +130,13 @@ class NowPlayingBackdropArtworkTest {
             }
             composeRule.waitForIdle()
             composeRule.runOnIdle {
-                assertEquals("explicitly empty artwork also suppresses the standalone dynamic layer", baselineViews, plainViews(hostView).toSet())
+                assertEquals("explicitly empty artwork also suppresses the standalone dynamic layer", baselineViews, rendererViews(hostView).toSet())
                 assertNotEquals(Color.RED, samplePixel(x, y))
                 frame.value = frame.value.copy(cover = pendingCover.copy(url = oldCoverUrl))
             }
             composeRule.waitForIdle()
             val renderer = composeRule.runOnIdle {
-                val addedViews = plainViews(hostView).filterNot { it in baselineViews }
+                val addedViews = rendererViews(hostView).filterNot { it in baselineViews }
                 assertEquals("the ordinary dynamic background must mount one real renderer", 1, addedViews.size)
                 addedViews.single().also {
                     frame.value = frame.value.copy(cover = pendingCover.copy(url = oldCoverUrl, song = restored))
@@ -143,7 +144,7 @@ class NowPlayingBackdropArtworkTest {
             }
             composeRule.waitForIdle()
             composeRule.runOnIdle {
-                assertEquals("restoring no artwork must remove the previously mounted renderer", baselineViews, plainViews(hostView).toSet())
+                assertEquals("restoring no artwork must remove the previously mounted renderer", baselineViews, rendererViews(hostView).toSet())
                 assertFalse("the old renderer must be detached so it cannot paint the removed artwork", renderer.isAttachedToWindow)
                 assertNotEquals(Color.RED, samplePixel(x, y))
             }
@@ -172,10 +173,11 @@ class NowPlayingBackdropArtworkTest {
         }
     }
 
-    private fun plainViews(view: View): List<View> = buildList {
-        if (view.javaClass == View::class.java) add(view)
+    // 动态背景宿主改为直绘 shader 的 HyperBackgroundShaderView, 其余渲染层仍是裸 View
+    private fun rendererViews(view: View): List<View> = buildList {
+        if (view.javaClass == View::class.java || view is HyperBackgroundShaderView) add(view)
         if (view is ViewGroup) {
-            for (index in 0 until view.childCount) addAll(plainViews(view.getChildAt(index)))
+            for (index in 0 until view.childCount) addAll(rendererViews(view.getChildAt(index)))
         }
     }
 }

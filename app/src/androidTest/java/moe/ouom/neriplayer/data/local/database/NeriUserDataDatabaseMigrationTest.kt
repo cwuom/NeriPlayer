@@ -896,12 +896,7 @@ class NeriUserDataDatabaseMigrationTest {
             TEST_DATABASE_VERSION_15_HOST_ADMISSION_NAME,
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
-            NeriUserDataDatabase.MIGRATION_15_FINAL,
-            NeriUserDataDatabase.MIGRATION_16_17,
-            NeriUserDataDatabase.MIGRATION_17_18,
-            NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20,
-            NeriUserDataDatabase.MIGRATION_20_21
+            *NeriUserDataDatabase.allMigrations()
         )
 
         migrated.use {
@@ -963,12 +958,7 @@ class NeriUserDataDatabaseMigrationTest {
             TEST_DATABASE_VERSION_15_TO_FINAL_NAME,
             NeriUserDataDatabase.FINAL_DB_VERSION,
             false,
-            NeriUserDataDatabase.MIGRATION_15_FINAL,
-            NeriUserDataDatabase.MIGRATION_16_17,
-            NeriUserDataDatabase.MIGRATION_17_18,
-            NeriUserDataDatabase.MIGRATION_18_19,
-            NeriUserDataDatabase.MIGRATION_19_20,
-            NeriUserDataDatabase.MIGRATION_20_21
+            *NeriUserDataDatabase.allMigrations()
         )
 
         migrated.use {

@@ -23,6 +23,10 @@ package moe.ouom.neriplayer.ui.screen.tab.library
  * Created: 2025/8/8
  */
 
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Search
 import moe.ouom.neriplayer.ui.component.common.NeriSearchFieldGlass
 import moe.ouom.neriplayer.ui.component.common.CleanSearchField
 import moe.ouom.neriplayer.ui.theme.NeriDesign
@@ -481,9 +485,7 @@ internal fun LocalPlaylistList(
             item(key = "local_playlist_create") {
             Card(
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 modifier = Modifier
                     .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -492,7 +494,16 @@ internal fun LocalPlaylistList(
                     .clickable(enabled = !selectionMode) { showDialog = true }
             ) {
                 ListItem(
-                    headlineContent = { Text(stringResource(CoreCommonR.string.library_create_new)) },
+                    headlineContent = {
+                        Text(
+                            stringResource(CoreCommonR.string.library_create_new),
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    leadingContent = {
+                        LibraryCoverPlaceholder(icon = Icons.Rounded.Add, tone = LibraryCoverTone.Accent)
+                    },
                     colors = ListItemDefaults.colors(
                         containerColor = Color.Transparent
                     )
@@ -597,16 +608,16 @@ internal fun LocalPlaylistList(
                 val displayName = SystemLocalPlaylists.resolve(system.id, system.name, context)?.currentName ?: system.name
                 Card(
                     shape = cardShape,
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Transparent
-                    ),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .clip(cardShape)
                         .combinedClickable(
                             onClick = {
-                                if (!selectionMode) onClick(system)
+                                if (!selectionMode) {
+                                    onClick(system)
+                                }
                             }
                         )
                 ) {
@@ -638,26 +649,12 @@ internal fun LocalPlaylistList(
                                     resolveLocalFallback = true
                                 )
                                 if (!cover.isNullOrEmpty()) {
-                                    AsyncImage(
-                                        model = fastScrollableImageRequest(
-                                            context = context,
-                                            data = cover,
-                                            sizePx = 160,
-                                            offlineMode = offlineMode
-                                        ),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(neriRoundedShape(8.dp))
+                                    LibraryPlaylistCoverImage(
+                                        cover = cover,
+                                        offlineMode = offlineMode
                                     )
                                 } else {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(56.dp)
-                                    )
+                                    LibraryCoverPlaceholder(icon = Icons.Rounded.Favorite, tone = LibraryCoverTone.Favorite)
                                 }
                             }
                         }
@@ -756,26 +753,12 @@ internal fun LocalPlaylistList(
                                     resolveLocalFallback = true
                                 )
                                 if (!cover.isNullOrEmpty()) {
-                                    AsyncImage(
-                                        model = fastScrollableImageRequest(
-                                            context = context,
-                                            data = cover,
-                                            sizePx = 160,
-                                            offlineMode = offlineMode
-                                        ),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(neriRoundedShape(8.dp))
+                                    LibraryPlaylistCoverImage(
+                                        cover = cover,
+                                        offlineMode = offlineMode
                                     )
                                 } else {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(56.dp)
-                                    )
+                                    LibraryCoverPlaceholder()
                                 }
                             }
                         },
@@ -891,16 +874,16 @@ internal fun LocalPlaylistList(
                 val displayName = SystemLocalPlaylists.resolve(system.id, system.name, context)?.currentName ?: system.name
                 Card(
                     shape = cardShape,
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Transparent
-                    ),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     modifier = Modifier
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .clip(cardShape)
                         .combinedClickable(
                             onClick = {
-                                if (!selectionMode) onClick(system)
+                                if (!selectionMode) {
+                                    onClick(system)
+                                }
                             }
                         )
                 ) {
@@ -932,26 +915,12 @@ internal fun LocalPlaylistList(
                                     resolveLocalFallback = true
                                 )
                                 if (!cover.isNullOrEmpty()) {
-                                    AsyncImage(
-                                        model = fastScrollableImageRequest(
-                                            context = context,
-                                            data = cover,
-                                            sizePx = 160,
-                                            offlineMode = offlineMode
-                                        ),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(neriRoundedShape(8.dp))
+                                    LibraryPlaylistCoverImage(
+                                        cover = cover,
+                                        offlineMode = offlineMode
                                     )
                                 } else {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(56.dp)
-                                    )
+                                    LibraryCoverPlaceholder(icon = Icons.Rounded.Folder)
                                 }
                             }
                         }
@@ -1022,7 +991,7 @@ internal fun LocalArtistSearchAndSortRow(
             )
         } else NeriSearchFieldGlass(
             modifier = Modifier.weight(1f),
-            shape = neriSearchFieldShape(LibrarySearchFieldShape)
+            shape = neriSearchFieldShape()
         ) {
         OutlinedTextField(
             value = query,
@@ -1030,9 +999,12 @@ internal fun LocalArtistSearchAndSortRow(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(CoreCommonR.string.library_local_artist_search_hint)) },
             singleLine = true,
-            shape = neriSearchFieldShape(LibrarySearchFieldShape),
+            shape = neriSearchFieldShape(),
 
             colors = neriSearchFieldColors(),
+            leadingIcon = {
+                Icon(imageVector = Icons.Rounded.Search, contentDescription = null)
+            },
             trailingIcon = {
                 if (query.isNotEmpty()) {
                     HapticIconButton(onClick = { onQueryChange("") }) {
@@ -1149,7 +1121,7 @@ internal fun LibraryInlineSearchField(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = neriSearchFieldShape(LibrarySearchFieldShape)
+        shape = neriSearchFieldShape()
     ) {
     OutlinedTextField(
         value = query,
@@ -1157,9 +1129,12 @@ internal fun LibraryInlineSearchField(
         modifier = Modifier.fillMaxWidth(),
         placeholder = { Text(stringResource(placeholderResId)) },
         singleLine = true,
-        shape = neriSearchFieldShape(LibrarySearchFieldShape),
+        shape = neriSearchFieldShape(),
 
         colors = neriSearchFieldColors(),
+        leadingIcon = {
+            Icon(imageVector = Icons.Rounded.Search, contentDescription = null)
+        },
         trailingIcon = {
             if (query.isNotEmpty()) {
                 HapticIconButton(onClick = { onQueryChange("") }) {

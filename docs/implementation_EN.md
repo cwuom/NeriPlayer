@@ -347,6 +347,8 @@ Other lyric sources:
 - **Cloud storage**: `NeteaseCloudViewModel` pages through `/weapi/v1/cloud/get`.
 - Each item becomes a playable `SongItem` from `simpleSong`, falling back to file name and item metadata.
 - Cloud tracks resolve playback URLs the same way as regular NetEase tracks.
+- The cloud page reuses the regular playlist detail shell (`PlaylistModernDetailFrame`): the header cover comes from the newest uploaded track, and it offers in-order playback, shuffle, repeat modes, header/docked search, batch download and export to a local playlist.
+- While the list is only a loaded prefix, whole-list playback and whole-list export stay disabled; exporting explicitly selected tracks is still allowed.
 
 ## Local data and security
 

@@ -639,7 +639,8 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun getBestPlayableAudio_tvRequestUsesYoutubeHostAndPlayerJsSignatureTimestampFallback() = runBlocking {
-        val requests = mutableListOf<okhttp3.Request>()
+        val scriptRequest = CompletableDeferred<okhttp3.Request>()
+        val tvRequest = CompletableDeferred<okhttp3.Request>()
         val bootstrapHtml = """
             <html>
             <script>
@@ -687,18 +688,21 @@ class YouTubeMusicPlaybackRepositoryTest {
             .addInterceptor(
                 Interceptor { chain ->
                     val request = chain.request()
-                    requests += request
                     val body = when {
                         request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
                             bootstrapHtml to "text/html; charset=utf-8"
                         }
                         request.url.encodedPath == "/s/player/test-player/base.js" -> {
+                            scriptRequest.complete(request)
                             playerJs to "application/javascript; charset=utf-8"
                         }
                         request.url.encodedPath.contains("/youtubei/v1/player") -> {
                             when (request.header("X-YouTube-Client-Name")) {
                                 "67" -> blockedPlayerResponse to "application/json; charset=utf-8"
-                                "7" -> tvPlayerResponse to "application/json; charset=utf-8"
+                                "7" -> {
+                                    tvRequest.complete(request)
+                                    tvPlayerResponse to "application/json; charset=utf-8"
+                                }
                                 else -> blockedPlayerResponse to "application/json; charset=utf-8"
                             }
                         }
@@ -754,17 +758,10 @@ class YouTubeMusicPlaybackRepositoryTest {
             playableAudio?.url
         )
 
-        assertTrue(
-            requests.any { request ->
-                request.url.host == "music.youtube.com" &&
-                    request.url.encodedPath == "/s/player/test-player/base.js"
-            }
-        )
-
-        val tvRequest = requests.first { request ->
-            request.header("X-YouTube-Client-Name") == "7"
+        withTimeout(5_000.milliseconds) {
+            assertEquals("music.youtube.com", scriptRequest.await().url.host)
+            assertEquals("www.youtube.com", tvRequest.await().url.host)
         }
-        assertEquals("www.youtube.com", tvRequest.url.host)
     }
 
     @Test

@@ -1,6 +1,5 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.component.lyrics
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -11,6 +10,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
@@ -43,7 +43,7 @@ internal fun BluetoothMetadataModeSetting(
         onDismissRequest = { showDialog = false },
         title = { Text(stringResource(CoreCommonR.string.settings_bluetooth_metadata_mode)) },
         text = {
-            Column {
+            ScrollableDialogColumn {
                 Text(stringResource(CoreCommonR.string.settings_bluetooth_metadata_mode_desc))
                 BluetoothMetadataMode.entries.forEach { option ->
                     MiuixSettingsChoiceRow(

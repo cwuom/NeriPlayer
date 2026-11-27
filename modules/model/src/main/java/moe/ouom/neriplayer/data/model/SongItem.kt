@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.data.model
 
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
@@ -53,5 +54,6 @@ data class SongItem(
     // null 表示旧数据尚未区分用户修改与网络缓存
     val lyricSyncEdited: Boolean? = null,
     // 记录用户显式扫描选中的文件，不能由远端身份或侧载元数据推断
-    val explicitLocalSourceReference: String? = null
+    val explicitLocalSourceReference: String? = null,
+    val youtubeContentLabel: YouTubeContentLabel? = null
 ) : Parcelable

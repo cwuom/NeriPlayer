@@ -1,27 +1,104 @@
 package moe.ouom.neriplayer.network.proxy
 
+import com.sun.net.httpserver.HttpServer
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
 import java.net.URI
+import okhttp3.OkHttpClient
+import okhttp3.Dns
+import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DynamicProxySelectorTest {
 
     private val originalDefault: ProxySelector? = ProxySelector.getDefault()
-    private val originalBypassProxy = DynamicProxySelector.bypassProxy
+    private val originalOverride = DynamicProxySelector.overrideProxy
     private val uri = URI("https://music.163.com/api/song/enhance/player/url")
     private val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("proxy.example", 8080))
 
     @After
     fun restoreGlobalProxyState() {
         ProxySelector.setDefault(originalDefault)
-        DynamicProxySelector.bypassProxy = originalBypassProxy
+        DynamicProxySelector.overrideProxy = originalOverride
+    }
+
+    @Test
+    fun `explicit HTTP and SOCKS routes take priority over direct and system modes`() {
+        val system = RecordingSelector(mutableListOf(proxy))
+        ProxySelector.setDefault(system)
+        for (value in listOf("http://proxy.local:8080", "socks5://[::1]:1080")) {
+            val endpoint = checkNotNull(NetworkProxyEndpoint.parse(value))
+            val route = endpoint.toProxy()
+            assertEquals(value, endpoint.uri)
+            DynamicProxySelector.overrideProxy = route
+            assertEquals(listOf(route), DynamicProxySelector.select(uri))
+            assertTrue(DynamicProxySelector.isProxyHost(endpoint.host))
+        }
+        assertTrue(system.selected.isEmpty())
+    }
+
+    @Test
+    fun `music API and media requests reach the configured HTTP proxy`() {
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
+        val requests = mutableListOf<URI>()
+        server.createContext("/") { exchange ->
+            requests += exchange.requestURI
+            exchange.sendResponseHeaders(204, -1)
+            exchange.close()
+        }
+        val client = OkHttpClient.Builder().proxySelector(DynamicProxySelector).build()
+        server.start()
+        try {
+            DynamicProxySelector.overrideProxy = Proxy(Proxy.Type.HTTP, server.address)
+            val urls = listOf("http://api.test.invalid/browse", "http://stream.test.invalid/media")
+            for (url in urls) {
+                client.newCall(Request.Builder().url(url).build()).execute().use { assertEquals(204, it.code) }
+            }
+            assertEquals(urls.map(::URI), requests)
+        } finally {
+            server.stop(0)
+            client.connectionPool.evictAll()
+            client.dispatcher.executorService.shutdown()
+        }
+    }
+
+    @Test
+    fun `proxy fields accept international domain names and literal addresses`() {
+        assertEquals("http://xn--mnq481g.example:1",
+            NetworkProxyEndpoint.fromFields(Proxy.Type.HTTP, " 代理.example ", "1")?.uri)
+        assertEquals("http://127.0.0.1:65535",
+            NetworkProxyEndpoint.fromFields(Proxy.Type.HTTP, "127.0.0.1", "65535")?.uri)
+        for (host in listOf("2001:db8::1", "[2001:db8::1]")) {
+            assertEquals("socks5://[2001:db8::1]:1080",
+                NetworkProxyEndpoint.fromFields(Proxy.Type.SOCKS, host, "1080")?.uri)
+        }
+    }
+
+    @Test
+    fun `proxy fields reject malformed hosts and out of range ports`() {
+        for (host in listOf("", "bad host", "a..example", "user@host", "host/path", "host:8080", "[2001:db8:::1]")) {
+            assertEquals(host, null, NetworkProxyEndpoint.fromFields(Proxy.Type.HTTP, host, "8080"))
+        }
+        for (port in listOf("", "abc", "-1", "0", "65536")) {
+            assertEquals(port, null, NetworkProxyEndpoint.fromFields(Proxy.Type.SOCKS, "proxy.example", port))
+        }
+        assertEquals(null, NetworkProxyEndpoint.fromFields(Proxy.Type.DIRECT, "proxy.example", "80"))
+    }
+
+    @Test
+    fun `invalid ports, paths and credentials are not proxy endpoints`() {
+        for (value in listOf("http://host", "http://host:0", "socks5://host:65536", "http://host:99/path",
+            "http://user@proxy:80", "https://host:443", "http://host:99?q=x")) {
+            assertEquals(value, null, NetworkProxyEndpoint.parse(value))
+        }
     }
 
     @Test
@@ -29,9 +106,9 @@ class DynamicProxySelectorTest {
         val system = RecordingSelector(mutableListOf(proxy))
         ProxySelector.setDefault(system)
 
-        DynamicProxySelector.bypassProxy = false
+        DynamicProxySelector.overrideProxy = null
         assertEquals(listOf(Proxy.NO_PROXY), DynamicProxySelector.select(null))
-        DynamicProxySelector.bypassProxy = true
+        DynamicProxySelector.overrideProxy = Proxy.NO_PROXY
         assertEquals(listOf(Proxy.NO_PROXY), DynamicProxySelector.select(uri))
         assertTrue(system.selected.isEmpty())
     }
@@ -40,15 +117,19 @@ class DynamicProxySelectorTest {
     fun `system proxies are used when bypass is off`() {
         val system = RecordingSelector(mutableListOf(proxy))
         ProxySelector.setDefault(system)
-        DynamicProxySelector.bypassProxy = false
+        DynamicProxySelector.overrideProxy = null
 
         assertEquals(listOf(proxy), DynamicProxySelector.select(uri))
         assertEquals(listOf(uri), system.selected)
+        assertTrue(DynamicProxySelector.isProxyHost("PROXY.EXAMPLE."))
+        val encrypted = Dns { error("proxy names must not be sent to DoH") }
+        assertSame(Dns.SYSTEM, resolverFor("PROXY.EXAMPLE.", Dns.SYSTEM, encrypted))
+        assertSame(encrypted, resolverFor("music.youtube.com", Dns.SYSTEM, encrypted))
     }
 
     @Test
     fun `empty, missing or self referencing system selectors fall back to direct`() {
-        DynamicProxySelector.bypassProxy = false
+        DynamicProxySelector.overrideProxy = null
 
         ProxySelector.setDefault(RecordingSelector(mutableListOf()))
         assertEquals(listOf(Proxy.NO_PROXY), DynamicProxySelector.select(uri))
@@ -64,6 +145,7 @@ class DynamicProxySelectorTest {
         val address = InetSocketAddress.createUnresolved("proxy.example", 8080)
         val failure = IOException("connection refused")
         ProxySelector.setDefault(system)
+        DynamicProxySelector.overrideProxy = null
 
         DynamicProxySelector.connectFailed(uri, address, failure)
         ProxySelector.setDefault(DynamicProxySelector)

@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapsho
 import moe.ouom.neriplayer.data.local.database.entity.stats.PlaybackStatsSnapshotTrackData
 import moe.ouom.neriplayer.data.local.database.store.expectFailure
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SYNC_PLAYBACK_PAGE_RECORDS
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SyncPlaybackBucketOrder
 import org.junit.Assert.assertEquals
@@ -19,6 +20,31 @@ class PlaybackStatsRoomSnapshotAccessLegacyMergeTest {
     private val staged = harness.staged
     private val access = PlaybackStatsRoomSnapshotAccess(harness.store)
     private val context = mock(Context::class.java)
+
+    @Test
+    fun `older backup preserves live covered hours and a newer clear discards old epochs`() = runTest {
+        val previous = SyncPlaybackHourTotal("phone", 0L, DAY_MS, 8, 300L)
+        val fresh = previous.copy(epochStartedAt = 500L, totalListenMs = 200L)
+        val existing = stagedBucket(DAY_MS, "song", 500, 2, first = 600, last = 800)
+            .copy(hourlyTotals = listOf(previous, fresh), localHourlyTotals = listOf(previous, fresh))
+        staged.upsertSnapshot(stagedSnapshot())
+        staged.stage(
+            tracks = listOf(stagedTrack("song", 500, 2, first = 600, last = 800)),
+            buckets = listOf(existing)
+        )
+        val older = remoteBucket(DAY_MS, "song", 500, 2, first = 600, last = 800)
+        suspend fun apply(clearedAt: Long) {
+            access.mergeLegacyBackup(SNAPSHOT_ID, emptyList(), listOf(older), clearedAt, respectLocalClear = true)
+        }
+
+        apply(0)
+        assertEquals(listOf(previous, fresh), staged.storedBuckets(SNAPSHOT_ID).single().hourlyTotals)
+        assertEquals(listOf(previous, fresh), staged.storedBuckets(SNAPSHOT_ID).single().localHourlyTotals)
+        apply(500)
+        val restored = staged.storedBuckets(SNAPSHOT_ID).single()
+        assertEquals(listOf(fresh), restored.hourlyTotals)
+        assertEquals(listOf(fresh), restored.localHourlyTotals)
+    }
 
     @Test
     fun `legacy merge folds remote rows into staged ones and lifts tracks to their bucket totals`() = runTest {

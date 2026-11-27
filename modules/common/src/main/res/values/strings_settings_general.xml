@@ -25,6 +25,9 @@
     <string name="settings_prefer_high_refresh_rate_desc">请求设备支持的最高刷新率；省电、温控和系统设置仍可能限制刷新率</string>
     <string name="settings_playback_idle_shutdown_dialog_title">暂停多久后退出</string>
     <string name="settings_playback_idle_shutdown_off">不自动退出</string>
+    <string name="settings_playback_background_recovery">后台播放自动恢复</string>
+    <string name="settings_playback_background_recovery_allowed">已关闭电池优化，播放进程被系统结束后会自动续播</string>
+    <string name="settings_playback_background_recovery_restricted">关闭电池优化后，打游戏或系统回收内存结束播放时可自动续播</string>
     <string name="settings_clear_config">清除配置</string>
     <string name="settings_ui_scale">UI 缩放</string>
     <string name="settings_ui_scale_dpi">UI 缩放 (DPI)</string>
@@ -70,7 +73,7 @@
     <string name="settings_personalization_background_section_desc">选择自定义背景和显示强度</string>
     <string name="settings_display">显示设置</string>
     <string name="settings_display_desc">控制封面、歌词与背景的显示方式</string>
-    <string name="settings_home_hidden_notice">当前已关闭全部首页卡片，首页会从底部栏隐藏。</string>
+    <string name="settings_home_hidden_notice">当前没有可显示的栏目，底部导航会隐藏首页。</string>
     <string name="settings_playback">播放设置</string>
     <string name="settings_playback_expand">淡入淡出、进度记忆与音频输出</string>
     <string name="settings_playback_section_behavior">播放行为</string>
@@ -286,7 +289,7 @@
     <string name="settings_no_cache">不缓存 (0 MB)</string>
     <string name="settings_cache_unlimited">无上限</string>
     <string name="settings_download_management">下载管理</string>
-    <string name="settings_download_expand">下载目录、保存格式与任务管理</string>
+    <string name="settings_download_expand">下载音质、元数据与任务管理</string>
     <string name="settings_download_progress">下载进度</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d 首歌曲</string>
     <string name="settings_download_manager">下载管理</string>
@@ -386,7 +389,7 @@
     <string name="language_display_chinese">简体中文</string>
     <string name="language_display_english">英语 / English</string>
     <string name="language_display_system">跟随系统 / Follow system</string>
-    <string name="language_setting_title">语言</string>
+    <string name="language_setting_title">界面语言</string>
     <string name="language_select_title">选择语言</string>
     <string name="settings_color_picker_hint">长按颜色或点击 × 可删除自定义颜色</string>
     <string name="settings_phone_number_hint">+86 手机号</string>

@@ -1,0 +1,15 @@
+<resources>
+    <string name="settings_custom_proxy">自定义代理</string>
+    <string name="settings_custom_proxy_desc">音乐请求、播放和下载使用免认证代理，重新连接后生效。</string>
+    <string name="network_proxy_off">关闭</string>
+    <string name="network_proxy_disabled">关闭自定义代理</string>
+    <string name="network_proxy_priority">正在使用自定义代理</string>
+    <string name="network_proxy_host">主机名或 IP 地址</string>
+    <string name="network_proxy_port">端口（1–65535）</string>
+    <string name="settings_dns_over_https">DNS over HTTPS（DoH）</string>
+    <string name="settings_dns_over_https_desc">新连接使用所选 DNS。本地域名由系统解析，代理连接由代理解析。</string>
+    <string name="network_system_dns">系统 DNS</string>
+    <string name="network_custom_dns">自定义提供商</string>
+    <string name="network_resolver_url">HTTPS 解析服务地址</string>
+    <string name="network_webview_proxy_unavailable">当前 Android System WebView 无法应用此代理。请更新系统 WebView，或在网络设置中关闭自定义代理和“绕过系统代理”，然后重新登录。</string>
+</resources>

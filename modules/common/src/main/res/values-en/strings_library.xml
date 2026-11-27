@@ -52,7 +52,7 @@
     <string name="library_create_playlist_default">New Playlist</string>
     <string name="library_name_reserved">This name is reserved for \"%s\", please choose another name~</string>
     <string name="library_name_exists">A playlist with this name already exists, please choose another name</string>
-    <string name="library_create_new">+ Create Playlist</string>
+    <string name="library_create_new">Create playlist</string>
     <string name="library_qqmusic_coming">Coming Soon</string>
     <string name="library_netease_tab_playlists">Playlists</string>
     <string name="library_netease_tab_albums">Albums</string>
@@ -71,6 +71,9 @@
     <string name="netease_cloud_login_hint">Sign in from Settings to listen to music uploaded to your cloud</string>
     <string name="netease_cloud_loading_more">Loading more…</string>
     <string name="netease_cloud_incomplete_hint">Cloud songs are not fully loaded. Refresh and try again.</string>
+    <string name="netease_cloud_search_hint">Search cloud songs</string>
+    <string name="netease_cloud_search_empty">No matching cloud songs</string>
+    <string name="netease_cloud_export_selection_stale">Selected songs no longer match the current list. Please select again.</string>
     <string name="library_bili_empty">No Bilibili favorites or collections loaded yet</string>
     <string name="library_bili_hint">Sign in to Bilibili to load created favorites, subscribed favorites, and saved collections</string>
     <string name="library_bili_search_hint">Search favorites / collections</string>

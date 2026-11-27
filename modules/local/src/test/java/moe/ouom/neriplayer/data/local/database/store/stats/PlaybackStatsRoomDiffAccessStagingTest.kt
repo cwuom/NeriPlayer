@@ -13,6 +13,7 @@ import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStor
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore.Companion.CUTOVER_STATE_METADATA_KEY
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore.Companion.LEGACY_JSON_STATE
 import moe.ouom.neriplayer.data.local.database.store.stats.PlaybackStatsRoomStore.Companion.ROOM_PRIMARY_STATE
+import moe.ouom.neriplayer.data.model.sync.SyncPlaybackHourTotal
 import moe.ouom.neriplayer.data.model.sync.SyncPlaybackCounterShard
 import moe.ouom.neriplayer.data.sync.runtime.dataset.SYNC_PLAYBACK_PAGE_RECORDS
 import org.junit.Assert.assertEquals
@@ -30,6 +31,9 @@ class PlaybackStatsRoomDiffAccessStagingTest {
     fun `diff stages remote changes and deletions while leaving equal and device only rows alone`() = runTest {
         primaryState(clearedAt = 100)
         staged.upsertSnapshot(stagedSnapshot(clearedAt = 100, sealed = false, isDiff = true))
+        val covered = SyncPlaybackHourTotal("phone", 100, DAY_MS, 0, 300)
+        val received = covered.copy(totalListenMs = 450)
+        val stale = covered.copy(epochStartedAt = 0)
         val phoneEarly = SyncPlaybackCounterShard("phone", 10, totalListenMs = 500, playCount = 1, firstPlayedAt = 200, lastPlayedAt = 400)
         val phoneLate = SyncPlaybackCounterShard("phone", 20, totalListenMs = 800, playCount = 1, firstPlayedAt = 700, lastPlayedAt = 900)
         val tablet = SyncPlaybackCounterShard("tablet", 5, totalListenMs = 700, playCount = 1, firstPlayedAt = 150, lastPlayedAt = 300)
@@ -44,7 +48,8 @@ class PlaybackStatsRoomDiffAccessStagingTest {
             ),
             buckets = listOf(
                 remoteBucketRow(DAY_MS, "a", 1_000, 2, first = 100, last = 500, customName = "Custom a"),
-                remoteBucketRow(DAY_MS, "b", 1_500, 2, first = 150, last = 600, customName = "Custom b"),
+                remoteBucketRow(DAY_MS, "b", 1_500, 2, first = 150, last = 600, customName = "Custom b")
+                    .copy(hourlyTotals = listOf(stale, received), localHourlyTotals = listOf(stale, covered)),
                 remoteBucketRow(DAY_MS, "d", 100, 1, first = 10, last = 20),
                 deviceBucketRow(DAY_MS, "l", 400, 1, first = 300, last = 350)
             ),
@@ -87,7 +92,8 @@ class PlaybackStatsRoomDiffAccessStagingTest {
         assertEquals(setOf(PlaybackStatsSnapshotDeletedTrackEntity(SNAPSHOT_ID, "d"), PlaybackStatsSnapshotDeletedTrackEntity(SNAPSHOT_ID, "x")), staged.deletedTracks)
         assertEquals(
             listOf(
-                remoteBucketRow(DAY_MS, "b", 2_000, 3, first = 150, last = 900, customName = "Custom b"),
+                remoteBucketRow(DAY_MS, "b", 2_000, 3, first = 150, last = 900, customName = "Custom b")
+                    .copy(hourlyTotals = listOf(received), localHourlyTotals = listOf(covered)),
                 remoteBucketRow(2 * DAY_MS, "c", 300, 1, first = 50, last = 60)
             ).map { it.toSnapshotData() },
             staged.storedBuckets(SNAPSHOT_ID)

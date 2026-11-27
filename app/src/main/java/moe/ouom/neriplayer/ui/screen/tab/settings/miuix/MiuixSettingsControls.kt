@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.miuix
 
+import moe.ouom.neriplayer.ui.component.common.NeriSwitch
 import moe.ouom.neriplayer.ui.theme.NeriMotion
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.rounded.Check
@@ -12,7 +13,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,11 +32,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -47,6 +47,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
@@ -55,10 +56,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -69,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.IntOffset
@@ -76,9 +75,11 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.Dp
-import moe.ouom.neriplayer.ui.component.overlay.DialogButtonSlot
-import moe.ouom.neriplayer.ui.component.overlay.LocalDialogButtonSlot
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
+import moe.ouom.neriplayer.ui.component.overlay.FilledDialogActionButton
+import moe.ouom.neriplayer.ui.component.overlay.ScrollableDialogColumn
+import moe.ouom.neriplayer.ui.component.overlay.dialogSlotButtonSize
+import moe.ouom.neriplayer.ui.component.overlay.useCompactAlertLayout
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import androidx.compose.ui.window.DialogProperties
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -90,6 +91,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 private val MiuixControlShape = RoundedCornerShape(16.dp)
 private val MiuixDialogShape = RoundedCornerShape(28.dp)
@@ -98,15 +100,6 @@ private val CleanFieldShape = RoundedCornerShape(16.dp)
 
 private val buttonShape: Shape
     @Composable get() = if (NeriDesign.isClean) CircleShape else MiuixControlShape
-
-/** Inside a clean dialog action slot the button becomes the whole pill. */
-@Composable
-private fun Modifier.dialogSlotButtonSize(defaultHeight: Dp): Modifier =
-    if (NeriDesign.isClean && LocalDialogButtonSlot.current != DialogButtonSlot.None) {
-        fillMaxWidth().heightIn(min = 46.dp)
-    } else {
-        height(defaultHeight)
-    }
 
 @Composable
 internal fun MiuixSettingsDialog(
@@ -117,12 +110,12 @@ internal fun MiuixSettingsDialog(
     icon: @Composable (() -> Unit)? = null,
     title: @Composable (() -> Unit)? = null,
     text: @Composable (() -> Unit)? = null,
-    properties: DialogProperties = DialogProperties()
+    properties: DialogProperties? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = confirmButton,
-        modifier = modifier.widthIn(max = 340.dp),
+        modifier = if (useCompactAlertLayout()) modifier else modifier.widthIn(max = 340.dp),
         dismissButton = dismissButton,
         icon = icon,
         title = title,
@@ -144,21 +137,13 @@ internal fun MiuixSettingsButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val context = LocalContext.current
-    Button(
+    FilledDialogActionButton(
         onClick = {
             context.performHapticFeedback()
             onClick()
         },
-        modifier = modifier.dialogSlotButtonSize(44.dp),
+        modifier = modifier,
         enabled = enabled,
-        shape = buttonShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
         content = content
     )
 }
@@ -179,7 +164,7 @@ internal fun MiuixSettingsOutlinedButton(
         modifier = modifier.dialogSlotButtonSize(44.dp),
         enabled = enabled,
         shape = buttonShape,
-        border = if (NeriDesign.isClean) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = if (NeriDesign.isClean) null else neriOutlinedButtonBorder(enabled),
         colors = ButtonDefaults.outlinedButtonColors(
             containerColor = if (NeriDesign.isClean) {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
@@ -203,7 +188,7 @@ internal fun MiuixSettingsTextButton(
     text: @Composable () -> Unit
 ) {
     val context = LocalContext.current
-    TextButton(
+    DialogActionTextButton(
         onClick = {
             context.performHapticFeedback()
             onClick()
@@ -211,12 +196,6 @@ internal fun MiuixSettingsTextButton(
         modifier = modifier.dialogSlotButtonSize(40.dp),
         enabled = enabled,
         shape = buttonShape,
-        colors = ButtonDefaults.textButtonColors(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
-            disabledContainerColor = Color.Transparent,
-            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-        ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
     ) {
         text()
@@ -430,39 +409,13 @@ internal fun MiuixSettingsSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    Switch(
+    NeriSwitch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = modifier,
-        enabled = enabled,
-        colors = if (NeriDesign.isClean) cleanSwitchColors() else SwitchDefaults.colors(
-            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-            checkedTrackColor = MaterialTheme.colorScheme.primary,
-            uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            disabledCheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            disabledCheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-            disabledUncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        )
+        enabled = enabled
     )
 }
-
-// 主题已配对的前景色能在浅色强调轨道上保持滑块可辨认
-@Composable
-private fun cleanSwitchColors() = SwitchDefaults.colors(
-    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-    checkedTrackColor = MaterialTheme.colorScheme.primary,
-    checkedBorderColor = Color.Transparent,
-    uncheckedThumbColor = Color.White,
-    uncheckedTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
-    uncheckedBorderColor = Color.Transparent,
-    disabledCheckedThumbColor = Color.White.copy(alpha = 0.8f),
-    disabledCheckedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
-    disabledUncheckedThumbColor = Color.White.copy(alpha = 0.7f),
-    disabledUncheckedTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-    disabledUncheckedBorderColor = Color.Transparent
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -686,13 +639,14 @@ internal fun MiuixSettingsChoiceRow(
         modifier = modifier
             .fillMaxWidth()
             .clip(MiuixControlShape)
-            .clickable(enabled = enabled) {
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton) {
                 context.performHapticFeedback()
                 onClick()
             }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Column(
             modifier = Modifier.weight(1f),
@@ -707,7 +661,11 @@ internal fun MiuixSettingsChoiceRow(
                 )
             }
         }
-        MiuixChoiceIndicator(selected = selected, enabled = enabled)
+        if (NeriDesign.isClean) {
+            MiuixChoiceIndicator(selected = selected, enabled = enabled)
+        } else {
+            RadioButton(selected = selected, onClick = null, enabled = enabled)
+        }
     }
 }
 
@@ -731,7 +689,7 @@ private fun MiuixChoiceIndicator(selected: Boolean, enabled: Boolean) {
     )
     Box(
         modifier = Modifier
-            .size(28.dp)
+            .size(24.dp)
             .clip(CircleShape)
             .background(fill),
         contentAlignment = Alignment.Center
@@ -780,8 +738,7 @@ internal fun MiuixSettingsDialogContent(
     verticalSpacing: androidx.compose.ui.unit.Dp = 12.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
+    ScrollableDialogColumn(
         verticalArrangement = Arrangement.spacedBy(verticalSpacing),
         content = content
     )

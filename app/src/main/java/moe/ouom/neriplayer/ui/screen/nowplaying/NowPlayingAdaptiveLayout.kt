@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -15,10 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScalePage
@@ -27,6 +31,8 @@ import moe.ouom.neriplayer.data.model.settings.playback.PlaybackControlSize
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLeadingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingLeadingProgress
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingTrailingControls
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.currentNowPlayingCoverViewport
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverSize
 import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
 
 private val NowPlayingCompactLandscapeHeight = 520.dp
@@ -40,10 +46,12 @@ internal val NowPlayingTabletPortraitContentMaxWidth = 560.dp
 private val NowPlayingTabletImmersiveFixedContentReserve = 420.dp
 private val NowPlayingTabletImmersiveMinContentWidth = 360.dp
 internal val NowPlayingTabletImmersiveToolbarSpacing = 16.dp
-private val NowPlayingExpandedCoverIdentitySpacing = 20.dp
+private val NowPlayingExpandedSectionGap = 6.dp
+private val NowPlayingExpandedToolbarGap = 2.dp
+private val NowPlayingExpandedBottomGap = 8.dp
 private const val NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT = 0.12f
 private const val NOW_PLAYING_TABLET_LANDSCAPE_COVER_WIDTH_FRACTION = 0.72f
-private const val NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION = 0.78f
+private const val NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION = 0.88f
 
 internal fun isNowPlayingPhoneLandscape(
     isLandscape: Boolean,
@@ -94,12 +102,20 @@ internal fun resolveNowPlayingControlBaseSizes(
     compactWideLayout: Boolean,
     compactPortrait: Boolean
 ): NowPlayingControlBaseSizes = when {
-    phoneLandscape -> NowPlayingControlBaseSizes(36.dp, 40.dp, 12.dp, 20.dp)
-    wideLandscape && compactWideLayout -> NowPlayingControlBaseSizes(42.dp, 46.dp, 18.dp, 24.dp)
-    wideLandscape -> NowPlayingControlBaseSizes(46.dp, 50.dp, 22.dp, 24.dp)
-    compactPortrait -> NowPlayingControlBaseSizes(42.dp, 42.dp, 12.dp, 24.dp)
-    else -> NowPlayingControlBaseSizes(42.dp, 42.dp, 20.dp, 24.dp)
+    phoneLandscape -> NowPlayingControlBaseSizes(36.dp, 44.dp, 12.dp, 20.dp)
+    wideLandscape && compactWideLayout -> NowPlayingControlBaseSizes(42.dp, 52.dp, 18.dp, 24.dp)
+    wideLandscape -> NowPlayingControlBaseSizes(46.dp, 56.dp, 22.dp, 24.dp)
+    compactPortrait -> NowPlayingControlBaseSizes(42.dp, 52.dp, 12.dp, 24.dp)
+    // 主键明显大于两侧按钮, 一眼能找到播放/暂停
+    else -> NowPlayingControlBaseSizes(42.dp, 56.dp, 18.dp, 24.dp)
 }
+
+/** Glyph-to-button ratio of the primary transport key; Clean has no container so the glyph fills more */
+internal fun nowPlayingPrimaryGlyphRatio(clean: Boolean): Float = if (clean) 0.72f else 0.42f
+
+/** 缓冲圈是细线, 跟着放大的字形一起放大会显得笨重, 按主键尺寸取一个收敛的大小 */
+internal fun nowPlayingWaitingIndicatorSize(primaryButtonSize: Dp): Dp =
+    (primaryButtonSize * 0.36f).coerceIn(18.dp, 26.dp)
 
 internal data class NowPlayingWideLayoutSpec(
     val compactHeight: Boolean,
@@ -357,8 +373,9 @@ private fun NowPlayingTabletLandscape(
             spec, placement, topBar, cover, tabletIdentity, tabletProgress, tabletControls, tabletToolbar, lyrics
         )
     } else {
+        // 宽松横屏按紧凑间距顺排, 不再用偏移挪位置
         NowPlayingExpandedLandscape(
-            spec, placement, topBar, cover, tabletIdentity, tabletProgress, tabletControls, tabletToolbar, lyrics
+            spec, placement, topBar, cover, identity, progress, controls, toolbar, lyrics
         )
     }
 }
@@ -385,19 +402,27 @@ private fun NowPlayingExpandedLandscape(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             topBar()
+            // 两侧等宽内边距限宽, 只在封面盒内居中一次, 避免两次取整让左右留白差出像素
             cover(
-                Modifier.width(spec.playerPaneWidth * NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION)
-                    .weight(1f).padding(vertical = spec.coverVerticalPadding)
+                Modifier.fillMaxWidth()
+                    .padding(
+                        horizontal = spec.playerPaneWidth *
+                            ((1f - NOW_PLAYING_EXPANDED_TABLET_COVER_WIDTH_FRACTION) / 2f),
+                        vertical = spec.coverVerticalPadding
+                    )
+                    .weight(1f)
             )
-            Spacer(Modifier.height(NowPlayingExpandedCoverIdentitySpacing))
+            // 封面吃掉剩余高度, 下方固定为歌名, 进度, 播放键, 工具栏的紧凑顺序;
+            // 封面权重已把这组控件压到底部, 置底偏好在这里不再需要额外空白
+            // 封面自带上下留白, 进度下方的音频信息行也自带高度, 这两处不再叠加间距
             identity(false)
-            Spacer(Modifier.height(spec.sectionSpacing))
-            NowPlayingWideControlSection(placement.leading, progress, controls)
-            // 封面多分到一些高度，同时保留 LOWER 与置底控件之间的空白差别
-            Spacer(Modifier.weight(NOW_PLAYING_EXPANDED_CONTROLS_SPACER_WEIGHT))
-            NowPlayingWideControlSection(placement.trailing, progress, controls)
-            Spacer(Modifier.height(spec.sectionSpacing))
+            Spacer(Modifier.height(NowPlayingExpandedSectionGap))
+            progress()
+            Spacer(Modifier.height(NowPlayingExpandedSectionGap))
+            controls()
+            Spacer(Modifier.height(NowPlayingExpandedToolbarGap))
             toolbar(false)
+            Spacer(Modifier.height(NowPlayingExpandedBottomGap))
         }
         NowPlayingWideLyricPane(
             compactHeight = false,
@@ -569,6 +594,69 @@ private fun NowPlayingWideLyricPane(
     Box(modifier = modifier.testTag("nowPlayingLyricPane")) {
         Box(Modifier.fillMaxSize().padding(horizontal = if (compactHeight) 8.dp else 20.dp)) {
             lyrics(compactHeight)
+        }
+    }
+}
+
+/**
+ * 手机竖屏先量顶栏、封面下方的歌名到播放键和底部工具栏, 封面在原有尺寸和剩余高度之间取小;
+ * 按顺序测量的 Column 在偏矮的竖屏上会让封面占满高度, 最后测量的工具栏被压成没有图标的空底座
+ */
+@Composable
+internal fun NowPlayingPhonePortraitLayout(
+    modifier: Modifier,
+    beforeCoverSpacing: Dp,
+    topBar: @Composable () -> Unit,
+    cover: @Composable () -> Unit,
+    leadingContent: @Composable ColumnScope.() -> Unit,
+    middleContent: @Composable ColumnScope.() -> Unit,
+    trailingContent: @Composable ColumnScope.() -> Unit
+) {
+    val viewport = currentNowPlayingCoverViewport()
+    Layout(
+        modifier = modifier.testTag("nowPlayingPhonePortraitLayout"),
+        content = {
+            Box { topBar() }
+            Box(Modifier.testTag("nowPlayingPhonePortraitCover")) { cover() }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = leadingContent)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = middleContent)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, content = trailingContent)
+        }
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val (topBarMeasurable, coverMeasurable, leadingMeasurable, middleMeasurable, trailingMeasurable) =
+            measurables
+        val topBarPlaceable = topBarMeasurable.measure(childConstraints)
+        val leadingPlaceable = leadingMeasurable.measure(childConstraints)
+        val trailingPlaceable = trailingMeasurable.measure(childConstraints)
+        val coverTop = topBarPlaceable.height + beforeCoverSpacing.roundToPx()
+        val coverAvailableHeight = (height - coverTop).coerceAtLeast(0)
+        val coverBudget = (coverAvailableHeight - leadingPlaceable.height - trailingPlaceable.height)
+            .coerceAtLeast(0)
+        // 高度充足时保持原来按顶栏以下高度算出的边长, 只有放不下时才收进剩余预算
+        val preferredCoverSize = resolveNowPlayingCoverSize(
+            viewport.wideLandscape, viewport.landscape, viewport.windowWidth,
+            width.toDp(), coverAvailableHeight.toDp()
+        ).roundToPx()
+        val coverPlaceable = coverMeasurable.measure(
+            childConstraints.copy(maxHeight = minOf(preferredCoverSize, coverBudget))
+        )
+        // 歌词和置底留白共享剩余高度, 和原来 Column 的权重分配一致
+        val middleHeight = (coverBudget - coverPlaceable.height).coerceAtLeast(0)
+        val middlePlaceable = middleMeasurable.measure(
+            Constraints(maxWidth = width, minHeight = middleHeight, maxHeight = middleHeight)
+        )
+        layout(width, height) {
+            fun centerX(placeableWidth: Int) =
+                Alignment.CenterHorizontally.align(placeableWidth, width, layoutDirection)
+            topBarPlaceable.place(centerX(topBarPlaceable.width), 0)
+            coverPlaceable.place(centerX(coverPlaceable.width), coverTop)
+            val leadingTop = coverTop + coverPlaceable.height
+            leadingPlaceable.place(centerX(leadingPlaceable.width), leadingTop)
+            middlePlaceable.place(centerX(middlePlaceable.width), leadingTop + leadingPlaceable.height)
+            trailingPlaceable.place(centerX(trailingPlaceable.width), height - trailingPlaceable.height)
         }
     }
 }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.local.database.store
 
 import kotlinx.coroutines.test.runTest
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeContentLabel
 import moe.ouom.neriplayer.data.local.database.dao.FavoritePlaylistDao
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistEntity
 import moe.ouom.neriplayer.data.local.database.entity.FavoritePlaylistSongEntity
@@ -25,6 +26,16 @@ class FavoritePlaylistRoomStoreIncrementalWriteTest {
 
     init {
         doReturn(favorites).`when`(room.database).favoritePlaylistDao()
+    }
+
+    @Test
+    fun `favorite snapshots preserve known youtube classifications alongside unknown legacy songs`() = runTest {
+        val youtubeMix = mix.copy(
+            source = "youtubeMusic",
+            songs = listOf(first.copy(youtubeContentLabel = YouTubeContentLabel.MUSIC_VIDEO), second)
+        )
+        store.replaceAll(listOf(youtubeMix), now = 1)
+        assertEquals(youtubeMix.songs, store.readIfRoomPrimary()!!.single().songs)
     }
 
     @Test

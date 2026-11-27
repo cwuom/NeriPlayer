@@ -24,6 +24,8 @@ package moe.ouom.neriplayer.data.settings
  */
 
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.combine
+import moe.ouom.neriplayer.common.locale.DeviceLocale
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlaybackSourcePreference
 import moe.ouom.neriplayer.platform.youtube.settings.YouTubePlaybackSourcePreferencePolicy
@@ -32,13 +34,14 @@ import moe.ouom.neriplayer.data.settings.appearance.AdvancedBlurQualityPreferenc
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.settings.appearance.isCurrentBuildDimensity
+import moe.ouom.neriplayer.data.settings.appearance.isCurrentDeviceEntryLevelBlurDevice
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeDynamicColor
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeFollowSystemDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeForceDark
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeModeSnapshot
 import moe.ouom.neriplayer.data.settings.appearance.persistThemeUiStyle
 import moe.ouom.neriplayer.data.settings.navigation.synchronizeStartDestinationSnapshot
-import moe.ouom.neriplayer.data.settings.bootstrap.updateBootstrapSettingsSnapshot
+import moe.ouom.neriplayer.data.settings.bootstrap.synchronizeBootstrapSettingsSnapshot
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -106,9 +109,13 @@ import moe.ouom.neriplayer.data.model.playback.normalizePlaybackVolumeBalance
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettings
 import moe.ouom.neriplayer.data.model.playback.effects.AudioEffectsSettingsCodec
 import moe.ouom.neriplayer.data.model.settings.home.HomeMajorSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeFeedKindIds
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeLayout
+import moe.ouom.neriplayer.data.model.settings.home.InternationalHomeSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRadarSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeRecommendedSubSectionIds
 import moe.ouom.neriplayer.data.model.settings.home.HomeTrendingSubSectionIds
+import moe.ouom.neriplayer.data.model.settings.home.applyHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionHidden
 import moe.ouom.neriplayer.data.model.settings.home.encodeHomeSectionOrder
 import moe.ouom.neriplayer.data.model.settings.home.parseHomeSectionHidden
@@ -135,6 +142,7 @@ class SettingsRepository(private val context: Context) {
     private val autoSettingSpecRepository = AutoSettingSpecRepository(context)
     private val usbExclusiveSettingsStore = UsbExclusiveSettingsStore(context)
     private val isDimensityBuild = isCurrentBuildDimensity()
+    private val isEntryLevelBlurBuild by lazy { isCurrentDeviceEntryLevelBlurDevice(context) }
 
     val defaultPlaybackControlLayoutPreferences: PlaybackControlLayoutPreferences
         get() = defaultPlaybackControlLayoutPreferences(context.resources.configuration.smallestScreenWidthDp)
@@ -442,7 +450,8 @@ class SettingsRepository(private val context: Context) {
         dataStoreSettingFlow { preferences ->
             AdvancedBlurQualityPreference.resolve(
                 value = preferences[SettingsKeys.ADVANCED_BLUR_QUALITY],
-                isDimensityDevice = isDimensityBuild
+                isDimensityDevice = isDimensityBuild,
+                isEntryLevelDevice = isEntryLevelBlurBuild
             )
         }
 
@@ -576,6 +585,9 @@ class SettingsRepository(private val context: Context) {
 
     val homeCardBilibiliFlow: Flow<Boolean> =
         autoSettingsRepository.homeCardBilibiliFlow
+
+    val internationalHomeLayoutFlow: Flow<InternationalHomeLayout> =
+        dataStoreSettingFlow(Preferences::toInternationalHomeLayout)
 
     val homeMajorOrderFlow: Flow<List<String>> =
         autoSettingsRepository.homeMajorOrderFlow.map { raw ->
@@ -755,12 +767,12 @@ class SettingsRepository(private val context: Context) {
     val preemptAudioFocusFlow: Flow<Boolean> =
         dataStoreSettingFlow { it[SettingsKeys.PREEMPT_AUDIO_FOCUS] ?: true }
 
-    // 中文系统默认关闭国际化
-    private val defaultInternationalization: Boolean
-        get() = !Locale.getDefault().language.startsWith("zh")
-
-    val internationalizationEnabledFlow: Flow<Boolean> =
-        dataStoreSettingFlow { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] ?: defaultInternationalization }
+    val internationalizationEnabledFlow: Flow<Boolean> = combine(
+        dataStoreSettingFlow { it[SettingsKeys.INTERNATIONALIZATION_ENABLED] },
+        DeviceLocale.observe(context)
+    ) { saved, systemLocale ->
+        saved ?: (systemLocale.language != "zh")
+    }.distinctUntilChanged()
 
     val youtubeEnabledFlow: Flow<Boolean> =
         settingFlow(AutoSettingsSchema.general.youtubeEnabled)
@@ -1267,7 +1279,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setBypassProxy(enabled: Boolean) {
         context.dataStore.edit { it[SettingsKeys.BYPASS_PROXY] = enabled }
-        updateBootstrapSettingsSnapshot(context) { it.copy(bypassProxy = enabled) }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setHapticFeedbackEnabled(enabled: Boolean) {
@@ -1293,7 +1305,7 @@ class SettingsRepository(private val context: Context) {
                 it[SettingsKeys.DOWNLOAD_DIRECTORY_URI] = normalizedUri
             }
         }
-        updateBootstrapSettingsSnapshot(context) { it.copy(downloadDirectoryUri = normalizedUri) }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setBackgroundImageBlur(blur: Float) {
@@ -1325,12 +1337,7 @@ class SettingsRepository(private val context: Context) {
                 }
             }
         }
-        updateBootstrapSettingsSnapshot(context) {
-            it.copy(
-                downloadDirectoryUri = normalizedUri,
-                downloadDirectoryLabel = label
-            )
-        }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setDownloadFileNameTemplate(template: String?) {
@@ -1342,9 +1349,7 @@ class SettingsRepository(private val context: Context) {
                 it[SettingsKeys.DOWNLOAD_FILE_NAME_TEMPLATE] = normalized
             }
         }
-        updateBootstrapSettingsSnapshot(context) {
-            it.copy(downloadFileNameTemplate = normalized)
-        }
+        synchronizeBootstrapSettingsSnapshot(context)
     }
 
     suspend fun setDownloadMetadataPostProcessingEnabled(enabled: Boolean) {
@@ -1388,6 +1393,31 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCardBilibili(enabled: Boolean) {
         autoSettingsRepository.setHomeCardBilibili(enabled)
+    }
+
+    suspend fun setInternationalHomeOrder(order: List<String>) {
+        val normalized = applyHomeSectionOrder(InternationalHomeSectionIds.DEFAULT_ORDER, order, emptySet())
+        context.dataStore.edit { it[AutoSettingsKeys.INTERNATIONAL_HOME_ORDER] = encodeHomeSectionOrder(normalized) }
+    }
+
+    suspend fun setInternationalHomeSectionVisible(id: String, visible: Boolean) {
+        if (id !in InternationalHomeSectionIds.DEFAULT_ORDER) return
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.INTERNATIONAL_HOME_HIDDEN,
+            defaults = InternationalHomeSectionIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
+    }
+
+    suspend fun setInternationalHomeFeedKindVisible(id: String, visible: Boolean) {
+        if (id !in InternationalHomeFeedKindIds.DEFAULT_ORDER) return
+        updateHomeSectionHiddenAtomically(
+            key = AutoSettingsKeys.INTERNATIONAL_HOME_FEED_HIDDEN,
+            defaults = InternationalHomeFeedKindIds.DEFAULT_ORDER,
+            id = id,
+            visible = visible
+        )
     }
 
     suspend fun setHomeMajorOrder(order: List<String>) {
@@ -1747,6 +1777,18 @@ class SettingsRepository(private val context: Context) {
     suspend fun setYouTubeEnabled(enabled: Boolean) {
         setSetting(AutoSettingsSchema.general.youtubeEnabled, enabled)
     }
+}
+
+fun Preferences.toInternationalHomeLayout(): InternationalHomeLayout {
+    val sections = InternationalHomeSectionIds.DEFAULT_ORDER
+    return InternationalHomeLayout(
+        order = parseHomeSectionOrder(this[AutoSettingsKeys.INTERNATIONAL_HOME_ORDER], sections),
+        hidden = parseHomeSectionHidden(this[AutoSettingsKeys.INTERNATIONAL_HOME_HIDDEN], sections),
+        hiddenFeedKinds = parseHomeSectionHidden(
+            this[AutoSettingsKeys.INTERNATIONAL_HOME_FEED_HIDDEN],
+            InternationalHomeFeedKindIds.DEFAULT_ORDER
+        )
+    )
 }
 
 private val HEX_COLOR_REGEX = Regex("^[0-9A-F]{6}$")

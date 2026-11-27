@@ -15,6 +15,7 @@ on:
       - '.github/workflows/sync_labels.yml'
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
+      - '.github/workflows/nightly_release.yml'
       - '.github/workflows/recover_keystore.yml'
   pull_request:
     paths-ignore:
@@ -28,6 +29,7 @@ on:
       - '.github/workflows/sync_labels.yml'
       - '.github/workflows/automation_checks.yml'
       - '.github/workflows/manual_release.yml'
+      - '.github/workflows/nightly_release.yml'
       - '.github/workflows/recover_keystore.yml'
   workflow_dispatch:
 
@@ -97,13 +99,24 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
+      - name: Cache Robolectric Android SDKs
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository/org/robolectric/android-all-instrumented
+          key: robolectric-android-sdks-v1-${{ hashFiles('gradle/libs.versions.toml', 'build-logic/convention/src/main/kotlin/Version.kt', '**/src/test/resources/robolectric.properties') }}
+          restore-keys: robolectric-android-sdks-v1-
+
+      - name: Prepare CI Gradle wrapper and repositories
+        run: |
+          chmod +x gradlew
+          install -Dm644 .github/scripts/maven-central-mirror.init.gradle "${GRADLE_USER_HOME:-$HOME/.gradle}/init.d/maven-central-mirror.init.gradle"
 
       - name: Install Android NDK
         uses: ./.github/actions/android-ndk
 
       - name: Run unit tests, CRAP gate and lint
+        env:
+          ROBOLECTRIC_DEPENDENCY_REPO_URL: https://maven-central.storage-download.googleapis.com/maven2/
         run: >-
           ./gradlew :playback:logic:verifyCrap :playback:runtime:verifyCrap
           :lyrics:verifyCrap :platform:verifyCrap :platform:verifyDomainDependencies :sync:verifyCrap :sync:verifyDomainDependencies
@@ -235,8 +248,10 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' || github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
+      - name: Prepare CI Gradle wrapper and repositories
+        run: |
+          chmod +x gradlew
+          install -Dm644 .github/scripts/maven-central-mirror.init.gradle "${GRADLE_USER_HOME:-$HOME/.gradle}/init.d/maven-central-mirror.init.gradle"
 
       - name: Install Android NDK
         uses: ./.github/actions/android-ndk
@@ -473,8 +488,10 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
+      - name: Prepare CI Gradle wrapper and repositories
+        run: |
+          chmod +x gradlew
+          install -Dm644 .github/scripts/maven-central-mirror.init.gradle "${GRADLE_USER_HOME:-$HOME/.gradle}/init.d/maven-central-mirror.init.gradle"
 
       - name: Install Android NDK
         uses: ./.github/actions/android-ndk

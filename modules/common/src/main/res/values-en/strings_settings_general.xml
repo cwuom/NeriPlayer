@@ -25,6 +25,9 @@
     <string name="settings_prefer_high_refresh_rate_desc">Request the highest refresh rate supported by this device. Power, thermal, and system settings can still limit it.</string>
     <string name="settings_playback_idle_shutdown_dialog_title">Exit after being paused for</string>
     <string name="settings_playback_idle_shutdown_off">Never</string>
+    <string name="settings_playback_background_recovery">Resume background playback</string>
+    <string name="settings_playback_background_recovery_allowed">Battery optimization is off. Playback resumes if the system ends the app</string>
+    <string name="settings_playback_background_recovery_restricted">Turn off battery optimization so playback resumes after games or low memory end the app</string>
     <string name="settings_clear_config">Clear Configuration</string>
     <string name="settings_ui_scale">UI Scale</string>
     <string name="settings_ui_scale_dpi">UI Scale (DPI)</string>
@@ -70,7 +73,7 @@
     <string name="settings_personalization_background_section_desc">Choose a custom background and display strength.</string>
     <string name="settings_display">Display Settings</string>
     <string name="settings_display_desc">Control cover, lyrics, and background display.</string>
-    <string name="settings_home_hidden_notice">All home cards are hidden, so Home will disappear from the bottom bar.</string>
+    <string name="settings_home_hidden_notice">Home is hidden from the bottom bar while it has no sections to show.</string>
     <string name="settings_playback">Playback Settings</string>
     <string name="settings_playback_expand">Fades, progress memory, and audio output</string>
     <string name="settings_playback_section_behavior">Playback Behavior</string>
@@ -286,7 +289,7 @@
     <string name="settings_no_cache">No cache</string>
     <string name="settings_cache_unlimited">Unlimited</string>
     <string name="settings_download_management">Download Management</string>
-    <string name="settings_download_expand">Location, file format, and download tasks</string>
+    <string name="settings_download_expand">Audio quality, metadata, and download tasks</string>
     <string name="settings_download_progress">Download Progress</string>
     <string name="settings_download_songs_count" formatted="false">%d/%d songs</string>
     <string name="settings_download_manager">Download Manager</string>
@@ -386,7 +389,7 @@
     <string name="language_display_chinese">Chinese / 简体中文</string>
     <string name="language_display_english">English / 英语</string>
     <string name="language_display_system">Follow system / 跟随系统</string>
-    <string name="language_setting_title">Language</string>
+    <string name="language_setting_title">App language</string>
     <string name="language_select_title">Select Language</string>
     <string name="settings_color_picker_hint">Long press color or tap × to delete custom color</string>
     <string name="settings_phone_number_hint">+86 Phone Number</string>

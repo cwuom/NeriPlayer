@@ -89,6 +89,8 @@ import moe.ouom.neriplayer.data.playlist.favorite.FAVORITE_SOURCE_YOUTUBE_ARTIST
 import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.ui.theme.background.BlurTransformation
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.navigation.scrollToTopForReselect
+import moe.ouom.neriplayer.ui.navigation.scrollToTopOnTitleBarTap
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
@@ -96,6 +98,7 @@ import moe.ouom.neriplayer.ui.util.rememberSongDisplayCoverUrl
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailUiState
 import moe.ouom.neriplayer.ui.viewmodel.artist.YouTubeMusicCreatorDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorPlaylist
+import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorSongItem
 import moe.ouom.neriplayer.ui.viewmodel.artist.toCreatorSummary
 import moe.ouom.neriplayer.ui.viewmodel.artist.youtubeMusicCreatorSectionKey
@@ -111,7 +114,7 @@ internal fun shouldShowYouTubeMusicCreatorSectionMore(
     section: YouTubeMusicCreatorSection
 ): Boolean {
     return section.moreEndpoint != null && section.items.any { item ->
-        item.videoId.isNotBlank()
+        item.videoId.isNotBlank() || item.browseId.isNotBlank()
     }
 }
 
@@ -204,7 +207,9 @@ fun YouTubeMusicCreatorDetailScreen(
     }
     val sectionStateHolder = rememberSaveableStateHolder()
 
-    LaunchedEffect(creator.browseId) {
+    val preferences by YouTubeContentSettings.preferences.collectAsStateWithLifecycle()
+    val catalogKey = preferences.catalogKey(YouTubeContentSettings.systemLocale())
+    LaunchedEffect(creator.browseId, catalogKey) {
         viewModel.start(creator)
     }
     LaunchedEffect(viewModel, onSongClick) {
@@ -232,6 +237,7 @@ fun YouTubeMusicCreatorDetailScreen(
                         )
                     }
                 },
+                modifier = Modifier.scrollToTopOnTitleBarTap { listState.scrollToTopForReselect() },
                 windowInsets = WindowInsets.statusBars,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent

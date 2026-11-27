@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.util.LruCache
@@ -50,6 +51,12 @@ import moe.ouom.neriplayer.data.settings.XiaomiSuperIslandSettings
 import moe.ouom.neriplayer.core.player.shizuku.ShizukuKeepAliveManager
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 
+internal const val SUPER_ISLAND_SCREEN_OFF_PROGRESS_BUCKET = -1
+
+// 每次渲染都要 startForeground, 灭屏时纯进度变化不值得付出这份开销; 换行照常推送, 亮屏后桶值变化会在下一次 tick 补齐
+internal fun superIslandProgressBucket(progressPercent: Int, screenInteractive: Boolean): Int =
+    if (screenInteractive) progressPercent / 5 else SUPER_ISLAND_SCREEN_OFF_PROGRESS_BUCKET
+
 /**
  * Publishes Xiaomi HyperOS Super Island lyrics independently from the media notification.
  *
@@ -72,6 +79,7 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val notificationManager =
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    private val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
     // 复用应用的图片加载器，避免再维护一套独立的内存与磁盘缓存
     private val imageLoader by lazy { Coil.imageLoader(appContext) }
     private val appIcon by lazy { Icon.createWithResource(appContext, appContext.applicationInfo.icon) }
@@ -244,7 +252,7 @@ internal class XiaomiSuperIslandLyricBridge(context: Context) {
             trackKey,
             displayLyric,
             fullLyric,
-            progress / 5,
+            superIslandProgressBucket(progress, screenInteractive = powerManager?.isInteractive != false),
             activeSettings.hashCode(),
             accentColor
         ).joinToString("|")

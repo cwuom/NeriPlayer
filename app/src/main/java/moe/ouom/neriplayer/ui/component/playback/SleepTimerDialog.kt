@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledAlertDialog as AlertDialog
+import moe.ouom.neriplayer.ui.component.overlay.DialogActionTextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,7 @@ import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.ui.theme.neriOutlinedButtonBorder
 
 @Composable
 fun SleepTimerDialog(
@@ -146,6 +148,8 @@ fun SleepTimerDialog(
                 )
 
                 OutlinedButton(
+
+                    border = neriOutlinedButtonBorder(),
                     onClick = {
                         PlayerManager.sleepTimerManager.startCountdown(
                             minutes = sliderValue.toInt(),
@@ -168,6 +172,8 @@ fun SleepTimerDialog(
                 )
 
                 OutlinedButton(
+
+                    border = neriOutlinedButtonBorder(),
                     onClick = {
                         PlayerManager.sleepTimerManager.startFinishCurrent()
                         onDismiss()
@@ -184,6 +190,8 @@ fun SleepTimerDialog(
                 }
 
                 OutlinedButton(
+
+                    border = neriOutlinedButtonBorder(),
                     onClick = {
                         PlayerManager.sleepTimerManager.startFinishPlaylist()
                         onDismiss()
@@ -202,7 +210,7 @@ fun SleepTimerDialog(
         },
         confirmButton = {
             if (timerState.isActive) {
-                TextButton(onClick = {
+                DialogActionTextButton(onClick = {
                     PlayerManager.sleepTimerManager.cancel()
                     onDismiss()
                 }) {

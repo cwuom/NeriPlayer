@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="youtube_content_language">Default content language</string>
+    <string name="youtube_content_country">Default content country or region</string>
+    <string name="youtube_content_automatic">Automatic (%1$s)</string>
+    <string name="youtube_content_hide_explicit">Hide explicit content</string>
+    <string name="youtube_content_hide_videos">Hide music videos</string>
+</resources>

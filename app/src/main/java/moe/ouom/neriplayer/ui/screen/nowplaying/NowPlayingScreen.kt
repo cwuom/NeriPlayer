@@ -23,6 +23,9 @@ package moe.ouom.neriplayer.ui.screen.nowplaying
  * Updated: 2026/3/23
  */
 
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.haptic.performHapticFeedback
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
 import moe.ouom.neriplayer.data.identity.stableKey
@@ -42,7 +45,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -159,10 +161,10 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.util.hasKnownEmptyLocalCover
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
-import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
+import moe.ouom.neriplayer.ui.component.playback.NeriPlayPauseButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsScreen
-import moe.ouom.neriplayer.ui.screen.lyrics.isSystemPowerSaveMode
+import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.ui.screen.lyrics.LyricsSecondaryLineMode
 import moe.ouom.neriplayer.ui.screen.lyrics.hasDisplayableLyricTranslation
 import moe.ouom.neriplayer.ui.screen.lyrics.resolveEffectivePhoneticLyrics
@@ -194,7 +196,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingSyncedLyricPlayb
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingTrailingControls
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingCoverSource
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.buildNowPlayingSyncedLyricContent
-import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingCoverPanelModifier
+import moe.ouom.neriplayer.ui.screen.nowplaying.cover.NowPlayingParentSizedCover
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.rememberNowPlayingCoverOwner
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverOwnerKey
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingCoverRequestUrl
@@ -1070,7 +1072,7 @@ fun NowPlayingScreen(
         compactWideLayout = windowWidthDp < 720.dp,
         compactPortrait = useCompactPortraitLayout
     )
-    val lowPowerLyricsRendering = remember(context, effectiveShowLyricsScreen) { context.isSystemPowerSaveMode() }
+    val lowPowerLyricsRendering = rememberSystemPowerPressure().reduceOptionalEffects
 
     // 歌词偏移 (平台 + 用户自定义)
     val totalOffset = rememberNowPlayingLyricOffset(
@@ -1259,25 +1261,19 @@ fun NowPlayingScreen(
 
                             // 手机横屏仍可左右切页，平板分栏不再切换隐藏的歌词子页
                             if (phoneLandscape && (isLyricsMode || lyrics.isNotEmpty())) {
-                                contentModifier = contentModifier.pointerInput(isLyricsMode, lyrics) {
-                                    var horizontalDragDistance = 0f
-                                    detectHorizontalDragGestures(
-                                        onDragStart = { horizontalDragDistance = 0f }
-                                    ) { _, dragAmount ->
-                                        horizontalDragDistance += dragAmount
-                                        if (isLyricsMode && horizontalDragDistance > 60f) {
-                                            onShowLyricsScreenChange(false)
-                                        } else if (!isLyricsMode && horizontalDragDistance < -60f) {
-                                            onShowLyricsScreenChange(true)
-                                        }
+                                contentModifier = contentModifier.nowPlayingPageSwipe(
+                                    key = lyrics,
+                                    direction = if (isLyricsMode) {
+                                        NowPlayingPageSwipeDirection.Right
+                                    } else {
+                                        NowPlayingPageSwipeDirection.Left
                                     }
-                                }
+                                ) { onShowLyricsScreenChange(!isLyricsMode) }
                             } else if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
-                                contentModifier = contentModifier.pointerInput(lyrics) {
-                                    detectHorizontalDragGestures { _, dragAmount ->
-                                        if (dragAmount < -20) onShowLyricsScreenChange(true)
-                                    }
-                                }
+                                contentModifier = contentModifier.nowPlayingPageSwipe(
+                                    key = lyrics,
+                                    direction = NowPlayingPageSwipeDirection.Left
+                                ) { onShowLyricsScreenChange(true) }
                             }
 
                             val mainPlaybackControls: @Composable () -> Unit = {
@@ -1296,11 +1292,11 @@ fun NowPlayingScreen(
                                                     (controlsLayout.secondaryButtonSize.value /
                                                             secondaryControlButtonSize.value)
                                             ).coerceAtLeast(18.dp)
-                                    val primaryIconSize = (
-                                            nowPlayingMainControlIconSize *
-                                                    (controlsLayout.primaryButtonSize.value /
-                                                            primaryControlButtonSize.value)
-                                            ).coerceAtLeast(18.dp)
+                                    // Clean 的上一首/下一首也没有底座, 字形放大一档与主键呼应
+                                    val skipIconSize = if (NeriDesign.isClean) secondaryIconSize * 1.25f else secondaryIconSize
+                                    // 主键按自身尺寸给字形, Clean 没有底座所以字形更大
+                                    val primaryIconSize = (controlsLayout.primaryButtonSize *
+                                            nowPlayingPrimaryGlyphRatio(NeriDesign.isClean)).coerceAtLeast(20.dp)
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(controlsLayout.spacing),
                                         verticalAlignment = Alignment.CenterVertically
@@ -1335,13 +1331,14 @@ fun NowPlayingScreen(
                                                 .size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
-                                                Icons.Outlined.SkipPrevious,
+                                                if (NeriDesign.isClean) Icons.Rounded.SkipPrevious else Icons.Outlined.SkipPrevious,
                                                 contentDescription = stringResource(CoreCommonR.string.player_previous),
-                                                modifier = Modifier.size(secondaryIconSize)
+                                                modifier = Modifier.size(skipIconSize)
                                             )
                                         }
 
-                                        HapticFilledIconButton(
+                                        NeriPlayPauseButton(
+                                            isPlaying = isPlaybackControlPlaying,
                                             onClick = { playbackSource.togglePlayPause() },
                                             enabled = !usbPlaybackPreparing && lanControls.permissions.playPause,
                                             modifier = Modifier
@@ -1364,7 +1361,8 @@ fun NowPlayingScreen(
                                                 restoreVolumeContentDescription = stringResource(CoreCommonR.string.player_restore_volume),
                                                 waitingContentDescription = stringResource(CoreCommonR.string.player_waiting),
                                                 modifier = Modifier.size(primaryIconSize),
-                                                progressIndicatorSize = primaryIconSize
+                                                progressIndicatorSize = nowPlayingWaitingIndicatorSize(controlsLayout.primaryButtonSize),
+                                                iconSize = primaryIconSize
                                             )
                                         }
 
@@ -1382,9 +1380,9 @@ fun NowPlayingScreen(
                                                 .size(controlsLayout.secondaryButtonSize)
                                         ) {
                                             Icon(
-                                                Icons.Outlined.SkipNext,
+                                                if (NeriDesign.isClean) Icons.Rounded.SkipNext else Icons.Outlined.SkipNext,
                                                 contentDescription = stringResource(CoreCommonR.string.player_next),
-                                                modifier = Modifier.size(secondaryIconSize)
+                                                modifier = Modifier.size(skipIconSize)
                                             )
                                         }
 
@@ -1673,15 +1671,7 @@ fun NowPlayingScreen(
                             }
 
                             // 手机竖屏保留原来的控件顺序和封面歌词
-                            val mainColumnContent: @Composable ColumnScope.() -> Unit = {
-                                coverTopBar()
-                                Spacer(Modifier.height(coverPagePresentation.beforeCoverSpacing))
-                                coverPanel(
-                                    Modifier.nowPlayingCoverPanelModifier(false, this),
-                                    coverPagePresentation.preferredCoverSize
-                                )
-                                portraitLeadingContent()
-
+                            val portraitMiddleContent: @Composable ColumnScope.() -> Unit = {
                                 NowPlayingEmbeddedLyrics(
                                     visible = embeddedLyricsVisible,
                                     content = embeddedLyricContent,
@@ -1692,8 +1682,6 @@ fun NowPlayingScreen(
 
                                 // 置底偏好始终以可用内容区的底部为准
                                 Spacer(modifier = Modifier.weight(1f))
-
-                                portraitTrailingContent()
                             }
 
                             if (useWideLandscapeLayout) {
@@ -1790,10 +1778,14 @@ fun NowPlayingScreen(
                                     immersiveLayout(contentModifier)
                                 }
                             } else {
-                                Column(
+                                NowPlayingPhonePortraitLayout(
                                     modifier = contentModifier,
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    content = mainColumnContent
+                                    beforeCoverSpacing = coverPagePresentation.beforeCoverSpacing,
+                                    topBar = coverTopBar,
+                                    cover = { coverPanel(Modifier, NowPlayingParentSizedCover) },
+                                    leadingContent = portraitLeadingContent,
+                                    middleContent = portraitMiddleContent,
+                                    trailingContent = portraitTrailingContent
                                 )
                             }
 

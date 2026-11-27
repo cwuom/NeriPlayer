@@ -6,12 +6,16 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.session.MediaSession
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.host.PlayerPresentationHost
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState
+import moe.ouom.neriplayer.core.player.service.notification.favoriteActionTitle
+import moe.ouom.neriplayer.core.player.service.notification.floatingLyricsActionTitle
 import moe.ouom.neriplayer.core.player.testing.PlayerTestEnvironment
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -127,6 +131,24 @@ class AndroidPlaybackNotificationPublicationTest {
         notifications.notify(AudioPlayerService.NOTIFICATION_ID, notification)
 
         assertFalse(port.isNotificationPublicationCurrent(token))
+    }
+
+    @Test
+    fun `media notification actions follow the media session transport order`() {
+        val notification = port.buildNotification(inputs)
+
+        val titles = checkNotNull(notification.actions).map { it.title.toString() }
+        assertEquals(
+            listOf(
+                context.getString(CoreCommonR.string.player_previous),
+                context.getString(CoreCommonR.string.player_pause),
+                context.getString(CoreCommonR.string.player_next),
+                context.getString(favoriteActionTitle(false)),
+                context.getString(floatingLyricsActionTitle(false)),
+            ),
+            titles,
+        )
+        assertArrayEquals(intArrayOf(0, 1, 2), notification.extras.getIntArray(Notification.EXTRA_COMPACT_ACTIONS))
     }
 
     private fun newPort(): AndroidPlaybackServicePresentationPort = AndroidPlaybackServicePresentationPort(context)
