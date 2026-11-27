@@ -94,6 +94,7 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
         if (durationMs > 0L) {
             manager.playbackProgressOwner.setDuration(durationMs)
         }
+        manager.syncDlnaRemotePlaybackStats(isPlaying, positionMs)
         if (manager.lyriconEnabled) {
             LyriconManager.setPlaybackState(isPlaying)
             LyriconManager.updatePlaybackProgress(
@@ -610,4 +611,10 @@ internal object PlayerManagerDlnaAdapter : DlnaCastManager.PlayerSyncHost {
             }
         }
     }
+}
+
+// 投送期间本地 ExoPlayer 回调被屏蔽，统计只能由远端状态驱动，否则整首经 DLNA 播放的歌不计时长和次数
+internal fun PlayerManager.syncDlnaRemotePlaybackStats(isPlaying: Boolean, positionMs: Long) {
+    syncPlaybackStatsPlayingState(isPlaying, reason = "dlna_remote")
+    if (isPlaying) playbackStatsOwner.onProgress(positionMs.coerceAtLeast(0L), writesEnabled = initialized)
 }

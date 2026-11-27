@@ -37,6 +37,7 @@ class DlnaMediaServer(
 ) {
     companion object {
         private const val MAX_HEADER_BYTES = 8192
+        private const val HEADER_READ_DEADLINE_MS = 15_000L
         private const val STREAM_BUFFER_BYTES = 64 * 1024
         private const val MAX_ARTWORK_BYTES = 8 * 1024 * 1024
         private const val MAX_ARTWORK_COUNT = 8
@@ -552,10 +553,15 @@ class DlnaMediaServer(
         return noQuery
     }
 
-    private fun readHeaderBlock(input: BufferedInputStream): String? {
+    // soTimeout 只限制单次 read，每 9 秒送 1 字节就能无限占住工作线程；这里再加整段请求头的总时限
+    internal fun readHeaderBlock(
+        input: BufferedInputStream,
+        deadlineNanos: Long = System.nanoTime() + HEADER_READ_DEADLINE_MS * 1_000_000L
+    ): String? {
         val bytes = ByteArray(MAX_HEADER_BYTES)
         var count = 0
         while (count < MAX_HEADER_BYTES) {
+            if (System.nanoTime() - deadlineNanos > 0L) return null
             val b = input.read()
             if (b < 0) break
             bytes[count++] = b.toByte()

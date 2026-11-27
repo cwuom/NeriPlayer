@@ -335,6 +335,9 @@ object UpnpXmlParser {
         }.getOrNull()
     }
 
+    internal fun containsDtdDeclaration(xml: String): Boolean =
+        xml.contains("<!DOCTYPE", ignoreCase = true) || xml.contains("<!ENTITY", ignoreCase = true)
+
     fun formatUpnpTime(positionMs: Long): String {
         val clampedSeconds = (positionMs.coerceAtLeast(0L)) / 1000L
         val hours = clampedSeconds / 3600L
@@ -345,6 +348,9 @@ object UpnpXmlParser {
 
     private fun parseDocument(xml: String): org.w3c.dom.Document? {
         if (xml.isBlank()) return null
+        // Android 的 DocumentBuilderFactory 不认下面大部分 feature（runCatching 会静默吞掉），
+        // 所以直接拒绝任何 DTD/实体声明，杜绝实体膨胀和 XXE；UPnP 描述和 SOAP 都不需要 DTD
+        if (containsDtdDeclaration(xml)) return null
         return runCatching {
             val factory = DocumentBuilderFactory.newInstance().apply {
                 isNamespaceAware = true

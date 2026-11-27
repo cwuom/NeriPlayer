@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.dlna.session
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDeviceOptions
 import org.json.JSONArray
@@ -54,14 +55,14 @@ class DlnaPreferencesStore(context: Context) {
                         }
                     )
                 }
-                store.edit()
-                    .putString(KEY_DEVICE_OPTIONS, migrated.toString())
-                    .putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
-                    .apply()
+                store.edit {
+                    putString(KEY_DEVICE_OPTIONS, migrated.toString())
+                    putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
+                }
                 return
             }
         }
-        store.edit().putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION).apply()
+        store.edit { putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION) }
     }
 
     fun loadAllDeviceOptions(): Map<String, DlnaDeviceOptions> {
@@ -101,10 +102,10 @@ class DlnaPreferencesStore(context: Context) {
                 }
             )
         }
-        prefs?.edit()
-            ?.putString(KEY_DEVICE_OPTIONS, root.toString())
-            ?.putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
-            ?.apply()
+        prefs?.edit {
+            putString(KEY_DEVICE_OPTIONS, root.toString())
+            putInt(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION)
+        }
     }
 
     fun defaultOptionsForDevice(device: DlnaDevice): DlnaDeviceOptions {
@@ -185,6 +186,6 @@ class DlnaPreferencesStore(context: Context) {
                 }
             )
         }
-        prefs?.edit()?.putString(KEY_MANUAL_LOCATIONS, array.toString())?.apply()
+        prefs?.edit { putString(KEY_MANUAL_LOCATIONS, array.toString()) }
     }
 }

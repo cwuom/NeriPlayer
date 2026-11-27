@@ -5,6 +5,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.StatFs
+import android.os.storage.StorageManager
+import androidx.core.graphics.scale
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -57,6 +61,12 @@ class LosslessSourceResolver(
     companion object {
         private const val STAGING_DIR_NAME = "dlna_staging"
         private const val MAX_STAGING_BYTES = 512L * 1024L * 1024L
+        // RIFF 的 32 位长度字段上限是 4 GiB，再留一半余量；同时给系统留出 256 MiB 可用空间
+        internal const val MAX_WAV_FALLBACK_PCM_BYTES = 2L * 1024L * 1024L * 1024L
+        internal const val STAGING_FREE_SPACE_RESERVE_BYTES = 256L * 1024L * 1024L
+
+        internal fun wavFallbackPcmBudgetBytes(usableSpaceBytes: Long): Long =
+            minOf(MAX_WAV_FALLBACK_PCM_BYTES, (usableSpaceBytes - STAGING_FREE_SPACE_RESERVE_BYTES).coerceAtLeast(0L))
         private const val MAX_COVER_DIMENSION = 1024
         private const val BILI_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -420,14 +430,21 @@ class LosslessSourceResolver(
                         }
 
                         evictStagingIfNeeded(setOf(sourceFile.absolutePath))
+                        val hintBitDepth = (inspected.bitDepth ?: urlResult.audioInfo?.bitDepth)?.takeIf { it > 0 }
+                        val pcmBudget = wavFallbackPcmBudgetBytes(allocatableStagingBytes())
+                        val estimatedPcm = LosslessWavDecoder.estimatePcmBytes(durationMs, inspected.sampleRateHz, inspected.channelCount, hintBitDepth)
+                        if (estimatedPcm != null && estimatedPcm > pcmBudget) {
+                            return@withContext ResolutionOutcome.Failed(wavTooLargeMessage())
+                        }
                         val pcmCacheFile = File(stagingDir, "${sha256.take(24)}_$stagingTag.pcm")
                         try {
                             val decoded = LosslessWavDecoder.decodeToPcmFile(
                                 sourceFile = sourceFile,
                                 inspected = inspected,
                                 pcmOutputFile = pcmCacheFile,
-                                hintBitDepth = (inspected.bitDepth ?: urlResult.audioInfo?.bitDepth)?.takeIf { it > 0 },
-                                isCancelled = isCancelled
+                                hintBitDepth = hintBitDepth,
+                                isCancelled = isCancelled,
+                                maxPcmBytes = pcmBudget
                             )
                             if (isCancelled()) {
                                 if (decoded.pcmFile != sourceFile) runCatching { decoded.pcmFile.delete() }
@@ -561,6 +578,9 @@ class LosslessSourceResolver(
                         } catch (e: kotlinx.coroutines.CancellationException) {
                             if (pcmCacheFile != sourceFile) runCatching { pcmCacheFile.delete() }
                             throw e
+                        } catch (_: LosslessWavDecoder.PcmSizeLimitExceededException) {
+                            if (pcmCacheFile != sourceFile) runCatching { pcmCacheFile.delete() }
+                            ResolutionOutcome.Failed(wavTooLargeMessage())
                         } catch (t: Throwable) {
                             if (pcmCacheFile != sourceFile) runCatching { pcmCacheFile.delete() }
                             ResolutionOutcome.Failed(
@@ -585,7 +605,7 @@ class LosslessSourceResolver(
         if (url.startsWith("/") || (!url.contains("://") && File(url).isFile)) {
             return File(url).takeIf { it.isFile && it.length() > 0L }
         }
-        val uri = runCatching { Uri.parse(url) }.getOrNull()
+        val uri = runCatching { url.toUri() }.getOrNull()
         if (uri?.scheme.equals("file", ignoreCase = true)) {
             return uri?.path?.let(::File)?.takeIf { it.isFile && it.length() > 0L }
         }
@@ -703,7 +723,7 @@ class LosslessSourceResolver(
         var committed = false
         return try {
             val builder = Request.Builder().url(url).get()
-            val uri = runCatching { Uri.parse(url) }.getOrNull()
+            val uri = runCatching { url.toUri() }.getOrNull()
             val host = uri?.host?.lowercase(Locale.US).orEmpty()
             val isBiliUrl = isBiliStreamHost(host) || isBiliStreamUrl(url)
             if (isBiliUrl || isBilibiliSong) {
@@ -789,13 +809,13 @@ class LosslessSourceResolver(
                 reference.startsWith("/") || (!reference.contains("://") && File(reference).isFile) ->
                     File(reference).takeIf { it.isFile }?.readBytes()
                 reference.startsWith("file://", ignoreCase = true) ->
-                    Uri.parse(reference).path?.let(::File)?.takeIf { it.isFile }?.readBytes()
+                    reference.toUri().path?.let(::File)?.takeIf { it.isFile }?.readBytes()
                 reference.startsWith("content://", ignoreCase = true) ->
-                    context.contentResolver.openInputStream(Uri.parse(reference))?.use { it.readBytes() }
+                    context.contentResolver.openInputStream(reference.toUri())?.use { it.readBytes() }
                 reference.startsWith("http://", ignoreCase = true) ||
                     reference.startsWith("https://", ignoreCase = true) -> {
                     val reqBuilder = Request.Builder().url(reference).get()
-                    val host = runCatching { Uri.parse(reference).host?.lowercase(Locale.US) }.getOrNull().orEmpty()
+                    val host = runCatching { reference.toUri().host?.lowercase(Locale.US) }.getOrNull().orEmpty()
                     if (host.endsWith("hdslb.com") || host.endsWith("biliimg.com")) {
                         reqBuilder.header("Referer", "https://www.bilibili.com")
                         reqBuilder.header("User-Agent", BILI_USER_AGENT)
@@ -835,7 +855,7 @@ class LosslessSourceResolver(
             )
             val w = (bitmap.width * scale).toInt().coerceAtLeast(1)
             val h = (bitmap.height * scale).toInt().coerceAtLeast(1)
-            Bitmap.createScaledBitmap(bitmap, w, h, true).also {
+            bitmap.scale(w, h, filter = true).also {
                 if (it !== bitmap) bitmap.recycle()
             }
         } else {
@@ -908,6 +928,15 @@ class LosslessSourceResolver(
             else -> sourceFile
         }
     }
+
+    // getAllocatableBytes 会把系统可回收的缓存算进去，比 usableSpace 更接近实际能写入的量
+    private fun allocatableStagingBytes(): Long = runCatching {
+        val storage = context.getSystemService(StorageManager::class.java)
+        storage.getAllocatableBytes(storage.getUuidForPath(stagingDir))
+    }.getOrElse { runCatching { StatFs(stagingDir.path).availableBytes }.getOrDefault(0L) }
+
+    private fun wavTooLargeMessage(): String =
+        getLocalizedString(CoreCommonR.string.dlna_err_wav_fallback_too_large, emptyArray())
 
     private fun computeSha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

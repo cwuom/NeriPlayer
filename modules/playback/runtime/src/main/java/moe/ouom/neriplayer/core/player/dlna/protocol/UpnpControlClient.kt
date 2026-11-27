@@ -185,6 +185,26 @@ class UpnpControlClient(
         }
     }
 
+    /** 续订已有订阅：按 UPnP 规范只带 SID 和 TIMEOUT，不能再带 CALLBACK/NT；返回渲染器实际授予的秒数 */
+    fun renewGena(eventSubUrl: String, sid: String, timeoutSec: Int = 300): Result<Int> {
+        if (eventSubUrl.isBlank() || sid.isBlank()) return Result.failure(IllegalArgumentException("No GENA subscription"))
+        return runCatching {
+            val request = Request.Builder()
+                .url(eventSubUrl)
+                .method("SUBSCRIBE", ByteArray(0).toRequestBody(null))
+                .header("SID", sid)
+                .header("TIMEOUT", "Second-$timeoutSec")
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("GENA renew failed with HTTP ${response.code}")
+                response.header("TIMEOUT")
+                    ?.substringAfter("Second-", missingDelimiterValue = "")
+                    ?.toIntOrNull()
+                    ?: timeoutSec
+            }
+        }
+    }
+
     fun unsubscribeGena(eventSubUrl: String, sid: String): Result<Unit> {
         if (eventSubUrl.isBlank() || sid.isBlank()) return Result.success(Unit)
         return runCatching {

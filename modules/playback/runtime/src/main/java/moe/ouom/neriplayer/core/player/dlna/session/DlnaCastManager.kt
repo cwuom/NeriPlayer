@@ -1,7 +1,7 @@
 package moe.ouom.neriplayer.core.player.dlna.session
 
+import android.annotation.SuppressLint
 import android.app.Application
-import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -22,7 +22,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
-import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.dlna.audio.LosslessSourceResolver
 import moe.ouom.neriplayer.core.player.dlna.protocol.DidlLiteBuilder
 import moe.ouom.neriplayer.core.player.dlna.protocol.DlnaProtocolInfo
@@ -31,8 +30,6 @@ import moe.ouom.neriplayer.core.player.dlna.protocol.UpnpControlClient
 import moe.ouom.neriplayer.core.player.dlna.server.DlnaLanAddressResolver
 import moe.ouom.neriplayer.core.player.dlna.server.DlnaMediaServer
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
-import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
-import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.SongUrlResult
@@ -50,7 +47,6 @@ import java.util.concurrent.atomic.AtomicLong
 object DlnaCastManager {
 
     private const val TAG = "NERI-DlnaCast"
-    private const val POLL_INTERVAL_MS = 1_000L
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val _castStateFlow = MutableStateFlow(DlnaCastState())
@@ -64,6 +60,7 @@ object DlnaCastManager {
     private var initialized = false
     private lateinit var app: Application
     private lateinit var prefsStore: DlnaPreferencesStore
+    @SuppressLint("StaticFieldLeak") // 只持有 Application Context，与进程同寿命
     private lateinit var sourceResolver: LosslessSourceResolver
     private lateinit var lockController: DlnaNetworkAndLockController
 
@@ -80,6 +77,7 @@ object DlnaCastManager {
     private var nextPrequeueJob: Job? = null
     private val prequeueGate = DlnaPrequeueGate()
     private val rendererReachability = DlnaRendererReachability()
+    private val genaRenewal = DlnaGenaRenewalScheduler(scope, controlClient::renewGena) { NPLogger.w(TAG, "GENA renew failed: ${it.message}") }
     private var pollJob: Job? = null
     private var activeGenaSid: String? = null
     private var activeGenaEventSubUrl: String? = null
@@ -139,11 +137,6 @@ object DlnaCastManager {
     @Volatile
     private var lastObservedTransportState = DlnaTransportState.UNKNOWN
     private val pollNudgeChannel = Channel<Unit>(Channel.CONFLATED)
-
-    private fun monotonicBootElapsedMs(): Long {
-        val bootMs = runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
-        return if (bootMs > 0L) bootMs else (System.nanoTime() / 1_000_000L).coerceAtLeast(1L)
-    }
 
     internal sealed interface DlnaUrlResolution {
         data class Success(val result: SongUrlResult.Success) : DlnaUrlResolution
@@ -367,7 +360,7 @@ object DlnaCastManager {
         val priorHandoff = pendingHandoffSnapshot
         val shouldAutoPlay = if (previousDevice != null) {
             if (rendererMediaConfirmed) {
-                previousState.transportState == DlnaTransportState.PLAYING || desiredRemotePlaying
+                resolveRemotePlayingForHandoff(previousState.transportState, desiredRemotePlaying)
             } else {
                 priorHandoff?.wasPlaying ?: desiredRemotePlaying
             }
@@ -435,6 +428,7 @@ object DlnaCastManager {
             prevQueued = queuedNext
             activeGenaSid = null
             activeGenaEventSubUrl = null
+            genaRenewal.cancel()
             activeStreamPath = null
             queuedNext = null
 
@@ -592,7 +586,7 @@ object DlnaCastManager {
         val handoff = pendingHandoffSnapshot
         val confirmed = rendererMediaConfirmed
         val resumePlaying = !forceLocalPaused && if (confirmed) {
-            state.transportState == DlnaTransportState.PLAYING || desiredRemotePlaying
+            resolveRemotePlayingForHandoff(state.transportState, desiredRemotePlaying)
         } else {
             handoff?.wasPlaying ?: desiredRemotePlaying
         }
@@ -641,6 +635,7 @@ object DlnaCastManager {
             queuedNext = null
             activeGenaSid = null
             activeGenaEventSubUrl = null
+            genaRenewal.cancel()
             activeBoundNetwork = null
             mediaServer.allowedPeerHost = null
 
@@ -843,6 +838,7 @@ object DlnaCastManager {
             }
         }
         mediaServer.unregisterStream(oldPath)
+        lockController.releaseCastLocks()
         scope.launch {
             if (connectionGenerationCounter.get() == expectedConnGen) {
                 controlClient.stop(device)
@@ -1104,6 +1100,12 @@ object DlnaCastManager {
                             }
                         }
                         if (isStale()) return
+                        if (reconcilePauseRequestedDuringPlay(device, isStale, publishedPosMs, snapshot.durationMs)) {
+                            synchronized(sessionStateLock) {
+                                if (!isStale()) { rendererMediaConfirmed = true; pendingHandoffSnapshot = null }
+                            }
+                            return
+                        }
                         synchronized(sessionStateLock) {
                             if (isStale()) return
                             if (latestRequestedSeekGen == gen && latestRequestedSeekMs != null &&
@@ -1188,6 +1190,7 @@ object DlnaCastManager {
             expectedConnGen = connectionGenerationCounter.get()
             expectedTrackGen = trackGenerationCounter.get()
         }
+        lockController.acquireCastLocks(forceRenew = true)
         val expectedUdn = device.udn
         scope.launch {
             val current = _castStateFlow.value
@@ -1227,6 +1230,9 @@ object DlnaCastManager {
                     }
                 }
                 if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@onSuccess
+                val playStale = { !isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn) }
+                val current = _castStateFlow.value
+                if (reconcilePauseRequestedDuringPlay(device, playStale, current.remotePositionMs, current.remoteDurationMs)) return@onSuccess
                 synchronized(sessionStateLock) {
                     if (isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) {
                         playCommandConfirmedGen = expectedTrackGen
@@ -1257,6 +1263,19 @@ object DlnaCastManager {
         }
     }
 
+    // Play 还在往返时用户按了暂停：那次 pause 可能因渲染器尚未进入 PLAYING 而失败，这里补发并按暂停发布
+    private suspend fun reconcilePauseRequestedDuringPlay(device: DlnaDevice, isStale: () -> Boolean, positionMs: Long, durationMs: Long): Boolean {
+        if (desiredRemotePlaying || isStale()) return false
+        controlClient.pause(device)
+        if (isStale()) return true
+        _castStateFlow.update { it.copy(transportState = DlnaTransportState.PAUSED_PLAYBACK, remotePositionMs = positionMs) }
+        withContext(Dispatchers.Main) {
+            if (!isStale()) playerHost?.onDlnaPlaybackStateChanged(isPlaying = false, positionMs = positionMs, durationMs = durationMs)
+        }
+        nudgePolling()
+        return true
+    }
+
     fun pauseRemote() {
         val device: DlnaDevice
         val expectedConnGen: Long
@@ -1277,6 +1296,8 @@ object DlnaCastManager {
             expectedConnGen = connectionGenerationCounter.get()
             expectedTrackGen = trackGenerationCounter.get()
         }
+        // 暂停期间不需要低延迟 Wi-Fi 和唤醒锁，继续持有只会耗电；恢复播放时 playRemote 会重新获取
+        lockController.releaseCastLocks()
         val expectedUdn = device.udn
         scope.launch {
             if (currentTrackUriLoadedGen != expectedTrackGen) {
@@ -1421,6 +1442,13 @@ object DlnaCastManager {
                     handleRendererUnreachable(device, connectionGen)
                     break
                 }
+                // 锁跟随渲染器实际状态：渲染器上直接恢复播放要拿回锁（否则 Wi-Fi 省电导致拉流卡顿），暂停后再释放
+                when (transport) {
+                    DlnaTransportState.PLAYING -> lockController.acquireCastLocks()
+                    DlnaTransportState.PAUSED_PLAYBACK, DlnaTransportState.STOPPED ->
+                        if (!desiredRemotePlaying) lockController.releaseCastLocks()
+                    else -> Unit
+                }
 
                 if (transport != null && currentTrackUriLoadedGen == activeTrackGen) {
                     val pendingNext = queuedNext
@@ -1439,7 +1467,7 @@ object DlnaCastManager {
                         ) {
                             promoteGaplessNextTrack(device, connectionGen, pendingNext, posInfo, vol)
                             lastObservedTransportState = transport
-                            withTimeoutOrNull(POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
+                            withTimeoutOrNull(DLNA_POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
                             continue
                         } else if (!userPausedOrStopped &&
                             (transport == DlnaTransportState.STOPPED ||
@@ -1447,7 +1475,7 @@ object DlnaCastManager {
                         ) {
                             // Renderer advanced TrackURI to NextURI at EOF and halted instead of playing
                             dispatchTrackEndedFromPoll(connectionGen, activeTrackGen)
-                            withTimeoutOrNull(POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
+                            withTimeoutOrNull(DLNA_POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
                             continue
                         }
                     }
@@ -1560,7 +1588,7 @@ object DlnaCastManager {
                 } else if (vol != null && connectionGenerationCounter.get() == connectionGen) {
                     _castStateFlow.update { it.copy(remoteVolume = vol) }
                 }
-                withTimeoutOrNull(POLL_INTERVAL_MS) { pollNudgeChannel.receive() }
+                withTimeoutOrNull(dlnaPollIntervalMs(userPausedOrStopped, desiredRemotePlaying)) { pollNudgeChannel.receive() }
             }
         }
     }
@@ -1797,6 +1825,7 @@ object DlnaCastManager {
                         activeGenaEventSubUrl = eventSubUrl
                         mediaServer.registerGenaSubscription(sub.sid)
                         registered = true
+                        genaRenewal.start(eventSubUrl, sub.sid, sub.timeoutSeconds) { connectionGen == connectionGenerationCounter.get() && activeGenaSid == sub.sid }
                     }
                 }
                 if (!registered) {
@@ -1949,22 +1978,6 @@ object DlnaCastManager {
             _castStateFlow.value.activeDevice?.udn == expectedUdn
     }
 
-    private fun mergeDiscoveredDevices(
-        manualDevices: List<DlnaDevice>,
-        scanned: List<DlnaDevice>
-    ): List<DlnaDevice> {
-        val map = LinkedHashMap<String, DlnaDevice>()
-        for (item in manualDevices) {
-            if (item.isManual) {
-                map[item.udn] = item.copy(online = false)
-            }
-        }
-        for (item in scanned) {
-            map[item.udn] = item
-        }
-        return map.values.toList()
-    }
-
     private fun ensureDefaultDeviceOptions(devices: List<DlnaDevice>) {
         val missing = devices.filter { !_castStateFlow.value.deviceOptionsByUdn.containsKey(it.udn) }
         if (missing.isEmpty()) return
@@ -1977,11 +1990,5 @@ object DlnaCastManager {
         _castStateFlow.update { state ->
             state.copy(deviceOptionsByUdn = state.deviceOptionsByUdn + additions)
         }
-    }
-
-    private fun isRequestedLosslessForSong(song: SongItem): Boolean = when {
-        PlayerManager.isYouTubeMusicTrack(song) -> false
-        PlayerManager.isBiliTrack(song) -> PlayerManager.effectiveBiliQuality() in setOf("lossless", "hires")
-        else -> PlayerManager.effectiveNeteaseQuality() in setOf("lossless", "hires", "jyeffect", "sky", "jymaster")
     }
 }

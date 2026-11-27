@@ -18,6 +18,19 @@ import java.nio.ByteBuffer
  */
 object LosslessWavDecoder {
 
+    /** 解码出的 PCM 超过调用方给的上限；单独成类以便上层给出本地化提示 */
+    class PcmSizeLimitExceededException(val limitBytes: Long) :
+        IllegalStateException("Decoded PCM exceeds $limitBytes bytes")
+
+    /** 按时长估算解码后 PCM 字节数，未知参数返回 null */
+    fun estimatePcmBytes(durationMs: Long, sampleRateHz: Int?, channelCount: Int?, bitsPerSample: Int?): Long? {
+        if (durationMs <= 0L) return null
+        val sr = sampleRateHz?.takeIf { it > 0 } ?: return null
+        val ch = channelCount?.takeIf { it > 0 } ?: return null
+        val bd = bitsPerSample?.takeIf { it > 0 } ?: return null
+        return durationMs * sr / 1000L * ch * ((bd + 7) / 8)
+    }
+
     data class DecodedPcmResult(
         val pcmFile: File,
         val pcmDataOffsetInFile: Long,
@@ -35,7 +48,8 @@ object LosslessWavDecoder {
         inspected: FlacHeaderInspector.InspectedAudio,
         pcmOutputFile: File,
         hintBitDepth: Int? = null,
-        isCancelled: () -> Boolean = { false }
+        isCancelled: () -> Boolean = { false },
+        maxPcmBytes: Long = Long.MAX_VALUE
     ): DecodedPcmResult {
         if (inspected.format == FlacHeaderInspector.ContainerFormat.WAV &&
             inspected.isLossless &&
@@ -105,22 +119,18 @@ object LosslessWavDecoder {
             val expectedBitDepth = normalizeTargetBitDepth(resolvedSourceBitDepth ?: 16)
 
             // Request exact bit-preserving output encoding; never route 32-bit int through 24-bit float mantissa
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val desiredEncoding = when {
-                    expectedBitDepth <= 16 -> AudioFormat.ENCODING_PCM_16BIT
-                    expectedBitDepth == 24 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-                        AudioFormat.ENCODING_PCM_24BIT_PACKED
-                    expectedBitDepth == 24 ->
-                        AudioFormat.ENCODING_PCM_FLOAT // IEEE 754 binary32 has exact 24-bit significand
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-                        AudioFormat.ENCODING_PCM_32BIT
-                    else ->
-                        error("32-bit integer lossless WAV decode requires Android 12+ PCM_32BIT support")
-                }
-                selectedFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, desiredEncoding)
-            } else if (expectedBitDepth > 16) {
-                error("High-resolution $expectedBitDepth-bit WAV decode is unsupported on this Android version")
+            val desiredEncoding = when {
+                expectedBitDepth <= 16 -> AudioFormat.ENCODING_PCM_16BIT
+                expectedBitDepth == 24 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                    AudioFormat.ENCODING_PCM_24BIT_PACKED
+                expectedBitDepth == 24 ->
+                    AudioFormat.ENCODING_PCM_FLOAT // IEEE 754 binary32 has exact 24-bit significand
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                    AudioFormat.ENCODING_PCM_32BIT
+                else ->
+                    error("32-bit integer lossless WAV decode requires Android 12+ PCM_32BIT support")
             }
+            selectedFormat.setInteger(MediaFormat.KEY_PCM_ENCODING, desiredEncoding)
 
             codec = MediaCodec.createDecoderByType(mime)
             try {
@@ -154,12 +164,8 @@ object LosslessWavDecoder {
                     ?: actualSampleRate
                 actualChannels = outFmt.getOptionalInt(MediaFormat.KEY_CHANNEL_COUNT)
                     ?: actualChannels
-                actualEncoding = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    outFmt.getOptionalInt(MediaFormat.KEY_PCM_ENCODING)
-                        ?: AudioFormat.ENCODING_PCM_16BIT
-                } else {
-                    AudioFormat.ENCODING_PCM_16BIT
-                }
+                actualEncoding = outFmt.getOptionalInt(MediaFormat.KEY_PCM_ENCODING)
+                    ?: AudioFormat.ENCODING_PCM_16BIT
                 if (inspected.sampleRateHz != null && actualSampleRate != inspected.sampleRateHz) {
                     error(
                         "Decoder altered sample rate (${inspected.sampleRateHz} -> $actualSampleRate); " +
@@ -232,6 +238,8 @@ object LosslessWavDecoder {
                                     inputEncoding = actualEncoding,
                                     targetBitsPerSample = expectedBitDepth
                                 )
+                                // 时长未知或估算偏小时兜底，避免把缓存盘写满
+                                if (totalPcmWritten + chunk.size > maxPcmBytes) throw PcmSizeLimitExceededException(maxPcmBytes)
                                 out.write(chunk)
                                 totalPcmWritten += chunk.size.toLong()
                             }
