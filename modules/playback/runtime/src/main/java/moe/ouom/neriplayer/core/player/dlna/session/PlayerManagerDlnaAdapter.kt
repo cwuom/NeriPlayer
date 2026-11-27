@@ -67,6 +67,17 @@ internal object PlayerManagerDlnaAdapter : PlayerSyncHost {
         }
     }
 
+    /**
+     * 投送中本地 ExoPlayer 已停，音质刷新若走本地路径只会重载本地播放器，渲染器仍在播旧码流。
+     * 这里改为按新音质重新投送当前曲目，保留远端进度和播放意图。
+     */
+    fun tryRefreshActiveCast(song: SongItem): Boolean {
+        if (!DlnaCastManager.isCastingActive()) return false
+        val positionMs = DlnaCastManager.castStateFlow.value.remotePositionMs.coerceAtLeast(0L)
+        DlnaCastManager.castSong(song = song, startPositionMs = positionMs, autoPlay = DlnaCastManager.isRemotePlaying())
+        return true
+    }
+
     override fun onSwitchBackToLocal(resumePositionMs: Long, wasPlaying: Boolean) {
         val manager = PlayerManager
         if (!manager.initialized) return

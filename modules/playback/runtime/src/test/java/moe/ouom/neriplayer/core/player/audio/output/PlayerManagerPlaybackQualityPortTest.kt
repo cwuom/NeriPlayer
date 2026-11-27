@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.core.player.usb.route.PlayerManagerUsbSinkRoutePort
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyBoolean
@@ -71,6 +72,39 @@ class PlayerManagerPlaybackQualityPortTest {
     fun `quality refresh keeps user paused playback paused`() =
         withPlaybackState(playWhenReady = false, isPlaying = false, resumeRequested = false) {
             assertFalse(refreshRequest().resumePlaybackAfterRefresh)
+        }
+
+    @Test
+    fun `quality refresh during an active cast re-casts instead of reloading the stopped local player`() =
+        withPlaybackState(playWhenReady = false, isPlaying = false, resumeRequested = true) { player ->
+            val previousRefresher = PlayerManagerPlaybackQualityPort.activeCastRefresher
+            val recast = mutableListOf<SongItem>()
+            try {
+                PlayerManagerPlaybackQualityPort.activeCastRefresher = { song -> recast += song; true }
+                PlayerManagerPlaybackQualityPort.refreshCurrentSong(PlaybackAudioSource.NETEASE, "quality_changed")
+
+                assertEquals(listOf(450L), recast.map { it.id })
+                assertNull(PlayerManager.urlRefreshController.currentSemantics())
+                verify(player, never()).play()
+            } finally {
+                PlayerManagerPlaybackQualityPort.activeCastRefresher = previousRefresher
+            }
+        }
+
+    @Test
+    fun `quality refresh for another source leaves the current song alone`() =
+        withPlaybackState(playWhenReady = true, isPlaying = true, resumeRequested = true) {
+            val previousRefresher = PlayerManagerPlaybackQualityPort.activeCastRefresher
+            var recastCalls = 0
+            try {
+                PlayerManagerPlaybackQualityPort.activeCastRefresher = { recastCalls++; true }
+                PlayerManagerPlaybackQualityPort.refreshCurrentSong(PlaybackAudioSource.BILIBILI, "quality_changed")
+
+                assertEquals(0, recastCalls)
+                assertNull(PlayerManager.urlRefreshController.currentSemantics())
+            } finally {
+                PlayerManagerPlaybackQualityPort.activeCastRefresher = previousRefresher
+            }
         }
 
     private suspend fun refreshRequest(): RefreshRequestSemantics {

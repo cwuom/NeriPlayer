@@ -16,7 +16,11 @@ import moe.ouom.neriplayer.core.player.dlna.session.DLNA_IDLE_POLL_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.dlna.session.DLNA_POLL_INTERVAL_MS
 import moe.ouom.neriplayer.core.player.dlna.session.DlnaGenaRenewalScheduler
 import moe.ouom.neriplayer.core.player.dlna.session.dlnaPollIntervalMs
+import moe.ouom.neriplayer.core.player.dlna.session.DLNA_EXTERNAL_RESUME_GRACE_MS
+import moe.ouom.neriplayer.core.player.dlna.session.DlnaNetworkAndLockController
+import moe.ouom.neriplayer.core.player.dlna.session.followTransport
 import moe.ouom.neriplayer.core.player.dlna.session.resolveRemotePlayingForHandoff
+import moe.ouom.neriplayer.core.player.dlna.session.shouldAdoptExternalResume
 import moe.ouom.neriplayer.core.player.runtime.refresh.YouTubePlaybackRecoveryStrategy
 import moe.ouom.neriplayer.core.player.url.resolveYouTubeRequireDirect
 import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
@@ -25,6 +29,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.net.InetAddress
@@ -53,6 +60,45 @@ class DlnaSessionHardeningTest {
         assertFalse(resolveYouTubeRequireDirect(strategy = null, requireDirectOverride = false))
         assertFalse(resolveYouTubeRequireDirect(lenientRecovery, requireDirectOverride = false))
         assertTrue(resolveYouTubeRequireDirect(lenientRecovery.copy(requireDirect = true), requireDirectOverride = false))
+    }
+
+    @Test
+    fun externalResume_onRendererClearsAppPauseLatchAfterGrace() {
+        val pausedAt = 100_000L
+        fun adopt(
+            transport: DlnaTransportState? = DlnaTransportState.PLAYING,
+            loaded: Boolean = true,
+            userPaused: Boolean = true,
+            desired: Boolean = false,
+            now: Long = pausedAt + DLNA_EXTERNAL_RESUME_GRACE_MS
+        ) = shouldAdoptExternalResume(transport, loaded, userPaused, desired, now, pausedAt)
+
+        // 用户在渲染器上恢复了 App 侧暂停的曲目：要解除锁存，否则不预取、到曲尾也不推进队列
+        assertTrue(adopt())
+        // 刚按暂停时在途的轮询仍可能读到 PLAYING，不能把用户的暂停覆盖掉
+        assertFalse(adopt(now = pausedAt + DLNA_EXTERNAL_RESUME_GRACE_MS - 1))
+        assertFalse(adopt(transport = DlnaTransportState.PAUSED_PLAYBACK))
+        assertFalse(adopt(transport = null))
+        // 队列已结束、渲染器上不是我们装载的曲目
+        assertFalse(adopt(loaded = false))
+        // 本来就在播放意图下，无需处理
+        assertFalse(adopt(userPaused = false, desired = true))
+    }
+
+    @Test
+    fun castLocks_followObservedTransport() {
+        val locks = mock(DlnaNetworkAndLockController::class.java)
+        locks.followTransport(DlnaTransportState.PLAYING, desiredRemotePlaying = false)
+        verify(locks).acquireCastLocks(false)
+
+        locks.followTransport(DlnaTransportState.PAUSED_PLAYBACK, desiredRemotePlaying = false)
+        verify(locks).releaseCastLocks()
+
+        // 用户想播放、渲染器暂时停着（切歌间隙）时不释放
+        val playingIntent = mock(DlnaNetworkAndLockController::class.java)
+        playingIntent.followTransport(DlnaTransportState.STOPPED, desiredRemotePlaying = true)
+        playingIntent.followTransport(DlnaTransportState.TRANSITIONING, desiredRemotePlaying = false)
+        verify(playingIntent, never()).releaseCastLocks()
     }
 
     @Test

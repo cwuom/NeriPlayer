@@ -119,6 +119,8 @@ object DlnaCastManager {
     @Volatile
     private var userPausedOrStopped = false
     @Volatile
+    private var lastUserPauseAtMs = 0L
+    @Volatile
     private var hasStartedPlayingInGeneration = false
     @Volatile
     private var consecutiveStoppedPolls = 0
@@ -928,6 +930,7 @@ object DlnaCastManager {
                     }
                     withContext(Dispatchers.Main) {
                         if (!isStale()) {
+                            host.onDlnaPlaybackStateChanged(isPlaying = false, positionMs = 0L, durationMs = 0L)
                             host.onDlnaCastError(outcome.reason)
                         }
                     }
@@ -1199,7 +1202,10 @@ object DlnaCastManager {
                 }
                 return@launch
             }
-            controlClient.play(device).onSuccess {
+            transportMutex.withLock {
+                if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@launch
+                controlClient.play(device)
+            }.onSuccess {
                 if (!isCurrentSessionAndTrack(expectedConnGen, expectedTrackGen, expectedUdn)) return@onSuccess
                 val pendingSeek = pendingPausedSeekMs
                 if (pendingSeek != null && pendingSeek > 1_500L) {
@@ -1268,6 +1274,7 @@ object DlnaCastManager {
             device = state.activeDevice ?: return
             desiredRemotePlaying = false
             userPausedOrStopped = true
+            lastUserPauseAtMs = monotonicBootElapsedMs()
             consecutiveEndPausedPolls = 0
             if (!rendererMediaConfirmed) {
                 pendingHandoffSnapshot = pendingHandoffSnapshot?.copy(wasPlaying = false)
@@ -1425,12 +1432,9 @@ object DlnaCastManager {
                     handleRendererUnreachable(device, connectionGen)
                     break
                 }
-                // 锁跟随渲染器实际状态：渲染器上直接恢复播放要拿回锁（否则 Wi-Fi 省电导致拉流卡顿），暂停后再释放
-                when (transport) {
-                    DlnaTransportState.PLAYING -> lockController.acquireCastLocks()
-                    DlnaTransportState.PAUSED_PLAYBACK, DlnaTransportState.STOPPED ->
-                        if (!desiredRemotePlaying) lockController.releaseCastLocks()
-                    else -> Unit
+                lockController.followTransport(transport, desiredRemotePlaying)
+                if (shouldAdoptExternalResume(transport, currentTrackUriLoadedGen == activeTrackGen, userPausedOrStopped, desiredRemotePlaying, monotonicBootElapsedMs(), lastUserPauseAtMs)) {
+                    synchronized(sessionStateLock) { desiredRemotePlaying = true; userPausedOrStopped = false }
                 }
 
                 if (transport != null && currentTrackUriLoadedGen == activeTrackGen) {
@@ -1783,6 +1787,11 @@ object DlnaCastManager {
         val path = old?.streamPath?.takeIf { it.isNotBlank() }
         if (path != null && path != activeStreamPath) {
             mediaServer.unregisterStream(path)
+        }
+        // 部分渲染器在 Stop/SetURI 后仍保留 NextURI，不清掉会播放旧曲目或请求已注销的地址（410）
+        val device = _castStateFlow.value.activeDevice
+        if (old?.sentToRenderer == true && device != null && old.connectionGen == connectionGenerationCounter.get()) {
+            scope.launch { nextUriMutex.withLock { if (old.connectionGen == connectionGenerationCounter.get()) runCatching { controlClient.setNextAvTransportUri(device, "", "") } } }
         }
     }
 

@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.data.model.playback.dlna.DlnaTransportState
 
 internal const val DLNA_POLL_INTERVAL_MS = 1_000L
 internal const val DLNA_IDLE_POLL_INTERVAL_MS = 5_000L
+internal const val DLNA_EXTERNAL_RESUME_GRACE_MS = 3_000L
 
 internal fun monotonicBootElapsedMs(): Long {
     val bootMs = runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
@@ -56,3 +57,30 @@ internal fun isRequestedLosslessForSong(song: SongItem): Boolean = when {
     PlayerManager.isBiliTrack(song) -> PlayerManager.effectiveBiliQuality() in setOf("lossless", "hires")
     else -> PlayerManager.effectiveNeteaseQuality() in setOf("lossless", "hires", "jyeffect", "sky", "jymaster")
 }
+
+/** 锁跟随渲染器实际状态：渲染器上直接恢复播放要拿回锁（否则 Wi-Fi 省电导致拉流卡顿），暂停后再释放 */
+internal fun DlnaNetworkAndLockController.followTransport(transport: DlnaTransportState?, desiredRemotePlaying: Boolean) {
+    when (transport) {
+        DlnaTransportState.PLAYING -> acquireCastLocks()
+        DlnaTransportState.PAUSED_PLAYBACK, DlnaTransportState.STOPPED ->
+            if (!desiredRemotePlaying) releaseCastLocks()
+        else -> Unit
+    }
+}
+
+/**
+ * 用户在渲染器上直接恢复了 App 侧暂停的曲目时，应解除暂停锁存，否则不会预取下一首、到曲尾也不推进队列。
+ * 刚按下暂停的几秒内，在途的轮询仍可能读到 PLAYING，这段时间不算外部恢复。
+ */
+internal fun shouldAdoptExternalResume(
+    transport: DlnaTransportState?,
+    currentTrackLoaded: Boolean,
+    userPausedOrStopped: Boolean,
+    desiredRemotePlaying: Boolean,
+    nowMs: Long,
+    lastUserPauseAtMs: Long
+): Boolean = transport == DlnaTransportState.PLAYING &&
+    currentTrackLoaded &&
+    userPausedOrStopped &&
+    !desiredRemotePlaying &&
+    nowMs - lastUserPauseAtMs >= DLNA_EXTERNAL_RESUME_GRACE_MS
