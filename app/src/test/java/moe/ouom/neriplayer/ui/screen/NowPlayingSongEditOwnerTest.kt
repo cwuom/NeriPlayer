@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.edit.latestMatchingEditSong
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsForSave
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongLyricsSavePlan
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.resolveEditSongInitialCoverUrl
+import moe.ouom.neriplayer.ui.screen.nowplaying.edit.startEditCoverPicker
 import moe.ouom.neriplayer.ui.screen.nowplaying.edit.withVerifiedEditCoverPickerTarget
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import org.junit.Assert.assertEquals
@@ -619,6 +620,18 @@ class NowPlayingSongEditOwnerTest {
 
         withVerifiedEditCoverPickerTarget(pickedUri, local, local, null, onAccepted)
         assertEquals(local, accepted)
+    }
+
+    @Test
+    fun `cover picker that cannot open forgets the pending song`() {
+        val pending = mutableListOf<SongItem?>()
+
+        startEditCoverPicker(song, launchPicker = { true }, setPendingSong = { pending += it })
+        assertEquals(listOf<SongItem?>(song), pending)
+
+        pending.clear()
+        startEditCoverPicker(song, launchPicker = { false }, setPendingSong = { pending += it })
+        assertEquals(listOf(song, null), pending)
     }
 
     @Test

@@ -109,6 +109,7 @@ import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.ui.component.local.LocalSongSyncConfirmDialog
 import moe.ouom.neriplayer.data.model.lyrics.LyricEntry
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.lyrics.parser.toEditableLyricsText
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
@@ -423,9 +424,12 @@ fun EditSongInfoSheet(
             onConfirm = {
                 showLocalCoverSyncConfirm = false
                 if (shouldAllowLocalCoverReplacement(actualSong, context)) {
-                    pendingCoverReplacementSong = actualSong
                     clearEditSongInfoFocus()
-                    coverPickerLauncher.launch("image/*")
+                    startEditCoverPicker(
+                        song = actualSong,
+                        launchPicker = { coverPickerLauncher.launchOrShowUnavailable(context, "image/*") },
+                        setPendingSong = { pendingCoverReplacementSong = it }
+                    )
                 }
             },
             onDismiss = { showLocalCoverSyncConfirm = false }

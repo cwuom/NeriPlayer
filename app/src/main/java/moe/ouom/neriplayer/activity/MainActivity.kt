@@ -165,6 +165,7 @@ import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlayNavigationBarHidden
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
@@ -1302,7 +1303,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onExport = {
-                                    exportCrashReportLauncher.launch(report.file.name)
+                                    exportCrashReportLauncher.launchOrShowUnavailable(this@MainActivity, report.file.name)
                                 },
                                 onClose = {
                                     startupCrashReportManager.clearPendingReport()

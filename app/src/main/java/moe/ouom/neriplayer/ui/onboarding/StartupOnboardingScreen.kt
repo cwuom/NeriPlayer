@@ -120,6 +120,7 @@ import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.isAdvancedGlassBackendSupported
 import moe.ouom.neriplayer.ui.effect.glass.rememberAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.effect.glass.rememberVisualEffectsDeviceProfile
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayBackground
 import moe.ouom.neriplayer.ui.playback.visual.NowPlayingOverlayTheme
@@ -725,7 +726,10 @@ fun StartupOnboardingScreen(
                 backgroundImageBlur = effectiveBackgroundImageBlur,
                 backgroundImageAlpha = effectiveBackgroundImageAlpha,
                 onSelectBackground = {
-                    photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    photoPickerLauncher.launchOrShowUnavailable(
+                        context,
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
                 },
                 onClearBackground = {
                     pendingBackgroundImageBlur = null

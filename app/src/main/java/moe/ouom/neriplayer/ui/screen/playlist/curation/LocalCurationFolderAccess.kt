@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.screen.playlist.curation
 
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 import android.content.Context
 import android.content.Intent
@@ -114,7 +115,9 @@ internal fun LocalCurationFolderAccessCard(songs: List<SongItem>) {
                 )
             }
             MiuixSettingsTextButton(
-                onClick = { launcher.launch(access.suggestedFolder?.let(FolderArtworkLocator::documentUriFor)) }
+                onClick = {
+                    launcher.launchOrShowUnavailable(context, access.suggestedFolder?.let(FolderArtworkLocator::documentUriFor))
+                }
             ) {
                 Text(stringResource(AppR.string.local_curation_folder_access_grant))
             }
