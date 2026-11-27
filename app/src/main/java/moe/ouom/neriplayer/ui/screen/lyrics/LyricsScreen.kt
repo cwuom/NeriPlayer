@@ -50,7 +50,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -108,7 +107,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalConfiguration
@@ -202,6 +200,8 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.rememberPlaybackRoomActive
 import moe.ouom.neriplayer.ui.screen.playback.nextFavoriteStateAfterTap
 import moe.ouom.neriplayer.ui.screen.playback.resolveLyricPreviewTimeMs
 import moe.ouom.neriplayer.ui.screen.playback.shouldReleaseLyricSeekPreview
+import moe.ouom.neriplayer.ui.screen.nowplaying.NowPlayingPageSwipeDirection
+import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingPageSwipe
 import moe.ouom.neriplayer.ui.screen.nowplaying.resolvePlaybackActionToolbarLayout
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarDescription
 import moe.ouom.neriplayer.ui.screen.nowplaying.cover.nowPlayingLyricsToolbarIcon
@@ -212,8 +212,6 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.cover.resolveNowPlayingLyricsToo
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.ui.effect.rememberSystemPowerPressure
 import moe.ouom.neriplayer.R as AppR
-
-private const val LyricsSwipeBackThresholdPx = 50f
 
 internal data class LyricsTabletPortraitWidths(
     val header: Dp,
@@ -448,20 +446,10 @@ fun LyricsScreen(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .pointerInput(Unit) {
-                    var horizontalDragPx = 0f
-                    // 手势可能被系统接管或回拖，等抬手后再提交返回
-                    detectHorizontalDragGestures(
-                        onDragStart = { horizontalDragPx = 0f },
-                        onDragCancel = { horizontalDragPx = 0f },
-                        onDragEnd = {
-                            val shouldNavigateBack = horizontalDragPx > LyricsSwipeBackThresholdPx
-                            horizontalDragPx = 0f
-                            if (shouldNavigateBack) latestOnNavigateBack()
-                        },
-                        onHorizontalDrag = { _, dragAmount -> horizontalDragPx += dragAmount }
-                    )
-                }
+                .nowPlayingPageSwipe(
+                    key = Unit,
+                    direction = NowPlayingPageSwipeDirection.Right
+                ) { latestOnNavigateBack() }
                 .padding(horizontal = horizontalPadding, vertical = verticalPadding)
                 .testTag("lyricsScreenContent"),
             horizontalAlignment = Alignment.CenterHorizontally

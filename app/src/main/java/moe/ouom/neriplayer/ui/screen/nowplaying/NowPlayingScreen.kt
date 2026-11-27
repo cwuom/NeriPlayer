@@ -45,7 +45,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1262,25 +1261,19 @@ fun NowPlayingScreen(
 
                             // 手机横屏仍可左右切页，平板分栏不再切换隐藏的歌词子页
                             if (phoneLandscape && (isLyricsMode || lyrics.isNotEmpty())) {
-                                contentModifier = contentModifier.pointerInput(isLyricsMode, lyrics) {
-                                    var horizontalDragDistance = 0f
-                                    detectHorizontalDragGestures(
-                                        onDragStart = { horizontalDragDistance = 0f }
-                                    ) { _, dragAmount ->
-                                        horizontalDragDistance += dragAmount
-                                        if (isLyricsMode && horizontalDragDistance > 60f) {
-                                            onShowLyricsScreenChange(false)
-                                        } else if (!isLyricsMode && horizontalDragDistance < -60f) {
-                                            onShowLyricsScreenChange(true)
-                                        }
+                                contentModifier = contentModifier.nowPlayingPageSwipe(
+                                    key = lyrics,
+                                    direction = if (isLyricsMode) {
+                                        NowPlayingPageSwipeDirection.Right
+                                    } else {
+                                        NowPlayingPageSwipeDirection.Left
                                     }
-                                }
+                                ) { onShowLyricsScreenChange(!isLyricsMode) }
                             } else if (!useWideLandscapeLayout && lyrics.isNotEmpty()) {
-                                contentModifier = contentModifier.pointerInput(lyrics) {
-                                    detectHorizontalDragGestures { _, dragAmount ->
-                                        if (dragAmount < -20) onShowLyricsScreenChange(true)
-                                    }
-                                }
+                                contentModifier = contentModifier.nowPlayingPageSwipe(
+                                    key = lyrics,
+                                    direction = NowPlayingPageSwipeDirection.Left
+                                ) { onShowLyricsScreenChange(true) }
                             }
 
                             val mainPlaybackControls: @Composable () -> Unit = {
