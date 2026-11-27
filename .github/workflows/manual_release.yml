@@ -100,8 +100,8 @@ jobs:
           if [[ "$TEST_RELEASE" == "true" ]]; then
             tag_name="${tag_name}-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           elif [[ -n "$NIGHTLY_TAG" ]]; then
+            # 旧 nightly tag 发布后会被清理，changelog 以最近的正式版为基准，避免指向已删除的 tag
             tag_name="$NIGHTLY_TAG"
-            tag_patterns+=('refs/tags/nightly-*')
           fi
           previous_tag="$(git for-each-ref --merged HEAD --sort=-creatordate --count=1 --format='%(refname:strip=2)' "${tag_patterns[@]}")"
           {

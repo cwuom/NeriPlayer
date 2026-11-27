@@ -225,7 +225,7 @@ NeriPlayer 是基于 **Jetpack Compose + Media3** 的原生 Android 音频播放
 
 ### b. 下载 Nightly 预发布版
 
-在 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) 中选择标有 **Nightly** 的预发布版。每版提供上表四种架构的已签名 APK。CI 每天 22:00（UTC+8）检查默认分支的最新提交，每个提交只发布一次 Nightly。
+在 [GitHub Releases](https://github.com/cwuom/NeriPlayer/releases) 中选择标有 **Nightly** 的预发布版。每版提供上表四种架构的已签名 APK。CI 每天 22:00（UTC+8）检查默认分支的最新提交，每个提交只发布一次 Nightly，并且只保留最新的一个 Nightly。
 
 如果你在使用 Nightly 预发布版时遇到问题，也欢迎随时[提交问题报告](https://github.com/cwuom/NeriPlayer/issues/new?template=bug-report.yml)。请附上构建版本和复现步骤，方便我们定位问题。
 
