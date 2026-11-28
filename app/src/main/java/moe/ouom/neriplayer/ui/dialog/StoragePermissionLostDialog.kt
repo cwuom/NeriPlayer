@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -149,25 +150,22 @@ private suspend fun reauthorizeStorageTree(
     picked: Uri
 ): StorageReauthorizationOutcome {
     val resolver = context.contentResolver
-    val grant = withContext(Dispatchers.IO) {
-        val alreadyPersisted = resolver.persistedUriPermissions.any { it.uri == picked }
-        val flags = takePersistableGrant(context, prompt.event.scope, picked)
-        alreadyPersisted to flags
-    }
-    val (alreadyPersisted, takenFlags) = grant
     val pickedMatches = pickedTreeRestoresAccess(prompt, picked.toString())
-    val accessVerified = takenFlags != null && pickedMatches && verifyRestoredAccess(context, prompt)
-    val outcome = storageReauthorizationOutcome(takenFlags != null, pickedMatches, accessVerified)
-    withContext(Dispatchers.IO) {
-        if (outcome != StorageReauthorizationOutcome.RESTORED && takenFlags != null && !alreadyPersisted) {
-            // 用户选错目录时不留下额外授权，避免持续占用系统的持久授权配额
+    // 获取、校验、释放必须整段完成：中途被取消会把选错目录的授权留在系统里占用配额
+    val outcome = withContext(NonCancellable + Dispatchers.IO) {
+        val alreadyPersisted = resolver.persistedUriPermissions.any { it.uri == picked }
+        val takenFlags = takePersistableGrant(context, prompt.event.scope, picked)
+        val accessVerified = takenFlags != null && pickedMatches && verifyRestoredAccess(context, prompt)
+        val result = storageReauthorizationOutcome(takenFlags != null, pickedMatches, accessVerified)
+        if (result != StorageReauthorizationOutcome.RESTORED && takenFlags != null && !alreadyPersisted) {
             runCatching { resolver.releasePersistableUriPermission(picked, takenFlags) }
         }
-        if (outcome == StorageReauthorizationOutcome.RESTORED &&
+        if (result == StorageReauthorizationOutcome.RESTORED &&
             prompt.event.scope == StoragePermissionScope.DOWNLOAD_DIRECTORY
         ) {
             GlobalDownloadManager.scanLocalFiles(context, forceRefresh = true)
         }
+        result
     }
     NPLogger.i(
         STORAGE_PERMISSION_TAG,
