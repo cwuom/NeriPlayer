@@ -68,6 +68,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.player.metadata.PreferredLyricSourceResult
@@ -364,6 +365,7 @@ internal class StartupPreviewPlaybackSource(
     private val playing = MutableStateFlow(false)
     private val shuffle = MutableStateFlow(false)
     private val repeat = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    private val heartbeat = MutableStateFlow(HeartbeatMode.OFF)
     private val position = MutableStateFlow(STARTUP_PREVIEW_START_MS)
     private val queue = MutableStateFlow(listOf(song))
 
@@ -374,6 +376,7 @@ internal class StartupPreviewPlaybackSource(
     override val usbExclusivePlaybackPreparingFlow: StateFlow<Boolean> = MutableStateFlow(false)
     override val shuffleModeFlow: StateFlow<Boolean> = shuffle
     override val repeatModeFlow: StateFlow<Int> = repeat
+    override val heartbeatModeFlow: StateFlow<Int> = heartbeat
     override val playbackDurationFlow: StateFlow<Long> = MutableStateFlow(STARTUP_PREVIEW_DURATION_MS)
     override val playbackPositionFlow: StateFlow<Long> = position
     override val currentPlaybackAudioInfoFlow: StateFlow<PlaybackAudioInfo?> = MutableStateFlow(null)
@@ -423,6 +426,11 @@ internal class StartupPreviewPlaybackSource(
 
     override fun setShuffle(enabled: Boolean) {
         shuffle.value = enabled
+    }
+
+    // 预览里只切换按钮外观, 不碰真实的心动推荐
+    override fun setHeartbeatEnabled(enabled: Boolean) {
+        heartbeat.value = if (enabled) HeartbeatMode.ON else HeartbeatMode.OFF
     }
 
     override fun cycleRepeatMode() {

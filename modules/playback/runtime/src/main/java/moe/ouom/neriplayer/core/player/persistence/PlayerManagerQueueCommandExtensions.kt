@@ -4,6 +4,7 @@ package moe.ouom.neriplayer.core.player.persistence
 
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.heartbeat.releaseHeartbeatOwnership
 import moe.ouom.neriplayer.core.player.playback.playAtIndex
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.QueueInsertPlacement
@@ -84,6 +85,8 @@ private fun PlayerManager.applyCurrentReplacement(song: SongItem, source: Playba
         existingIndex = planned.existingIndex
         planned.queue
     } ?: return
+    // 从搜索、百科等入口点播的歌是用户自己选的，关心动时不能当心动歌删掉
+    releaseHeartbeatOwnership(song)
     suppressAutoResumeForCurrentSession = false
     consecutivePlayFailures = 0
 
@@ -313,6 +316,7 @@ private fun PlayerManager.applyQueueInsertion(song: SongItem, placement: QueueIn
         insertedIndex = planned.insertedIndex
         planned.queue
     } ?: return
+    releaseHeartbeatOwnership(song)
     NPLogger.d(
         "NERI-PlayerManager",
         "${placement.logName}(): song=${song.name}/${song.id}, existingIndex=$existingIndex, insertIndex=$insertedIndex, queueSize=${updatedQueue.playlist.size}, currentIndex=${updatedQueue.currentIndex}, shuffle=${player.shuffleModeEnabled}, stack=[${debugStackHint()}]"

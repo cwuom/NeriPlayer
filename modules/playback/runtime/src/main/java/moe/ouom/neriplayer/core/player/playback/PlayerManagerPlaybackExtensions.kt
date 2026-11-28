@@ -26,6 +26,7 @@ import moe.ouom.neriplayer.platform.bilibili.playback.resolver.buildBiliPartSong
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.lyrics.lyricon.LyriconManager
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.heartbeat.clearHeartbeatInsertedSongs
 import moe.ouom.neriplayer.core.player.LocalPlaylistPlaybackSource
 import moe.ouom.neriplayer.core.player.audio.focus.StartupAudioFocusController
 import moe.ouom.neriplayer.core.player.debug.playbackStateName
@@ -532,6 +533,8 @@ internal fun PlayerManager.playPlaylistImpl(
             songKeys = songs.mapTo(LinkedHashSet(songs.size)) { song -> song.stableKey() }
         )
     }
+    // 换了一整张歌单，新队列里的歌都不是心动插的，关闭心动时不能把它们当心动歌删掉
+    clearHeartbeatInsertedSongs()
     publishShuffledCurrentSong(queueSessionBindings.startPlaylist(songs, startIndex, commandSource))
 
     playAtIndex(currentIndex, commandSource = commandSource)

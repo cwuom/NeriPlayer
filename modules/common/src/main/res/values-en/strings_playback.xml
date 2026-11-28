@@ -113,6 +113,13 @@
     <string name="player_playback_url_error_detail">Failed to resolve playback URL: %1$s</string>
     <string name="mini_player_volume">Volume</string>
     <string name="mini_player_progress">Playback progress</string>
+    <!-- Heartbeat Mode -->
+    <string name="heartbeat_room_auto_disabled">Joined Listen Together; heartbeat mode turned off</string>
+    <string name="heartbeat_room_cannot_enable">Heartbeat mode is unavailable in a Listen Together room</string>
+    <string name="heartbeat_candidates_insufficient">Heartbeat mode has no suggestions right now; continuing with the current queue</string>
+    <string name="heartbeat_mode_content_description">Heartbeat mode</string>
+    <string name="heartbeat_dislike_action">Don\'t like this song</string>
+    <string name="heartbeat_dislike_marked">Marked as disliked</string>
 
     <!-- DLNA Lossless Casting -->
     <string name="dlna_section_title">DLNA Lossless Cast</string>

@@ -113,6 +113,13 @@
     <string name="player_playback_url_error_detail">获取播放地址失败：%1$s</string>
     <string name="mini_player_volume">音量</string>
     <string name="mini_player_progress">播放进度</string>
+    <!-- Heartbeat Mode -->
+    <string name="heartbeat_room_auto_disabled">已加入一起听，心动模式已关闭</string>
+    <string name="heartbeat_room_cannot_enable">一起听房间中无法开启心动模式</string>
+    <string name="heartbeat_candidates_insufficient">心动模式暂时拿不到推荐，按原队列继续播放</string>
+    <string name="heartbeat_mode_content_description">心动模式</string>
+    <string name="heartbeat_dislike_action">不喜欢这首歌</string>
+    <string name="heartbeat_dislike_marked">已标记不喜欢</string>
 
     <!-- DLNA Lossless Casting -->
     <string name="dlna_section_title">DLNA 无损投送</string>

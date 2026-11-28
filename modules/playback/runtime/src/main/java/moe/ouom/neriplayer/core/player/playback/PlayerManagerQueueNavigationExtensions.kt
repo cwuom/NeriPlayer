@@ -9,6 +9,7 @@ import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.currentPositionMsOrZero
 import moe.ouom.neriplayer.core.player.durationMsOrZero
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
+import moe.ouom.neriplayer.core.player.heartbeat.turnOffHeartbeatBeforeShuffle
 import moe.ouom.neriplayer.data.model.playback.PlaybackCommandSource
 import moe.ouom.neriplayer.data.model.playback.queue.ListenTogetherTrackFinishPlan
 import moe.ouom.neriplayer.data.model.playback.queue.PlaybackFailureAdvanceAction
@@ -432,6 +433,7 @@ internal fun PlayerManager.setShuffleImpl(
 
 private fun PlayerManager.setShuffleIfAllowed(enabled: Boolean, commandSource: PlaybackCommandSource) {
     if (shouldBlockLocalRoomControl(commandSource)) return
+    turnOffHeartbeatBeforeShuffle(enabled, commandSource)
     applyShuffleRequest(enabled, commandSource)
 }
 

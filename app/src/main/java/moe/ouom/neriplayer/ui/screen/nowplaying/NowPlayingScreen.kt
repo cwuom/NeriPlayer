@@ -68,7 +68,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material.icons.outlined.SkipNext
 import androidx.compose.material.icons.outlined.SkipPrevious
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -113,6 +112,7 @@ import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
 import moe.ouom.neriplayer.platform.comments.resolveCommentSource
+import moe.ouom.neriplayer.core.player.queue.heartbeat.HeartbeatMode
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
@@ -502,6 +502,9 @@ fun NowPlayingScreen(
     )
     val shuffleEnabled by playbackSource.shuffleModeFlow.collectAsStateWithLifecycle()
     val repeatMode by playbackSource.repeatModeFlow.collectAsStateWithLifecycle()
+    val heartbeatMode by playbackSource.heartbeatModeFlow.collectAsStateWithLifecycle()
+    val heartbeatEnabled = heartbeatMode == HeartbeatMode.ON
+    val neteaseAuth by AppContainer.neteaseCookieRepo.authHealthFlow.collectAsStateWithLifecycle()
     val durationMs by playbackSource.playbackDurationFlow.collectAsStateWithLifecycle()
     val sleepTimerState by playbackSource.sleepTimerStateFlow.collectAsStateWithLifecycle()
     val currentPlaybackAudioInfo by playbackSource.currentPlaybackAudioInfoFlow.collectAsStateWithLifecycle()
@@ -1301,21 +1304,16 @@ fun NowPlayingScreen(
                                         horizontalArrangement = Arrangement.spacedBy(controlsLayout.spacing),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        HapticIconButton(
-                                            onClick = { playbackSource.setShuffle(!shuffleEnabled) },
-                                            modifier = Modifier.size(controlsLayout.secondaryButtonSize)
-                                        ) {
-                                            Icon(
-                                                Icons.Outlined.Shuffle,
-                                                contentDescription = stringResource(CoreCommonR.string.player_shuffle),
-                                                modifier = Modifier.size(secondaryIconSize),
-                                                tint = if (shuffleEnabled) {
-                                                    nowPlayingActiveIconColor
-                                                } else {
-                                                    LocalContentColor.current
-                                                }
-                                            )
-                                        }
+                                        NowPlayingShuffleModeButton(
+                                            playbackSource = playbackSource,
+                                            shuffleEnabled = shuffleEnabled,
+                                            heartbeatEnabled = heartbeatEnabled,
+                                            heartbeatAvailable = isHeartbeatModeAvailable(currentSong, neteaseAuth.state),
+                                            buttonSize = controlsLayout.secondaryButtonSize,
+                                            iconSize = secondaryIconSize,
+                                            activeColor = nowPlayingActiveIconColor,
+                                            inactiveColor = LocalContentColor.current
+                                        )
 
                                         HapticIconButton(
                                             onClick = { playbackSource.previous() },
@@ -1973,6 +1971,8 @@ fun NowPlayingScreen(
                         }
                     }
                     NeteaseCollectionFeedbackHost(nowPlayingViewModel.neteaseCollectionFeedback, snackbarHostState, showMoreOptions)
+                    // 心动模式的失败与切换提示（成功切歌不提示），停留 3 秒。
+                    NowPlayingHeartbeatFeedback(snackbarHostState, screenScope)
                     if (coverFlight != null) {
                         NowPlayingLyricsCoverFlightLayer(coverFlight) { modifier ->
                             PassiveNowPlayingCoverImage(coverOwner, coverSource, modifier)

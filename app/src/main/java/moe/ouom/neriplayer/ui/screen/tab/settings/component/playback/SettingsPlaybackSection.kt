@@ -519,6 +519,20 @@ internal fun SettingsPlaybackSection(
                     }
                 }
             }
+
+            if (cardIndex == null) DetailSectionGap(showHeader)
+            if (shouldShowCard(4)) DetailSectionCard(
+                showCard = !showHeader,
+                highlighted = false,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            ) {
+                // 心动模式的静态说明：推荐来自网易云官方，需要登录
+                MiuixSettingsSectionIntro(
+                    title = stringResource(CoreCommonR.string.settings_heartbeat_section_title),
+                    description = stringResource(CoreCommonR.string.settings_heartbeat_section_desc)
+                )
+            }
         }
     }
 }
