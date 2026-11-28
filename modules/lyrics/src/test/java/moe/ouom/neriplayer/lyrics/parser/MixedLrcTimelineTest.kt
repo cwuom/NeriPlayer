@@ -57,6 +57,23 @@ class MixedLrcTimelineTest {
     }
 
     @Test
+    fun `markup-only enhanced segment before an inline timestamp stays hidden`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.00>[00:02.00]World")
+
+        assertEquals(listOf("World"), lines.map { it.text })
+        assertEquals(listOf(2_000L), lines.single().words!!.map { it.startTimeMs })
+    }
+
+    @Test
+    fun `markup-only trailing enhanced segment does not extend the line`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.00>Hello[00:02.00]<00:02.00>")
+
+        assertEquals(listOf("Hello"), lines.map { it.text })
+        assertEquals(2_000L, lines.single().endTimeMs)
+        assertEquals(listOf(2_000L), lines.single().words!!.map { it.endTimeMs })
+    }
+
+    @Test
     fun `yrc word text keeps parentheses`() {
         val lines = parseNeteaseYrc("[1000,3000](1000,1000,0)Hello (world)(2000,2000,0) again")
 

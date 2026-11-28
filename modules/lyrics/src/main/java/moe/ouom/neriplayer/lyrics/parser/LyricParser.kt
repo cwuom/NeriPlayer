@@ -306,9 +306,13 @@ private fun parseEnhancedLrcSegment(
 ): List<EnhancedLrcWord> {
     if (text.isEmpty()) return emptyList()
     val parsed = parseEnhancedLrcWords(text, startTimeMs)
-        ?: return listOf(
+    if (parsed == null) {
+        // 有 <> 词时间戳却没有正文的分段只是标记, 不能把标记本身当歌词显示
+        if (EnhancedLrcWordTimestampRegex.containsMatchIn(text)) return emptyList()
+        return listOf(
             EnhancedLrcWord(text = text, startTimeMs = startTimeMs, endTimeMs = endTimeMs)
         )
+    }
     val last = parsed.last()
     if (last.endTimeMs != null || endTimeMs == null) return parsed
     // 段尾没有后续 <> 时用段边界收口, 不要退回到下一行的时间
