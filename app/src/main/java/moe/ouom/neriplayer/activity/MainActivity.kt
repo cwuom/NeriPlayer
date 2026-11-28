@@ -165,6 +165,10 @@ import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlayNavigationBarHidden
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.dialog.StoragePermissionLostDialogHost
+import moe.ouom.neriplayer.ui.dialog.StoragePermissionPromptState
+import moe.ouom.neriplayer.ui.dialog.StoragePermissionStartupAudit
+import moe.ouom.neriplayer.ui.dialog.offerFromEvent
 import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
@@ -788,6 +792,7 @@ class MainActivity : ComponentActivity() {
                                         // 弹窗状态管理和事件监听
                                         var showDialog by remember { mutableStateOf(false) }
                                         var dialogMessage by remember { mutableStateOf("") }
+                                        val storagePermissionPromptState = remember { StoragePermissionPromptState() }
                                         var showErrorDialog by remember { mutableStateOf(false) }
                                         var errorTitle by remember { mutableStateOf("") }
                                         var errorMessage by remember { mutableStateOf("") }
@@ -860,6 +865,12 @@ class MainActivity : ComponentActivity() {
 
                                                         is PlayerEventPresentation.Notice ->
                                                             AppFeedback.show(this@MainActivity, presentation.message)
+
+                                                        is PlayerEventPresentation.StoragePermission ->
+                                                            storagePermissionPromptState.offerFromEvent(
+                                                                this@MainActivity,
+                                                                presentation.event
+                                                            )
                                                     }
                                                 }
                                             }
@@ -1022,6 +1033,9 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             )
                                         }
+
+                                        StoragePermissionStartupAudit(storagePermissionPromptState)
+                                        StoragePermissionLostDialogHost(storagePermissionPromptState)
 
                                         if (showDialog) {
                                             AlertDialog(

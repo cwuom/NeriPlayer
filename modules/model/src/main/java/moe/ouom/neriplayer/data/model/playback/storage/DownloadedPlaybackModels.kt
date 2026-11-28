@@ -5,6 +5,9 @@ sealed interface PlayerLocalPlaybackResolution {
     data object NotIndexed : PlayerLocalPlaybackResolution
     data object Missing : PlayerLocalPlaybackResolution
     data class TemporarilyUnavailable(val evidence: String) : PlayerLocalPlaybackResolution
+
+    /** SAF 授权已失效，重试不会恢复，需要用户重新授权 */
+    data class PermissionLost(val evidence: String) : PlayerLocalPlaybackResolution
 }
 
 data class PlayerDownloadedLyrics(

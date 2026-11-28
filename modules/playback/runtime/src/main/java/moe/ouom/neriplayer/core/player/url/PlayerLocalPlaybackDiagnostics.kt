@@ -62,4 +62,5 @@ private fun localPlaybackResolutionLabel(resolution: PlayerLocalPlaybackResoluti
     PlayerLocalPlaybackResolution.Missing -> "missing"
     PlayerLocalPlaybackResolution.NotIndexed -> "not_indexed"
     is PlayerLocalPlaybackResolution.TemporarilyUnavailable -> "temporarily_unavailable"
+    is PlayerLocalPlaybackResolution.PermissionLost -> "permission_lost"
 }

@@ -5,4 +5,17 @@
     <string name="media_favorite_netease_album">NetEase album</string>
     <string name="media_follow_load_failed">Local favorites could not be loaded</string>
     <string name="media_follow_save_failed">Local follow could not be saved</string>
+    <string name="storage_permission_lost_title">Storage access expired</string>
+    <string name="storage_permission_lost_download_streaming">Access to the download folder has expired, so downloaded songs are streaming online for now. Authorize the same folder again to play them locally.</string>
+    <string name="storage_permission_lost_download_check">The download folder cannot be accessed, likely because its access has expired. Downloaded songs will stream online and new downloads may fail. Authorize the folder again.</string>
+    <string name="storage_permission_lost_local_streaming">Access to this song\'s folder has expired, so it is streaming online instead. Authorize the folder again to play it locally.</string>
+    <string name="storage_permission_lost_local_skipped">Access to this song\'s folder has expired, so unreadable songs were skipped. Authorize the folder again to keep playing them.</string>
+    <string name="storage_permission_lost_directory">Folder: %1$s</string>
+    <string name="storage_permission_lost_reimport_hint">This song was not imported from an authorized folder. Import it again from Local Music.</string>
+    <string name="storage_permission_lost_skipped_notice">Folder access expired. Unreadable songs were skipped.</string>
+    <string name="storage_permission_reauthorize">Authorize again</string>
+    <string name="storage_permission_later">Later</string>
+    <string name="storage_permission_restored">Access restored</string>
+    <string name="storage_permission_mismatch">The selected folder is not the original one. Select the original folder.</string>
+    <string name="storage_permission_restore_failed">Access was not restored. Select the original folder and try again.</string>
 </resources>

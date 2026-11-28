@@ -142,13 +142,14 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 audioInfo = playbackAudioInfo
             )
         }
-        if (localResolution is LocalPlaybackReferenceResolution.Missing) {
+        if (localResolution is LocalPlaybackReferenceResolution.Missing || localResolution.isPermissionLost()) {
             recoverNeteaseSourceAfterMissingLocal(song, rawLocalReference, sourceContext)?.let { recoveredSong ->
                 NPLogger.w(
                     "NERI-PlayerManager",
-                    "Downloaded reference is explicitly missing, retry as Netease: " +
+                    "Downloaded reference is not playable (${localResolution.javaClass.simpleName}), retry as Netease: " +
                         "id=${song.id}, song=${song.name}, stale=${playbackLogReference(rawLocalReference)}"
                 )
+                reportLocalPermissionLostFallback(localResolution, rawLocalReference, sideEffects)
                 return resolveSongUrl(
                     song = recoveredSong,
                     forceRefresh = forceRefresh,
@@ -167,10 +168,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
                     "id=${song.id}, song=${song.name}; see LocalPlaybackTrace for storage evidence"
             )
         }
-        sideEffects.emitError {
-            postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.error_no_play_url)))
-        }
-        return SongUrlResult.Failure
+        return reportLocalPlaybackFailure(song, localResolution, rawLocalReference, sideEffects)
     }
 
     val localResult = checkLocalCache(song, sideEffects)
@@ -1382,6 +1380,8 @@ private suspend fun PlayerManager.checkLocalCache(
             }
             return null
         }
+        is LocalPlaybackReferenceResolution.PermissionLost ->
+            return reportIndexedPermissionLost(song, localResolution.evidence, sideEffects)
         is LocalPlaybackReferenceResolution.TemporarilyUnavailable -> {
             NPLogger.w(
                 "NERI-PlayerManager",
@@ -1462,6 +1462,7 @@ internal fun shouldRetryLocalPlaybackResolution(
             hasDownloadedSongCached(song) || hasRecentlyCompletedAudio(song) || isSongDownloadActive(song.stableKey())
         }
         LocalPlaybackReferenceResolution.NotIndexed,
+        is LocalPlaybackReferenceResolution.PermissionLost,
         is LocalPlaybackReferenceResolution.Playable -> false
     }
 }

@@ -5,4 +5,17 @@
     <string name="media_favorite_netease_album">网易云专辑</string>
     <string name="media_follow_load_failed">无法加载本地收藏</string>
     <string name="media_follow_save_failed">无法保存本地关注</string>
+    <string name="storage_permission_lost_title">存储授权已失效</string>
+    <string name="storage_permission_lost_download_streaming">下载目录的访问授权已失效，已下载的歌曲暂时改为在线播放。重新授权同一目录即可恢复本地播放。</string>
+    <string name="storage_permission_lost_download_check">下载目录无法访问，可能是访问授权已失效。已下载的歌曲会改为在线播放，新的下载也可能失败，请重新授权该目录。</string>
+    <string name="storage_permission_lost_local_streaming">歌曲所在目录的访问授权已失效，已改为在线播放。重新授权该目录即可恢复本地播放。</string>
+    <string name="storage_permission_lost_local_skipped">歌曲所在目录的访问授权已失效，无法读取的歌曲已被跳过。重新授权该目录后即可继续播放。</string>
+    <string name="storage_permission_lost_directory">目录：%1$s</string>
+    <string name="storage_permission_lost_reimport_hint">这首歌不是通过授权目录导入的，请在本地音乐中重新导入。</string>
+    <string name="storage_permission_lost_skipped_notice">目录授权已失效，已跳过无法读取的歌曲</string>
+    <string name="storage_permission_reauthorize">重新授权</string>
+    <string name="storage_permission_later">稍后</string>
+    <string name="storage_permission_restored">授权已恢复</string>
+    <string name="storage_permission_mismatch">所选目录与原目录不一致，请选择原目录</string>
+    <string name="storage_permission_restore_failed">授权未能恢复，请重新选择原目录后重试</string>
 </resources>
