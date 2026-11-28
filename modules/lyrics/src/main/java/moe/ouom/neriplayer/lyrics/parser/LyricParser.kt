@@ -181,7 +181,9 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
 //    NPLogger.d("parseYrc-N", yrc)
     val out = mutableListOf<LyricEntry>()
     val headerRegex = Regex("""\[(\d{1,19}),\s*(\d{1,19})]""")
-    val segRegex = Regex("""\((\d{1,19}),\s*(\d{1,19}),\s*[-\d]{1,20}\)([^()\n\r]*)""")
+    // 时间标记单独匹配, 正文按标记位置切片: 原来把正文限制成 [^()] 会让含括号的歌词
+    // (如 "Hello (world)")在左括号处被截断, 后半句直接丢失
+    val wordMarkerRegex = Regex("""\((\d{1,19}),\s*(\d{1,19}),\s*[-\d]{1,20}\)""")
 
     yrc.lineSequence().forEach { raw ->
         val line = raw.trim()
@@ -193,20 +195,21 @@ fun parseNeteaseYrc(yrc: String): List<LyricEntry> {
         val dur = header.groupValues[2].toLongOrNull() ?: return@forEach
         val end = start.saturatingAdd(dur)
 
-        val segs = segRegex.findAll(line).toList()
-        if (segs.isEmpty()) {
-            val text = line.substringAfter("]").trim()
+        val bodyStartIndex = header.range.last + 1
+        val markers = wordMarkerRegex.findAll(line, bodyStartIndex).toList()
+        if (markers.isEmpty()) {
+            val text = line.substring(bodyStartIndex).trim()
             out.add(LyricEntry(text = text, startTimeMs = start, endTimeMs = end, words = null))
         } else {
             val words = mutableListOf<WordTiming>()
             val sb = StringBuilder()
-            for (m in segs) {
-                val ws = m.groupValues[1].toLongOrNull() ?: continue
-                val wd = m.groupValues[2].toLongOrNull() ?: continue
-                val we = ws.saturatingAdd(wd)
-                val t = m.groupValues[3]
+            markers.forEachIndexed { index, marker ->
+                val ws = marker.groupValues[1].toLongOrNull() ?: return@forEachIndexed
+                val wd = marker.groupValues[2].toLongOrNull() ?: return@forEachIndexed
+                val textEnd = markers.getOrNull(index + 1)?.range?.first ?: line.length
+                val t = line.substring(marker.range.last + 1, textEnd)
                 sb.append(t)
-                words.add(WordTiming(ws, we, charCount = t.length))
+                words.add(WordTiming(ws, ws.saturatingAdd(wd), charCount = t.length))
             }
             out.add(
                 LyricEntry(
@@ -229,7 +232,11 @@ private fun Long.saturatingAdd(other: Long): Long {
     }
 }
 
-private fun parseEnhancedLrcWords(content: String, startTimeMs: Long): List<EnhancedLrcWord>? {
+private fun parseEnhancedLrcWords(
+    content: String,
+    startTimeMs: Long,
+    keepWhitespacePrefix: Boolean = false
+): List<EnhancedLrcWord>? {
     val wordTimestamps = EnhancedLrcWordTimestampRegex.findAll(content).toList()
     if (wordTimestamps.isEmpty()) {
         return null
@@ -237,7 +244,7 @@ private fun parseEnhancedLrcWords(content: String, startTimeMs: Long): List<Enha
 
     val words = buildList {
         val prefix = content.substring(0, wordTimestamps.first().range.first)
-        if (prefix.any { !it.isWhitespace() }) {
+        if (prefix.isNotEmpty() && (keepWhitespacePrefix || prefix.any { !it.isWhitespace() })) {
             add(
                 EnhancedLrcWord(
                     text = prefix,
@@ -263,6 +270,61 @@ private fun parseEnhancedLrcWords(content: String, startTimeMs: Long): List<Enha
         }
     }
     return words.takeIf { it.isNotEmpty() }
+}
+
+/**
+ * 增强行正文按 inline 行时间戳([mm:ss.xx])切段, 每段再用 <> 词时间戳解析。
+ * 混合格式里 inline 标记只表示分句, 不能留在歌词文本里。
+ */
+private fun parseEnhancedLrcWordsWithInlineTimestamps(
+    line: String,
+    contentStartIndex: Int,
+    contentStartTimeMs: Long,
+    inlineTimestamps: List<MatchResult>
+): List<EnhancedLrcWord> {
+    val words = mutableListOf<EnhancedLrcWord>()
+    var segmentStartIndex = contentStartIndex
+    var segmentStartTimeMs = contentStartTimeMs
+    inlineTimestamps.forEach { timestamp ->
+        val segmentEndTimeMs = parseLrcTimestampMs(timestamp)
+        words += parseEnhancedLrcSegment(
+            text = line.substring(segmentStartIndex, timestamp.range.first),
+            startTimeMs = segmentStartTimeMs,
+            endTimeMs = segmentEndTimeMs,
+            isLineStart = segmentStartIndex == contentStartIndex
+        )
+        segmentStartIndex = timestamp.range.last + 1
+        segmentStartTimeMs = segmentEndTimeMs ?: segmentStartTimeMs
+    }
+    words += parseEnhancedLrcSegment(
+        text = line.substring(segmentStartIndex),
+        startTimeMs = segmentStartTimeMs,
+        endTimeMs = null,
+        isLineStart = segmentStartIndex == contentStartIndex
+    )
+    return words
+}
+
+private fun parseEnhancedLrcSegment(
+    text: String,
+    startTimeMs: Long,
+    endTimeMs: Long?,
+    isLineStart: Boolean
+): List<EnhancedLrcWord> {
+    if (text.isEmpty()) return emptyList()
+    // 只有行首缩进可以丢; 段内的空白前缀是被 [mm:ss] 隔开的真实词间分隔
+    val parsed = parseEnhancedLrcWords(text, startTimeMs, keepWhitespacePrefix = !isLineStart)
+    if (parsed == null) {
+        // 有 <> 词时间戳却没有正文的分段只是标记, 不能把标记本身当歌词显示
+        if (EnhancedLrcWordTimestampRegex.containsMatchIn(text)) return emptyList()
+        return listOf(
+            EnhancedLrcWord(text = text, startTimeMs = startTimeMs, endTimeMs = endTimeMs)
+        )
+    }
+    val last = parsed.last()
+    if (last.endTimeMs != null || endTimeMs == null) return parsed
+    // 段尾没有后续 <> 时用段边界收口, 不要退回到下一行的时间
+    return parsed.dropLast(1) + last.copy(endTimeMs = endTimeMs)
 }
 
 private fun parseLrcTimestampMs(timestamp: MatchResult): Long? {
@@ -303,14 +365,22 @@ private fun parseLrcTimelineEntries(
     val content = line.substring(nextExpectedStart)
     val enhancedWords = parseEnhancedLrcWords(content, firstStartTimeMs)
     if (enhancedWords != null) {
-        val text = enhancedWords.joinToString(separator = "") { it.text }
+        // 增强行里也可能夹着 inline 行时间戳; 先按 inline 标记把正文切开再逐段解析,
+        // 否则标记本身会被当成歌词正文显示出来, 词时间也会算错
+        val words = parseEnhancedLrcWordsWithInlineTimestamps(
+            line = line,
+            contentStartIndex = nextExpectedStart,
+            contentStartTimeMs = firstStartTimeMs,
+            inlineTimestamps = timestamps.drop(leadingTimestampCount)
+        )
+        val text = words.joinToString(separator = "") { it.text }
         return leadingTimestamps.mapIndexedNotNull { timestampIndex, timestamp ->
             val startTimeMs = parseLrcTimestampMs(timestamp) ?: return@mapIndexedNotNull null
             val shiftMs = startTimeMs - firstStartTimeMs
             LrcTimelineEntry(
                 startTimeMs = startTimeMs,
                 text = text,
-                words = enhancedWords.map { word ->
+                words = words.map { word ->
                     word.copy(
                         startTimeMs = (word.startTimeMs + shiftMs).coerceAtLeast(0L),
                         endTimeMs = word.endTimeMs?.let { (it + shiftMs).coerceAtLeast(0L) }

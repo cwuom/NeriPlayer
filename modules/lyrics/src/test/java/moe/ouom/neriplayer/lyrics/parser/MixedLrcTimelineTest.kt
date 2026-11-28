@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.lyrics.parser
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MixedLrcTimelineTest {
@@ -44,5 +45,47 @@ class MixedLrcTimelineTest {
         val lines = parseNeteaseLrc("[00:01.00]<00:01.00>Hello\n[00:02.50]")
         assertEquals(2_500L, lines.single().endTimeMs)
         assertEquals(2_500L, lines.single().words!!.single().endTimeMs)
+    }
+
+    @Test
+    fun `inline timestamps inside an enhanced line split text instead of leaking`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.20>Hello<00:01.80>[00:02.00]World")
+
+        assertEquals(listOf("HelloWorld"), lines.map { it.text })
+        assertEquals(listOf(1_200L, 2_000L), lines.single().words!!.map { it.startTimeMs })
+        assertTrue(lines.single().text.none { it == '[' || it == '<' })
+    }
+
+    @Test
+    fun `markup-only enhanced segment before an inline timestamp stays hidden`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.00>[00:02.00]World")
+
+        assertEquals(listOf("World"), lines.map { it.text })
+        assertEquals(listOf(2_000L), lines.single().words!!.map { it.startTimeMs })
+    }
+
+    @Test
+    fun `markup-only trailing enhanced segment does not extend the line`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.00>Hello[00:02.00]<00:02.00>")
+
+        assertEquals(listOf("Hello"), lines.map { it.text })
+        assertEquals(2_000L, lines.single().endTimeMs)
+        assertEquals(listOf(2_000L), lines.single().words!!.map { it.endTimeMs })
+    }
+
+    @Test
+    fun `interior enhanced segment keeps its whitespace prefix`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.00>Hello[00:02.00] <00:02.00>world")
+
+        assertEquals(listOf("Hello world"), lines.map { it.text })
+        assertEquals(listOf("Hello"), parseNeteaseLrc("[00:01.00] <00:01.00>Hello").map { it.text })
+    }
+
+    @Test
+    fun `yrc word text keeps parentheses`() {
+        val lines = parseNeteaseYrc("[1000,3000](1000,1000,0)Hello (world)(2000,2000,0) again")
+
+        assertEquals("Hello (world) again", lines.single().text)
+        assertEquals(listOf(13, 6), lines.single().words!!.map { it.charCount })
     }
 }
