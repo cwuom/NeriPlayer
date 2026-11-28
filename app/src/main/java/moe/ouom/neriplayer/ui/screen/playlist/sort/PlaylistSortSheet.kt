@@ -267,7 +267,16 @@ internal fun PlaylistSortSheet(
                             stringResource(AppR.string.playlist_sort_descending)
                         ),
                         selectedIndex = if (descending) 1 else 0,
-                        onSelectedIndexChange = { index -> descending = index == 1 }
+                        onSelectedIndexChange = { index ->
+                            val nextDescending = index == 1
+                            if (nextDescending != descending) {
+                                descending = nextDescending
+                                // 自定义顺序已经把整份顺序定死，切升降序不会生效；
+                                // 清掉导入结果，免得控件状态和实际应用顺序对不上
+                                importedMatch = null
+                                importMessageRes = null
+                            }
+                        }
                     )
                 }
 

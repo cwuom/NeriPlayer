@@ -998,9 +998,30 @@ internal fun LocalPlaylistDetailModernContent(
                             }
                             val expectedOrder = snapshotOrder
                             val newOrder = mergedOrder.map { it.identity() }
+                            val previousSongs = localSongs.toList()
+                            // 落盘是异步的：先把新顺序乐观写回列表。否则这段窗口里用户拖一下，
+                            // 拖拽会用旧列表拼出完整顺序且不带 expectedOrder，把刚提交的排序覆盖掉。
+                            val songsByIdentity = previousSongs.associateBy { it.identity() }
+                            val optimisticSongs = newOrder.mapNotNull { songsByIdentity[it] }
+                            if (optimisticSongs.size == previousSongs.size) {
+                                blockSync = true
+                                pendingOrderIdentities = newOrder
+                                localSongs.clear()
+                                localSongs.addAll(optimisticSongs)
+                            }
                             scope.launchLocalPlaylistMutation(
                                 operation = "sortPlaylistSongs",
                                 onResult = { result ->
+                                    val applied = result.getOrNull() == true
+                                    if (!applied) {
+                                        // 没落盘就把乐观顺序退回去，别让界面显示一个不存在的顺序
+                                        pendingOrderIdentities = null
+                                        blockSync = false
+                                        if (localSongs.map { it.identity() } == newOrder) {
+                                            localSongs.clear()
+                                            localSongs.addAll(previousSongs)
+                                        }
+                                    }
                                     // reorderSongs 返回 false 表示歌单在预览期间被改过
                                     val message = when {
                                         result.isFailure -> AppR.string.playlist_sort_failed

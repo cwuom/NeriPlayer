@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.data.local.playlist.sort
 
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.sync.policy.isLocalMediaUri
 
 /** 歌单排序方式。新增取值时同步维护排序 key 与界面文案。 */
 enum class PlaylistSongSortMode {
@@ -85,21 +86,18 @@ internal fun playlistSongSortKey(song: SongItem, mode: PlaylistSongSortMode): St
 /**
  * 本地文件的文件名：优先持久化的 `localFileName`，其次从本地路径 / 本地 URI 尾部取。
  *
- * 只接受 `file:` / `content:` 这类本地来源；`ytmusic://`、`http(s)://` 等远端地址
- * 不是文件名，直接返回 null，由调用方回退到标题。否则自定义歌单里的远端歌曲
- * 会按视频 ID 排序，和界面上「仅对本地文件生效」的说明不符。
+ * 复用全局的本地媒体判定：`content://`、`file:`、`/storage/...` 这类绝对路径和
+ * `android.resource://` 都算本地；`ytmusic://`、`http(s)://` 等远端地址不是文件名，
+ * 直接返回 null，由调用方回退到标题。否则自定义歌单里的远端歌曲会按视频 ID 排序，
+ * 和界面上「仅对本地文件生效」的说明不符。
  */
 internal fun playlistSongFileName(song: SongItem): String? {
     song.localFileName?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
     song.localFilePath?.let(::playlistSortFileNameFromPath)?.let { return it }
     val uri = song.mediaUri?.trim().orEmpty()
-    if (!isLocalMediaReference(uri)) return null
+    if (!isLocalMediaUri(uri)) return null
     return playlistSortFileNameFromPath(uri)
 }
-
-private fun isLocalMediaReference(value: String): Boolean =
-    value.startsWith("content:", ignoreCase = true) ||
-        value.startsWith("file:", ignoreCase = true)
 
 private fun playlistSortFileNameFromPath(value: String): String? {
     val withoutQuery = value.substringBefore('?').substringBefore('#')

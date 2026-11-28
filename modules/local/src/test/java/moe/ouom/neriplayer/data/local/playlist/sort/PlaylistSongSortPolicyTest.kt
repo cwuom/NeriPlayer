@@ -106,6 +106,30 @@ class PlaylistSongSortPolicyTest {
     }
 
     @Test
+    fun `file name sort accepts absolute path media uris`() {
+        val songs = listOf(
+            song(id = 1, name = "A Song", mediaUri = "/storage/emulated/0/Music/z-track.mp3"),
+            song(id = 2, name = "Z Song", mediaUri = "/storage/emulated/0/Music/a-track.mp3")
+        )
+
+        val sorted = sortPlaylistSongs(songs, PlaylistSongSortOrder(PlaylistSongSortMode.FILE_NAME))
+
+        // 按文件名 a-track < z-track；退回标题排序会得到相反的 1 < 2
+        assertEquals(listOf(2L, 1L), sorted.map { it.id })
+    }
+
+    @Test
+    fun `file name reads android resource uris`() {
+        val song = song(
+            id = 1,
+            name = "Ignored",
+            mediaUri = "android.resource://com.example.app/raw/05-track"
+        )
+
+        assertEquals("05-track", playlistSongFileName(song))
+    }
+
+    @Test
     fun `sorting an empty or single song playlist keeps the input`() {
         assertEquals(emptyList<SongItem>(), sortPlaylistSongs(emptyList(), PlaylistSongSortOrder(PlaylistSongSortMode.TITLE)))
         val single = listOf(song(id = 1, name = "Only"))
