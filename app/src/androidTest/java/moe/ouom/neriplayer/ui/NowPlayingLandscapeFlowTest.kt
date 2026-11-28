@@ -642,7 +642,7 @@ class NowPlayingLandscapeFlowTest {
             composeRule.mainClock.advanceTimeBy(64L)
             val audioInfo = PlayerManager.currentPlaybackAudioInfoFlow.value
             val codec = audioInfo?.codecLabel?.takeIf { it.isNotBlank() }
-            val spec = audioInfo?.specLabel?.takeIf { it.isNotBlank() }
+            val spec = audioInfo?.specParts?.firstOrNull()
             if (codec != null && spec != null) {
                 labels = listOf(codec to codecVisible, spec to specVisible)
                 true
@@ -871,7 +871,7 @@ class NowPlayingLandscapeFlowTest {
         val settings = SettingsRepository(context)
         runBlocking { settings.setNowPlayingProgressShowAudioSpec(false) }
         assertPlaybackInformationVisible(codecVisible = false, pageTag = "nowPlayingLandscapeCoverPage", specVisible = false)
-        composeRule.onNodeWithTag("nowPlayingProgressSpecRow", useUnmergedTree = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("nowPlayingProgressInfoRow", useUnmergedTree = true).assertDoesNotExist()
         runBlocking { settings.setNowPlayingProgressShowAudioSpec(true) }
         assertPlaybackInformationVisible(codecVisible = false, pageTag = "nowPlayingLandscapeCoverPage")
         capture(context, "player-reopened")

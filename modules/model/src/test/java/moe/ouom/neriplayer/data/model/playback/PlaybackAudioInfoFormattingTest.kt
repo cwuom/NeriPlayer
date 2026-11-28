@@ -26,6 +26,15 @@ class PlaybackAudioInfoFormattingTest {
     }
 
     @Test
+    fun `spec parts keep the label order as separate entries`() {
+        assertEquals(
+            listOf("24 bit", "96 kHz", "3129 kbps"),
+            PlaybackAudioInfo(PlaybackAudioSource.NETEASE, sampleRateHz = 96_000, bitDepth = 24, bitrateKbps = 3129).specParts
+        )
+        assertEquals(emptyList<String>(), PlaybackAudioInfo(PlaybackAudioSource.NETEASE, bitDepth = 0).specParts)
+    }
+
+    @Test
     fun `bitrate estimates need a positive length and duration`() {
         assertNull(estimateBitrateKbps(null, 1_000L))
         assertNull(estimateBitrateKbps(0L, 1_000L))

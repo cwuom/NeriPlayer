@@ -189,7 +189,7 @@ If the previous launch ended with a JVM/native crash or system ANR, the app ente
 - Without manual settings, controls sit at the bottom with a progress bar. Lyrics and translations default to 125% and 115% of phone sizes.
 - Tablets follow system rotation.
 - Landscape Now Playing uses spacious two-pane layouts and always shows the full lyrics pane, without swipe switching of lyric styles.
-- The audio spec setting shows bit depth, sample rate, and bitrate above the progress bar. Quality, playback speed, and codec appear below it.
+- Quality, playback speed, codec, and audio spec (bit depth, sample rate, bitrate) share one row below the progress bar, each following its own setting.
 
 ### Phone landscape
 
@@ -199,7 +199,7 @@ If the previous launch ended with a JVM/native crash or system ANR, the app ente
 - Playback controls and progress sit at the bottom right, and track actions at the top right.
 - Tablets and portrait use the playback control position preference.
 - The cover page and lyrics page share one layout, each keeping its own font and button-size settings. Horizontal swipes switch between them.
-- The lyrics pane is transparent and the artwork has vertical spacing. In phone landscape, “Show audio spec above progress bar” shows bit depth, sample rate, and bitrate above the slider. Turning it off removes the row.
+- The lyrics pane is transparent and the artwork has vertical spacing. Phone landscape keeps only the audio spec: “Show audio spec below progress bar” shows bit depth, sample rate, and bitrate below the slider. Turning it off removes the row.
 - In short landscape windows, the song edit sheet uses a compact cover and a separately scrolling form. Scrolling the form does not drag the sheet.
 
 ### Onboarding and tablet detail pages

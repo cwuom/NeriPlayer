@@ -76,10 +76,9 @@ internal data class NowPlayingProgressInfoSegment(
     val highlighted: Boolean = false
 )
 
-/** null 隐藏该行，空列表在音轨信息加载期间保留行高。 */
+/** null 隐藏信息行，空列表在音轨信息加载期间保留行高。 */
 internal data class NowPlayingProgressInfoPresentation(
-    val specRow: List<NowPlayingProgressInfoSegment>?,
-    val badgeRow: List<NowPlayingProgressInfoSegment>?
+    val segments: List<NowPlayingProgressInfoSegment>?
 )
 
 internal class NowPlayingProgressOwner(initialPositionMs: Long) {
@@ -206,11 +205,25 @@ internal fun buildNowPlayingProgressInfoPresentation(
     showAudioSpec: Boolean,
     playbackSpeed: Float,
     phoneLandscape: Boolean
+): NowPlayingProgressInfoPresentation = if (phoneLandscape) {
+    // 手机横屏空间紧凑，只保留可开关的音源规格
+    progressInfoPresentation(audioInfo, false, false, showAudioSpec, 1f)
+} else {
+    progressInfoPresentation(audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed)
+}
+
+private fun progressInfoPresentation(
+    audioInfo: PlaybackAudioInfo?,
+    showQualitySwitch: Boolean,
+    showAudioCodec: Boolean,
+    showAudioSpec: Boolean,
+    playbackSpeed: Float
 ): NowPlayingProgressInfoPresentation {
-    val showBadges = !phoneLandscape && (showQualitySwitch || showAudioCodec || shouldShowPlaybackSpeedBadge(playbackSpeed))
+    val showRow = showQualitySwitch || showAudioCodec || showAudioSpec || shouldShowPlaybackSpeedBadge(playbackSpeed)
     return NowPlayingProgressInfoPresentation(
-        specRow = if (showAudioSpec) listOfNotNull(audioInfo?.specLabel?.let(::NowPlayingProgressInfoSegment)) else null,
-        badgeRow = if (showBadges) buildNowPlayingProgressInfoSegments(audioInfo, showQualitySwitch, showAudioCodec, playbackSpeed) else null
+        segments = if (showRow) {
+            buildNowPlayingProgressInfoSegments(audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed)
+        } else null
     )
 }
 
@@ -218,6 +231,7 @@ internal fun buildNowPlayingProgressInfoSegments(
     audioInfo: PlaybackAudioInfo?,
     showQualitySwitch: Boolean,
     showAudioCodec: Boolean,
+    showAudioSpec: Boolean,
     playbackSpeed: Float
 ): List<NowPlayingProgressInfoSegment> {
     if (audioInfo == null) return emptyList()
@@ -225,7 +239,7 @@ internal fun buildNowPlayingProgressInfoSegments(
         progressQualityBadge(audioInfo, showQualitySwitch),
         progressSpeedBadge(playbackSpeed),
         progressCodecBadge(audioInfo, showAudioCodec)
-    )
+    ) + progressSpecBadges(audioInfo, showAudioSpec)
 }
 
 private fun progressQualityBadge(info: PlaybackAudioInfo, enabled: Boolean): NowPlayingProgressInfoSegment? =
@@ -240,6 +254,9 @@ private fun progressSpeedBadge(speed: Float): NowPlayingProgressInfoSegment? =
 private fun progressCodecBadge(info: PlaybackAudioInfo, enabled: Boolean): NowPlayingProgressInfoSegment? =
     info.codecLabel?.takeIf { enabled && it.isNotBlank() }
         ?.let(::NowPlayingProgressInfoSegment)
+
+private fun progressSpecBadges(info: PlaybackAudioInfo, enabled: Boolean): List<NowPlayingProgressInfoSegment> =
+    if (enabled) info.specParts.map(::NowPlayingProgressInfoSegment) else emptyList()
 
 private fun shouldShowPlaybackSpeedBadge(playbackSpeed: Float): Boolean {
     return (playbackSpeed * 100).roundToInt() != 100
@@ -389,13 +406,6 @@ internal fun NowPlayingProgressSection(
     }
 
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        progressInfoPresentation.specRow?.let { specs ->
-            NowPlayingProgressInfoRow(
-                segments = specs,
-                highlightedContentColor = activeContentColor,
-                modifier = Modifier.fillMaxWidth().testTag("nowPlayingProgressSpecRow")
-            )
-        }
         NowPlayingProgressRow(
             owner = owner,
             currentPosition = currentPosition,
@@ -411,9 +421,9 @@ internal fun NowPlayingProgressSection(
             lyricSeekHaptic = lyricSeekHaptic,
             modifier = Modifier.fillMaxWidth().then(progressRowModifier)
         )
-        progressInfoPresentation.badgeRow?.let { badges ->
+        progressInfoPresentation.segments?.let { segments ->
             NowPlayingProgressInfoRow(
-                segments = badges,
+                segments = segments,
                 highlightedContentColor = activeContentColor,
                 modifier = Modifier.fillMaxWidth().testTag("nowPlayingProgressInfoRow")
             )

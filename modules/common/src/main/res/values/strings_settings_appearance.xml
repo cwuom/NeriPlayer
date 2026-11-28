@@ -63,8 +63,8 @@
     <string name="settings_playback_control_size_large">大</string>
     <string name="settings_nowplaying_progress_audio_codec">进度条下方显示解码格式</string>
     <string name="settings_nowplaying_progress_audio_codec_desc">显示在进度条下方，如 FLAC、AAC、E-AC-3</string>
-    <string name="settings_nowplaying_progress_audio_spec">进度条上方显示音源规格</string>
-    <string name="settings_nowplaying_progress_audio_spec_desc">显示在进度条上方，包括位深、采样率、码率</string>
+    <string name="settings_nowplaying_progress_audio_spec">进度条下方显示音源规格</string>
+    <string name="settings_nowplaying_progress_audio_spec_desc">显示在进度条下方，包括位深、采样率、码率</string>
     <string name="settings_select_color">选择主题色</string>
     <string name="settings_apply_color">应用颜色</string>
     <string name="settings_add_to_palette">添加到取色盘</string>
