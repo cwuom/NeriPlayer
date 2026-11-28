@@ -642,9 +642,10 @@ class NowPlayingLandscapeFlowTest {
             composeRule.mainClock.advanceTimeBy(64L)
             val audioInfo = PlayerManager.currentPlaybackAudioInfoFlow.value
             val codec = audioInfo?.codecLabel?.takeIf { it.isNotBlank() }
-            val spec = audioInfo?.specParts?.firstOrNull()
-            if (codec != null && spec != null) {
-                labels = listOf(codec to codecVisible, spec to specVisible)
+            val specs = audioInfo?.specParts.orEmpty()
+            if (codec != null && specs.isNotEmpty()) {
+                // 规格拆成多个片段，逐项检查才能发现漏掉采样率或码率
+                labels = listOf(codec to codecVisible) + specs.map { it to specVisible }
                 true
             } else false
         }
