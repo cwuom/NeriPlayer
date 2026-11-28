@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.Delete
@@ -111,6 +112,7 @@ import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertPreview
+import moe.ouom.neriplayer.ui.screen.playlist.sort.PlaylistSortSheet
 import moe.ouom.neriplayer.ui.screen.playlist.insert.isPlaylistInsertPreviewCurrent
 import moe.ouom.neriplayer.ui.screen.playlist.reorder.LocalPlaylistReorderableItem
 import moe.ouom.neriplayer.ui.screen.playlist.reorder.localPlaylistDetectReorder
@@ -161,6 +163,9 @@ internal fun LocalPlaylistDetailModernContent(
         var showInsertDialog by remember(playlistId) { mutableStateOf(false) }
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
         var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
+        var sortSheetSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
+        // 面板展示的是打开那一刻的完整顺序，应用时要拿它比对，而不是最新的 localSongs
+        var sortSheetSnapshot by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
         val selectedDownloadableSongs = remember(selectedSongsForAction) {
             playlistDownloadCandidates(selectedSongsForAction)
@@ -347,6 +352,21 @@ internal fun LocalPlaylistDetailModernContent(
                     }
                 }
 
+                // 排序与拖拽排序共用同一套提交语义：能拖拽的页面才提供排序
+                if (canReorderCurrentSongs) {
+                    HapticIconButton(
+                        onClick = {
+                            sortSheetSnapshot = localSongs.toList()
+                            sortSheetSongs = tabSongs
+                        },
+                        enabled = tabSongs.size >= 2
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = stringResource(AppR.string.playlist_sort_action)
+                        )
+                    }
+                }
                 if (!isSystemPlaylist) {
                     HapticIconButton(onClick = {
                         renameText =
@@ -944,6 +964,94 @@ internal fun LocalPlaylistDetailModernContent(
                     LocalCurationSheet(
                         songs = songs,
                         onDismissRequest = { curationSongs = null }
+                    )
+                }
+
+                sortSheetSongs?.let { sortTargets ->
+                    PlaylistSortSheet(
+                        songs = sortTargets,
+                        onDismissRequest = {
+                            sortSheetSongs = null
+                            sortSheetSnapshot = null
+                        },
+                        onApplyOrder = applyOrder@{ orderedSongs ->
+                            // 按打开面板时的完整快照合并：面板预览代表的是那一刻的顺序
+                            val fullOrder = sortSheetSnapshot ?: localSongs.toList()
+                            sortSheetSongs = null
+                            sortSheetSnapshot = null
+                            // 面板拿到的是过滤后的可见歌曲（hideExplicit / hideMusicVideos 可能藏歌），
+                            // 而 reorderSongs 的 expectedOrder 要跟完整歌单比，所以先按槽位合并回完整顺序。
+                            val mergedOrder = reorderVisiblePlaylistSlots(
+                                fullOrder = fullOrder,
+                                orderedVisibleKeys = orderedSongs.map { it.stableKey() },
+                                keyOf = { it.stableKey() }
+                            )
+                            val snapshotOrder = fullOrder.map { it.identity() }
+                            // 合并失败，或面板开着期间歌单被同步 / 别处改过：这次不写，提示重排
+                            if (mergedOrder == null || localSongs.map { it.identity() } != snapshotOrder) {
+                                scope.launch {
+                                    snackbarHostState.showNeriSnackbar(
+                                        composeResources.getString(AppR.string.playlist_sort_stale)
+                                    )
+                                }
+                                return@applyOrder
+                            }
+                            val expectedOrder = snapshotOrder
+                            val newOrder = mergedOrder.map { it.identity() }
+                            val previousSongs = localSongs.toList()
+                            // 落盘是异步的：先把新顺序乐观写回列表。否则这段窗口里用户拖一下，
+                            // 拖拽会用旧列表拼出完整顺序且不带 expectedOrder，把刚提交的排序覆盖掉。
+                            val songsByIdentity = previousSongs.associateBy { it.identity() }
+                            val optimisticSongs = newOrder.mapNotNull { songsByIdentity[it] }
+                            if (optimisticSongs.size == previousSongs.size) {
+                                blockSync = true
+                                pendingOrderIdentities = newOrder
+                                localSongs.clear()
+                                localSongs.addAll(optimisticSongs)
+                            }
+                            scope.launchLocalPlaylistMutation(
+                                operation = "sortPlaylistSongs",
+                                onResult = { result ->
+                                    val applied = result.getOrNull() == true
+                                    if (!applied) {
+                                        // 没落盘就把乐观顺序退回去，别让界面显示一个不存在的顺序
+                                        pendingOrderIdentities = null
+                                        blockSync = false
+                                        if (localSongs.map { it.identity() } == newOrder) {
+                                            localSongs.clear()
+                                            localSongs.addAll(previousSongs)
+                                        }
+                                    }
+                                    // reorderSongs 返回 false 表示歌单在预览期间被改过
+                                    val message = when {
+                                        result.isFailure -> AppR.string.playlist_sort_failed
+                                        result.getOrNull() != true ->
+                                            AppR.string.playlist_sort_stale
+                                        else -> null
+                                    }
+                                    scope.launch {
+                                        if (message != null) {
+                                            snackbarHostState.showNeriSnackbar(
+                                                composeResources.getString(message)
+                                            )
+                                        } else {
+                                            snackbarHostState.showNeriSnackbar(
+                                                composeResources.getString(
+                                                    AppR.string.playlist_sort_applied,
+                                                    newOrder.size
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            ) {
+                                repo.reorderSongs(
+                                    playlistId = playlistId,
+                                    newOrder = newOrder,
+                                    expectedOrder = expectedOrder
+                                )
+                            }
+                        }
                     )
                 }
 

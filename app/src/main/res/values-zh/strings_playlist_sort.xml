@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_sort_action">排序</string>
+    <string name="playlist_sort_sheet_title">歌单排序</string>
+    <string name="playlist_sort_header_subtitle">%1$d 首歌曲</string>
+    <string name="playlist_sort_section_mode">排序方式</string>
+    <string name="playlist_sort_mode_title">按标题</string>
+    <string name="playlist_sort_mode_file_name">按文件名</string>
+    <string name="playlist_sort_mode_desc">按标题忽略大小写；按文件名仅对本地文件生效。</string>
+    <string name="playlist_sort_section_order">顺序</string>
+    <string name="playlist_sort_ascending">升序</string>
+    <string name="playlist_sort_descending">降序</string>
+    <string name="playlist_sort_section_import">自定义顺序</string>
+    <string name="playlist_sort_import_action">选择 txt / csv 文件</string>
+    <string name="playlist_sort_import_busy">读取中…</string>
+    <string name="playlist_sort_import_hint">每行一首：歌名、歌名 - 歌手或 歌名,歌手。</string>
+    <string name="playlist_sort_import_empty">没有从文件里读到可用的歌曲条目。</string>
+    <string name="playlist_sort_import_too_large">文件超过 2 MB，请换一个更小的 txt / csv。</string>
+    <string name="playlist_sort_import_summary">匹配 %1$d 首 · 未匹配 %2$d 首</string>
+    <string name="playlist_sort_import_unmatched">未匹配：%1$s</string>
+    <string name="playlist_sort_import_unmatched_more">还有 %1$d 首未匹配</string>
+    <string name="playlist_sort_import_clear">清除导入</string>
+    <string name="playlist_sort_section_preview">预览</string>
+    <string name="playlist_sort_apply">应用排序</string>
+    <string name="playlist_sort_applied">已重排 %1$d 首歌曲</string>
+    <string name="playlist_sort_stale">歌单已变化，请重新排序</string>
+    <string name="playlist_sort_failed">排序失败，请稍后重试</string>
+</resources>
