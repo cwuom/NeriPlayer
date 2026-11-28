@@ -76,12 +76,12 @@ class UidtStopCoordinatorTest {
             "modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
                 "UidtDownloadJobService.kt"
         ).readText()
-        val onStartJob = methodBody(source, "override fun onStartJob(")
+        val executeOperation = methodBody(source, "private suspend fun executeOperation(")
 
-        val executeIndex = onStartJob.indexOf(
+        val executeIndex = executeOperation.indexOf(
             "DownloadExecutionHosts.default.execute(applicationContext, operationId)"
         )
-        val cancelIndex = onStartJob.indexOf("cancelFallback(")
+        val cancelIndex = executeOperation.indexOf("cancelFallback(")
         assertTrue(executeIndex >= 0)
         assertTrue(cancelIndex > executeIndex)
     }
