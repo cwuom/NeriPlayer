@@ -78,7 +78,12 @@ internal fun LocalPlaybackReferenceResolution.toPlayerResolution(): PlayerLocalP
     is LocalPlaybackReferenceResolution.Playable -> PlayerLocalPlaybackResolution.Playable(reference)
     LocalPlaybackReferenceResolution.NotIndexed -> PlayerLocalPlaybackResolution.NotIndexed
     LocalPlaybackReferenceResolution.Missing -> PlayerLocalPlaybackResolution.Missing
-    is LocalPlaybackReferenceResolution.TemporarilyUnavailable -> PlayerLocalPlaybackResolution.TemporarilyUnavailable(evidence.toString())
+    is LocalPlaybackReferenceResolution.TemporarilyUnavailable ->
+        if (evidence is ManagedDownloadReferenceLookup.Result.PermissionLost) {
+            PlayerLocalPlaybackResolution.PermissionLost(evidence.toString())
+        } else {
+            PlayerLocalPlaybackResolution.TemporarilyUnavailable(evidence.toString())
+        }
 }
 
 internal fun PlayerMetadataClearRequest.toDownloadPolicy() = RestorableMetadataClearPolicy(title, artist, cover, lyrics, userLyricOffset)

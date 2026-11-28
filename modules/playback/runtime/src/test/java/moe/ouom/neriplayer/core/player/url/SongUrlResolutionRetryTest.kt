@@ -73,4 +73,17 @@ class SongUrlResolutionRetryTest {
         assertTrue(shouldRetryLocalPlaybackResolution(song, LocalPlaybackReferenceResolution.TemporarilyUnavailable("provider busy"), unexpectedLookup))
     }
 
+    @Test
+    fun `lost SAF grants skip retries so playback can fall back immediately`() {
+        val song = SongItem(1L, "Song", "Artist", "Album", 1L, 1_000L, null)
+        val unexpectedLookup: () -> PlayerDownloadAccess = { error("Unexpected download lookup") }
+        assertFalse(
+            shouldRetryLocalPlaybackResolution(
+                song,
+                LocalPlaybackReferenceResolution.PermissionLost("PermissionLost(Permission Denial)"),
+                unexpectedLookup
+            )
+        )
+    }
+
 }

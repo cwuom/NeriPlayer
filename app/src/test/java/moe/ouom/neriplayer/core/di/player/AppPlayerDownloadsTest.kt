@@ -56,6 +56,13 @@ class AppPlayerDownloadsTest {
     }
 
     @Test
+    fun `local playback bridge separates lost SAF grants from transient provider failures`() {
+        val evidence = ManagedDownloadReferenceLookup.Result.PermissionLost(SecurityException("Permission Denial"))
+        assertEquals(PlayerLocalPlaybackResolution.PermissionLost(evidence.toString()),
+            LocalPlaybackReferenceResolution.TemporarilyUnavailable(evidence).toPlayerResolution())
+    }
+
+    @Test
     fun `metadata clear bridge keeps every independent field across all combinations`() {
         repeat(32) { bits ->
             val request = PlayerMetadataClearRequest(

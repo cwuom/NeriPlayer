@@ -811,7 +811,8 @@ class PlayerRestoredPlaybackResumeAdmissionTest {
 
     private fun unavailablePermittedResolutions(): List<PlayerLocalPlaybackResolution> = listOf(
         PlayerLocalPlaybackResolution.NotIndexed, PlayerLocalPlaybackResolution.Missing,
-        PlayerLocalPlaybackResolution.TemporarilyUnavailable("catalog warming up")
+        PlayerLocalPlaybackResolution.TemporarilyUnavailable("catalog warming up"),
+        PlayerLocalPlaybackResolution.PermissionLost("PermissionLost(Permission Denial)")
     )
 
     private data class LocalResolutionRequest(
