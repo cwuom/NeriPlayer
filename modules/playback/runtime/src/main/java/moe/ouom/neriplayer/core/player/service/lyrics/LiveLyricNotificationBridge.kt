@@ -51,13 +51,16 @@ object LiveUpdateNotificationStatus {
     }
 }
 
-/** 提升资格的系统查询；抽出来便于在没有真实 SystemUI 的测试环境替换 */
+/** 提升资格与已发布内容的系统查询；抽出来便于在没有真实 SystemUI 的测试环境替换 */
 internal interface LiveUpdatePromotionPort {
     /** @return null 表示无法判断，按允许处理 */
     fun canPostPromoted(): Boolean?
 
     /** @return 已发布通知是否带 FLAG_PROMOTED_ONGOING；null 表示找不到或无法判断 */
     fun isPromoted(notificationId: Int): Boolean?
+
+    /** @return 系统当前保存的该通知的发布序号；null 表示通知不在或无法判断 */
+    fun shownPublication(notificationId: Int): Long?
 }
 
 internal class AndroidLiveUpdatePromotionPort(private val manager: NotificationManager) : LiveUpdatePromotionPort {
@@ -74,7 +77,20 @@ internal class AndroidLiveUpdatePromotionPort(private val manager: NotificationM
                 ?.let { it.notification.flags and Notification.FLAG_PROMOTED_ONGOING != 0 }
         }.getOrNull()
     }
+
+    override fun shownPublication(notificationId: Int): Long? = runCatching {
+        manager.activeNotifications
+            .firstOrNull { it.id == notificationId && it.tag == null }
+            ?.notification
+            ?.let(::liveUpdatePublication)
+    }.getOrNull()
 }
+
+private class LiveUpdatePublication(val sequence: Long, val postedElapsedMs: Long)
+
+/** 没有发布序号的通知（例如旧版本残留）按 -1 处理，总会被视为不是最新一次发布 */
+internal fun liveUpdatePublication(notification: Notification): Long =
+    notification.extras.getLong(LiveLyricNotificationBridge.EXTRA_PUBLICATION, -1L)
 
 /**
  * 以 Android 16 Live Update（提升的常驻通知）展示正在播放：状态栏胶囊显示歌词或歌名，
@@ -104,6 +120,16 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         const val PROMOTION_CHECK_DELAY_MS = 1_000L
         // 查不到通知（入队尚未完成等）时每秒重试，次数有限，避免查询失败时一直空转
         const val PROMOTION_CHECK_MAX_UNKNOWN = 5
+        // 超出入队频率的更新会被系统静默丢弃，notify() 照常返回；暂停这类之后不再变化的状态一旦被丢，
+        // 卡片会一直停在播放态，暂停键只能再发暂停。每次发布带上序号，发布停下后核对系统实际保存的是哪一次
+        const val EXTRA_PUBLICATION = "moe.ouom.neriplayer.live_update.publication"
+        // 比逐秒节拍长，持续播放时不会每秒都查询一次
+        const val PUBLICATION_CHECK_DELAY_MS = 1_500L
+        // 节拍会不断推迟核对；持续播放时至少每 5 s 核对一次，避免更新被持续丢弃时进度一直不动
+        const val PUBLICATION_CHECK_MAX_DEFER_MS = 5_000L
+        // 入队是异步的（通知助手还会延迟约 200 ms），刚发布就读到旧内容不算丢弃
+        const val PUBLICATION_SETTLE_MS = 600L
+        const val PUBLICATION_MAX_RESENDS = 3
         // 划掉事件以歌曲区分：每首歌的 deleteIntent 是独立令牌，迟到的旧事件不会算到新歌头上
         private const val DISMISS_URI_SCHEME = "neriplayer-live-update"
         // 越过整秒后再刷新，避免外推位置还差几毫秒没进到下一格
@@ -158,6 +184,12 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
     private var promotionCheckPending = false
     private var promotionVerified = false
     private var promotionUnknownChecks = 0
+    private val publicationCheck = Runnable(::verifyPublication)
+    private var publication = 0L
+    // 尚未核对的发布，最新的在末尾；只保留最近一次已落定的和之后的
+    private val unconfirmedPublications = ArrayDeque<LiveUpdatePublication>()
+    private var unconfirmedSinceElapsedMs: Long? = null
+    private var publicationResends = 0
     private val progressTick = Runnable(::dispatchProgressTick)
     private var enabled = false
     private var latestFrame: LiveUpdateFrame? = null
@@ -277,6 +309,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         cancelPausedDismiss()
         mainHandler.removeCallbacks(progressTick)
         cancelPromotionCheck()
+        cancelPublicationCheck()
         accentJob?.cancel()
         accentJob = null
         latestFrame = null
@@ -293,6 +326,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         cancelPausedDismiss()
         mainHandler.removeCallbacks(progressTick)
         cancelPromotionCheck()
+        cancelPublicationCheck()
         lastPosted = null
     }
 
@@ -317,7 +351,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         mainHandler.postDelayed(dispatch, remainingMs)
     }
 
-    private fun dispatchLatest() {
+    private fun dispatchLatest(resend: Boolean = false) {
         mainHandler.removeCallbacks(progressTick)
         val received = latestFrame ?: return
         if (!enabled || received.songKey == dismissedSongKey) return
@@ -335,7 +369,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         val frame = received.copy(
             positionMs = resolveLiveUpdateClockPosition(anchor, nowElapsedMs, received, extrapolatedMs)
         )
-        postFrame(frame, anchor)
+        postFrame(frame, anchor, resend)
         scheduleProgressTick(frame, anchor, nowElapsedMs, elapsedSinceFrameMs)
     }
 
@@ -348,7 +382,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         dispatchLatest()
     }
 
-    private fun postFrame(frame: LiveUpdateFrame, clockAnchor: LiveUpdateClockAnchor?) {
+    private fun postFrame(frame: LiveUpdateFrame, clockAnchor: LiveUpdateClockAnchor?, resend: Boolean) {
         val previous = lastPosted
         if (previous == null && !canStartLiveUpdate(frame)) return
         val content = resolveLiveUpdateContent(
@@ -365,12 +399,17 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
             accentColor = currentArtwork?.accentColor,
         )
         updatePausedDismiss(frame.playing)
-        if (state == previous) return
-        // 熄屏时只有息屏显示可见，纯进度变化不值得唤起 SystemUI 重新布局
-        if (previous != null && isOnlyProgressChange(previous, state) && powerManager?.isInteractive == false) {
-            return
+        // 重发时系统保存的是更早的内容，与上次发布相同也必须再发
+        if (!resend) {
+            if (state == previous) return
+            // 熄屏时只有息屏显示可见，纯进度变化不值得唤起 SystemUI 重新布局
+            if (previous != null && isOnlyProgressChange(previous, state) && powerManager?.isInteractive == false) {
+                return
+            }
         }
-        lastDispatchElapsedMs = SystemClock.elapsedRealtime()
+        val postedElapsedMs = SystemClock.elapsedRealtime()
+        lastDispatchElapsedMs = postedElapsedMs
+        val sequence = publication + 1
         val notification = buildLiveUpdateNotification(
             appContext,
             content = content,
@@ -386,11 +425,14 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
             ),
             deleteIntent = dismissPendingIntent(content.songKey),
         )
+        notification.extras.putLong(EXTRA_PUBLICATION, sequence)
         try {
             ensureChannel()
             notificationManager.notify(NOTIFICATION_ID, notification)
+            publication = sequence
             lastPosted = state
             armPromotionCheck(firstPost = previous == null)
+            recordPublication(LiveUpdatePublication(sequence, postedElapsedMs))
         } catch (securityException: SecurityException) {
             Log.w(TAG, "Unable to post Live Update notification", securityException)
         }
@@ -457,6 +499,73 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
                 clearImpl()
             }
         }
+    }
+
+    private fun recordPublication(posted: LiveUpdatePublication) {
+        if (unconfirmedSinceElapsedMs == null) unconfirmedSinceElapsedMs = posted.postedElapsedMs
+        unconfirmedPublications.addLast(posted)
+        while (unconfirmedPublications.size > 1 &&
+            posted.postedElapsedMs - unconfirmedPublications[1].postedElapsedMs >= PUBLICATION_SETTLE_MS
+        ) {
+            unconfirmedPublications.removeFirst()
+        }
+        schedulePublicationCheck()
+    }
+
+    /** 截止前随新发布推迟；到期后不再推迟，歌词行再密也会按时核对 */
+    private fun schedulePublicationCheck() {
+        val unconfirmedSince = unconfirmedSinceElapsedMs ?: return
+        val latest = unconfirmedPublications.lastOrNull() ?: return
+        val checkAtElapsedMs = minOf(
+            latest.postedElapsedMs + PUBLICATION_CHECK_DELAY_MS,
+            unconfirmedSince + PUBLICATION_CHECK_MAX_DEFER_MS,
+        )
+        mainHandler.removeCallbacks(publicationCheck)
+        mainHandler.postDelayed(
+            publicationCheck,
+            (checkAtElapsedMs - SystemClock.elapsedRealtime()).coerceAtLeast(0L),
+        )
+    }
+
+    private fun cancelPublicationCheck() {
+        mainHandler.removeCallbacks(publicationCheck)
+        unconfirmedPublications.clear()
+        unconfirmedSinceElapsedMs = null
+        publicationResends = 0
+    }
+
+    private fun verifyPublication() {
+        if (lastPosted == null) return cancelPublicationCheck()
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        // 刚发布的还在入队，核对最近一次已落定的发布；序号递增，系统保存的不早于它即说明它已送达
+        val settled = unconfirmedPublications.lastOrNull { nowElapsedMs - it.postedElapsedMs >= PUBLICATION_SETTLE_MS }
+        if (settled == null) {
+            val oldest = unconfirmedPublications.firstOrNull() ?: return cancelPublicationCheck()
+            mainHandler.postDelayed(publicationCheck, PUBLICATION_SETTLE_MS - (nowElapsedMs - oldest.postedElapsedMs))
+            return
+        }
+        val shown = promotion.shownPublication(NOTIFICATION_ID)
+        // 通知已不在时交给 deleteIntent 判断是否被划掉，这里重发可能把用户划掉的卡片又发回来
+        if (shown == null) return cancelPublicationCheck()
+        if (shown >= settled.sequence) return confirmPublicationsUpTo(shown)
+        if (publicationResends >= PUBLICATION_MAX_RESENDS) {
+            Log.w(TAG, "Live Update still shows publication $shown instead of ${settled.sequence}; stop re-sending")
+            return cancelPublicationCheck()
+        }
+        publicationResends++
+        Log.w(TAG, "System dropped Live Update publication ${settled.sequence} (showing $shown); re-sending")
+        // 重发带着最新内容，之前的发布都被它取代；不清掉的话下一次核对会立即拿旧发布再判一次丢失
+        unconfirmedPublications.clear()
+        dispatchLatest(resend = true)
+    }
+
+    /** 之后的发布还没落定时开始新一轮核对，紧跟在密集更新后的暂停也不会漏掉 */
+    private fun confirmPublicationsUpTo(shown: Long) {
+        unconfirmedPublications.removeAll { it.sequence <= shown }
+        publicationResends = 0
+        val next = unconfirmedPublications.firstOrNull() ?: return cancelPublicationCheck()
+        unconfirmedSinceElapsedMs = next.postedElapsedMs
+        schedulePublicationCheck()
     }
 
     /** 胶囊宽度按 dp 封顶而文字随系统字号放大，大字号下可容纳的 em 数相应减少 */

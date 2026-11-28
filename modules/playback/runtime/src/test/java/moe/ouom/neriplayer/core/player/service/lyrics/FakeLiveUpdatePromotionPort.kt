@@ -4,8 +4,12 @@ package moe.ouom.neriplayer.core.player.service.lyrics
 internal class FakeLiveUpdatePromotionPort(
     var canPost: Boolean? = true,
     var promoted: Boolean? = true,
+    /** 默认无法判断，发布核对不会触发重发 */
+    var shown: (Int) -> Long? = { null },
 ) : LiveUpdatePromotionPort {
     var promotionQueries = 0
+        private set
+    var publicationQueries = 0
         private set
 
     override fun canPostPromoted(): Boolean? = canPost
@@ -13,5 +17,10 @@ internal class FakeLiveUpdatePromotionPort(
     override fun isPromoted(notificationId: Int): Boolean? {
         promotionQueries++
         return promoted
+    }
+
+    override fun shownPublication(notificationId: Int): Long? {
+        publicationQueries++
+        return shown(notificationId)
     }
 }
