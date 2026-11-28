@@ -63,8 +63,8 @@
     <string name="settings_playback_control_size_large">Large</string>
     <string name="settings_nowplaying_progress_audio_codec">Show codec below progress bar</string>
     <string name="settings_nowplaying_progress_audio_codec_desc">Shown below the progress bar, such as FLAC, AAC, or E-AC-3</string>
-    <string name="settings_nowplaying_progress_audio_spec">Show audio spec above progress bar</string>
-    <string name="settings_nowplaying_progress_audio_spec_desc">Shown above the progress bar, including bit depth, sample rate, and bitrate</string>
+    <string name="settings_nowplaying_progress_audio_spec">Show audio spec below progress bar</string>
+    <string name="settings_nowplaying_progress_audio_spec_desc">Shown below the progress bar, including bit depth, sample rate, and bitrate</string>
     <string name="settings_select_color">Select Color</string>
     <string name="settings_apply_color">Apply Color</string>
     <string name="settings_add_to_palette">Add to Palette</string>

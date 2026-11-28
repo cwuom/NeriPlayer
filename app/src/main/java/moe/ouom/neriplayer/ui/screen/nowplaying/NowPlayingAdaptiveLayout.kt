@@ -414,7 +414,7 @@ private fun NowPlayingExpandedLandscape(
             )
             // 封面吃掉剩余高度, 下方固定为歌名, 进度, 播放键, 工具栏的紧凑顺序;
             // 封面权重已把这组控件压到底部, 置底偏好在这里不再需要额外空白
-            // 封面自带上下留白，进度条上方的信息行也自带高度。
+            // 封面自带上下留白, 进度下方的音频信息行也自带高度, 这两处不再叠加间距
             identity(false)
             Spacer(Modifier.height(NowPlayingExpandedSectionGap))
             progress()

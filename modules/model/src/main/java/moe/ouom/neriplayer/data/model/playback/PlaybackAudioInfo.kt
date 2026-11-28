@@ -28,25 +28,34 @@ data class PlaybackAudioInfo(
     val bitDepth: Int? = null,
     val channelCount: Int? = null
 ) {
-    val specLabel: String?
-        get() = buildPlaybackSpecLabel(
+    val specParts: List<String>
+        get() = buildPlaybackSpecParts(
             sampleRateHz = sampleRateHz,
             bitDepth = bitDepth,
             bitrateKbps = bitrateKbps
         )
+
+    val specLabel: String?
+        get() = specParts.takeIf { it.isNotEmpty() }?.joinToString(separator = " · ")
 }
 
 fun buildPlaybackSpecLabel(
     sampleRateHz: Int?,
     bitDepth: Int?,
     bitrateKbps: Int?
-): String? {
-    val parts = mutableListOf<String>()
-    bitDepth?.takeIf { it > 0 }?.let { parts += "$it bit" }
-    sampleRateHz?.takeIf { it > 0 }?.let { parts += formatPlaybackSampleRate(it) }
-    bitrateKbps?.takeIf { it > 0 }?.let { parts += "$it kbps" }
-    return parts.takeIf { it.isNotEmpty() }?.joinToString(separator = " · ")
-}
+): String? = buildPlaybackSpecParts(sampleRateHz, bitDepth, bitrateKbps)
+    .takeIf { it.isNotEmpty() }
+    ?.joinToString(separator = " · ")
+
+fun buildPlaybackSpecParts(
+    sampleRateHz: Int?,
+    bitDepth: Int?,
+    bitrateKbps: Int?
+): List<String> = listOfNotNull(
+    bitDepth?.takeIf { it > 0 }?.let { "$it bit" },
+    sampleRateHz?.takeIf { it > 0 }?.let(::formatPlaybackSampleRate),
+    bitrateKbps?.takeIf { it > 0 }?.let { "$it kbps" }
+)
 
 fun formatPlaybackSampleRate(sampleRateHz: Int): String {
     if (sampleRateHz <= 0) return "0 Hz"
