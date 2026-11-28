@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WidthFull
@@ -282,6 +283,15 @@ internal fun SettingsFloatingLyricsSection(
             checked = normalizedPreferences.longPressDragEnabled,
             onCheckedChange = { enabled ->
                 updatePreferences { it.copy(longPressDragEnabled = enabled) }
+            }
+        )
+        FloatingLyricsSwitchListItem(
+            title = stringResource(CoreCommonR.string.settings_floating_lyrics_touch_passthrough),
+            description = stringResource(CoreCommonR.string.settings_floating_lyrics_touch_passthrough_desc),
+            icon = Icons.Outlined.TouchApp,
+            checked = normalizedPreferences.touchPassthrough,
+            onCheckedChange = { enabled ->
+                updatePreferences { it.copy(touchPassthrough = enabled) }
             }
         )
         FloatingLyricsLayoutSettings(

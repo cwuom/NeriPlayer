@@ -1162,6 +1162,8 @@ class SettingsRepository(private val context: Context) {
             prefs[SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP] = normalized.hideInApp
             prefs[SettingsKeys.FLOATING_LYRICS_LONG_PRESS_DRAG_ENABLED] =
                 normalized.longPressDragEnabled
+            prefs[SettingsKeys.FLOATING_LYRICS_TOUCH_PASSTHROUGH] =
+                normalized.touchPassthrough
             prefs[SettingsKeys.FLOATING_LYRICS_TEXT_COLOR] = normalized.textColorHex
             prefs[SettingsKeys.FLOATING_LYRICS_RENDER_STYLE] = normalized.renderStyle
             prefs[SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR] = normalized.outlineColorHex
@@ -1815,6 +1817,7 @@ internal fun Preferences.toFloatingLyricsPreferences(): FloatingLyricsPreference
         enabled = valueOr(SettingsKeys.FLOATING_LYRICS_ENABLED, false),
         hideInApp = valueOr(SettingsKeys.FLOATING_LYRICS_HIDE_IN_APP, false),
         longPressDragEnabled = valueOr(SettingsKeys.FLOATING_LYRICS_LONG_PRESS_DRAG_ENABLED, true),
+        touchPassthrough = valueOr(SettingsKeys.FLOATING_LYRICS_TOUCH_PASSTHROUGH, false),
         textColorHex = valueOr(SettingsKeys.FLOATING_LYRICS_TEXT_COLOR, "FFFFFF"),
         renderStyle = valueOr(SettingsKeys.FLOATING_LYRICS_RENDER_STYLE, FLOATING_LYRICS_RENDER_STYLE_SHADOW),
         outlineColorHex = valueOr(SettingsKeys.FLOATING_LYRICS_OUTLINE_COLOR, "121212"),

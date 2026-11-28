@@ -44,6 +44,7 @@ data class FloatingLyricsPreferences(
     val enabled: Boolean = false,
     val hideInApp: Boolean = false,
     val longPressDragEnabled: Boolean = true,
+    val touchPassthrough: Boolean = false,
     val textColorHex: String = DEFAULT_FLOATING_LYRICS_TEXT_COLOR,
     val renderStyle: String = FLOATING_LYRICS_RENDER_STYLE_SHADOW,
     val outlineColorHex: String = DEFAULT_FLOATING_LYRICS_OUTLINE_COLOR,

@@ -8,6 +8,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPosit
 import moe.ouom.neriplayer.data.model.settings.lyrics.resolveFloatingLyricsPositionY
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,6 +25,7 @@ class FloatingLyricsPreferencesTest {
     @Test
     fun defaultPreferencesAllowLongPressDragging() {
         assertTrue(FloatingLyricsPreferences().longPressDragEnabled)
+        assertFalse(FloatingLyricsPreferences().touchPassthrough)
     }
 
     @Test

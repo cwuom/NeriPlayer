@@ -485,6 +485,10 @@ object FloatingLyricsOverlayManager {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        // 点击穿透优先于长按拖动：穿透开启时窗口不再接收触摸事件
+        if (preferences.touchPassthrough) {
+            return baseFlags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
         return if (preferences.longPressDragEnabled) {
             baseFlags
         } else {
@@ -493,7 +497,8 @@ object FloatingLyricsOverlayManager {
     }
 
     private fun configureLongPressDrag(root: View) {
-        if (!preferences.longPressDragEnabled) {
+        // 穿透模式下触摸事件到不了这个窗口，拖动控制器必须是关闭的
+        if (!preferences.longPressDragEnabled || preferences.touchPassthrough) {
             longPressDragController?.cancel()
             longPressDragController = null
             longPressDragInProgress = false
