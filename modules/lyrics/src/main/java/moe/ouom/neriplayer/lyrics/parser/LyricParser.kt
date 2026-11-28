@@ -232,7 +232,11 @@ private fun Long.saturatingAdd(other: Long): Long {
     }
 }
 
-private fun parseEnhancedLrcWords(content: String, startTimeMs: Long): List<EnhancedLrcWord>? {
+private fun parseEnhancedLrcWords(
+    content: String,
+    startTimeMs: Long,
+    keepWhitespacePrefix: Boolean = false
+): List<EnhancedLrcWord>? {
     val wordTimestamps = EnhancedLrcWordTimestampRegex.findAll(content).toList()
     if (wordTimestamps.isEmpty()) {
         return null
@@ -240,7 +244,7 @@ private fun parseEnhancedLrcWords(content: String, startTimeMs: Long): List<Enha
 
     val words = buildList {
         val prefix = content.substring(0, wordTimestamps.first().range.first)
-        if (prefix.any { !it.isWhitespace() }) {
+        if (prefix.isNotEmpty() && (keepWhitespacePrefix || prefix.any { !it.isWhitespace() })) {
             add(
                 EnhancedLrcWord(
                     text = prefix,
@@ -286,7 +290,8 @@ private fun parseEnhancedLrcWordsWithInlineTimestamps(
         words += parseEnhancedLrcSegment(
             text = line.substring(segmentStartIndex, timestamp.range.first),
             startTimeMs = segmentStartTimeMs,
-            endTimeMs = segmentEndTimeMs
+            endTimeMs = segmentEndTimeMs,
+            isLineStart = segmentStartIndex == contentStartIndex
         )
         segmentStartIndex = timestamp.range.last + 1
         segmentStartTimeMs = segmentEndTimeMs ?: segmentStartTimeMs
@@ -294,7 +299,8 @@ private fun parseEnhancedLrcWordsWithInlineTimestamps(
     words += parseEnhancedLrcSegment(
         text = line.substring(segmentStartIndex),
         startTimeMs = segmentStartTimeMs,
-        endTimeMs = null
+        endTimeMs = null,
+        isLineStart = segmentStartIndex == contentStartIndex
     )
     return words
 }
@@ -302,10 +308,12 @@ private fun parseEnhancedLrcWordsWithInlineTimestamps(
 private fun parseEnhancedLrcSegment(
     text: String,
     startTimeMs: Long,
-    endTimeMs: Long?
+    endTimeMs: Long?,
+    isLineStart: Boolean
 ): List<EnhancedLrcWord> {
     if (text.isEmpty()) return emptyList()
-    val parsed = parseEnhancedLrcWords(text, startTimeMs)
+    // 只有行首缩进可以丢; 段内的空白前缀是被 [mm:ss] 隔开的真实词间分隔
+    val parsed = parseEnhancedLrcWords(text, startTimeMs, keepWhitespacePrefix = !isLineStart)
     if (parsed == null) {
         // 有 <> 词时间戳却没有正文的分段只是标记, 不能把标记本身当歌词显示
         if (EnhancedLrcWordTimestampRegex.containsMatchIn(text)) return emptyList()

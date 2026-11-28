@@ -74,6 +74,14 @@ class MixedLrcTimelineTest {
     }
 
     @Test
+    fun `interior enhanced segment keeps its whitespace prefix`() {
+        val lines = parseNeteaseLrc("[00:01.00]<00:01.00>Hello[00:02.00] <00:02.00>world")
+
+        assertEquals(listOf("Hello world"), lines.map { it.text })
+        assertEquals(listOf("Hello"), parseNeteaseLrc("[00:01.00] <00:01.00>Hello").map { it.text })
+    }
+
+    @Test
     fun `yrc word text keeps parentheses`() {
         val lines = parseNeteaseYrc("[1000,3000](1000,1000,0)Hello (world)(2000,2000,0) again")
 
