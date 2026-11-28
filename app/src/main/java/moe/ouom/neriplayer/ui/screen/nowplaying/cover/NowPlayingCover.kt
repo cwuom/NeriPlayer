@@ -3,7 +3,6 @@ package moe.ouom.neriplayer.ui.screen.nowplaying.cover
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.screen.nowplaying.LocalNowPlayingPlaybackSource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.draw.shadow
 import androidx.compose.animation.core.spring
 import android.content.Context
 import android.content.res.Configuration
@@ -20,15 +19,12 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.Icon
@@ -51,7 +47,6 @@ import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -1004,49 +999,23 @@ private fun NowPlayingCoverInteractiveImage(
     preview: NowPlayingCoverPanelPreview,
     modifier: Modifier
 ) {
-    val previewModifier = Modifier.nowPlayingCoverPreviewModifier(
-        preview.song,
-        onTap = preview.action(owner, content.source.coverUrl, longPress = false),
-        onLongPress = preview.action(owner, content.source.coverUrl, longPress = true)
-    )
-    // 解析圆角让裁剪和投影轮廓都走 GPU 快路径; 路径轮廓在按压回弹和缩放变换下会丢角
-    val coverShape = RoundedCornerShape(NowPlayingCoverCornerRadius)
-    val imageModifier = Modifier.fillMaxSize()
-        .then(modifier)
-        .sharedCoverTarget(NowPlayingCoverCornerRadius)
-        // 单张大封面的投影走硬件渲染, 给画面一点纵深
-        .shadow(
-            elevation = NowPlayingCoverShadowElevation,
-            shape = coverShape,
-            clip = false,
-            ambientColor = Color.Black.copy(alpha = 0.32f),
-            spotColor = Color.Black.copy(alpha = 0.48f)
-        )
-        .clip(coverShape)
-        .background(coverSurfaceColor(content.source.coverUrl, MaterialTheme.colorScheme.primaryContainer))
-        .then(previewModifier)
-    NowPlayingCoverImageFrame(
-        owner, content.source, content.offlineMode, content.requestSizePx, imageModifier
-    )
-}
-
-@Composable
-private fun NowPlayingCoverImageFrame(
-    owner: NowPlayingCoverOwner,
-    source: NowPlayingCoverSource,
-    offlineMode: Boolean,
-    requestSizePx: Int,
-    modifier: Modifier
-) {
-    Box(modifier = modifier) {
+    val source = content.source
+    NowPlayingCoverFrame(
+        surfaceColor = coverSurfaceColor(source.coverUrl, MaterialTheme.colorScheme.primaryContainer),
+        onTap = preview.song?.let { preview.action(owner, source.coverUrl, longPress = false) },
+        onLongPress = preview.action(owner, source.coverUrl, longPress = true),
+        modifier = Modifier.fillMaxSize()
+            .then(modifier)
+            .sharedCoverTarget(NowPlayingCoverCornerRadius)
+    ) {
         StableNowPlayingCoverImage(
             owner = owner,
             coverUrl = source.coverUrl,
             songKey = source.songKey,
             songKeyAliases = source.songKeyAliases,
             context = LocalContext.current,
-            coverRequestSizePx = requestSizePx,
-            offlineMode = offlineMode,
+            coverRequestSizePx = content.requestSizePx,
+            offlineMode = content.offlineMode,
             coverCacheKey = source.cacheKey,
             contentDescription = source.contentDescription,
             modifier = Modifier.fillMaxSize(),
@@ -1055,8 +1024,6 @@ private fun NowPlayingCoverImageFrame(
     }
 }
 
-private val NowPlayingCoverCornerRadius = 24.dp
-private val NowPlayingCoverShadowElevation = 20.dp
 private const val NowPlayingCoverPausedScale = 0.86f
 
 /**
@@ -1068,18 +1035,6 @@ internal fun nowPlayingCoverRestScale(playing: Boolean, wideLandscape: Boolean, 
 
 private fun coverSurfaceColor(coverUrl: String?, placeholder: Color): Color =
     if (coverUrl == null) placeholder else Color.Transparent
-
-@OptIn(ExperimentalFoundationApi::class)
-private fun Modifier.nowPlayingCoverPreviewModifier(
-    song: SongItem?,
-    onTap: () -> Unit,
-    onLongPress: () -> Unit
-): Modifier = if (song != null) {
-    combinedClickable(
-        onClick = onTap,
-        onLongClick = onLongPress
-    )
-} else this
 
 @Composable
 internal fun NowPlayingCoverSourceBadge(
