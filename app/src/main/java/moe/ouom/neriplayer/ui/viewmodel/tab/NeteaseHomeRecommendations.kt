@@ -137,10 +137,14 @@ internal fun parseNeteaseHomePlaylists(
         throw ApiCodeException(code)
     }
     val playlists = firstPlaylistArray(root) ?: return emptyList()
+    // 推荐接口偶尔会返回重复 id，首页网格以 id 作 LazyGrid key，重复会直接崩溃
+    val seenIds = HashSet<Long>()
     return buildList(playlists.length()) {
         for (index in 0 until playlists.length()) {
             val playlist = playlists.optJSONObject(index) ?: continue
-            parseNeteasePlaylistSummary(playlist)?.let(::add)
+            val summary = parseNeteasePlaylistSummary(playlist) ?: continue
+            if (!seenIds.add(summary.id)) continue
+            add(summary)
             if (size >= limit) break
         }
     }
