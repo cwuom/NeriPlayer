@@ -85,6 +85,8 @@ private fun PlayerManager.applyCurrentReplacement(song: SongItem, source: Playba
         existingIndex = planned.existingIndex
         planned.queue
     } ?: return
+    // 从搜索、百科等入口点播的歌是用户自己选的，关心动时不能当心动歌删掉
+    releaseHeartbeatOwnership(song)
     suppressAutoResumeForCurrentSession = false
     consecutivePlayFailures = 0
 
