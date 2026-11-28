@@ -1985,10 +1985,9 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
             sideEffects.emitError {
                 postPlayerEvent(
                     PlayerEvent.ShowError(
-                        getLocalizedString(
-                            CoreCommonR.string.player_playback_url_error_detail,
-                            e.message.orEmpty()
-                        )
+                        youTubeResolveFailureMessage(e) { resId, arg ->
+                            getLocalizedString(resId, arg)
+                        }
                     )
                 )
             }

@@ -111,6 +111,8 @@
     <string name="player_netease_no_permission_switch_platform">This track is restricted on the current platform, possibly due to copyright, membership access, or the selected audio quality. Try lowering the audio quality or searching for it on another platform.</string>
     <string name="player_playback_video_info_unavailable">Video audio information is currently unavailable.</string>
     <string name="player_playback_url_error_detail">Failed to resolve playback URL: %1$s</string>
+    <string name="player_youtube_po_token_unavailable_empty">PO Token unavailable (%1$s): could not generate a YouTube playback token. Try a different network node.</string>
+    <string name="player_youtube_po_token_unavailable_timeout">PO Token unavailable (%1$s): generating a YouTube playback token timed out. Try again later.</string>
     <string name="mini_player_volume">Volume</string>
     <string name="mini_player_progress">Playback progress</string>
     <!-- Heartbeat Mode -->

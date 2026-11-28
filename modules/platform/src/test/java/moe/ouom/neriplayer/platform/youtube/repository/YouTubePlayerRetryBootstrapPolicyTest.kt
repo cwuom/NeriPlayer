@@ -186,6 +186,37 @@ class YouTubePlayerRetryBootstrapPolicyTest {
     }
 
     @Test
+    fun keepsFallingBackPastTvWhenWebRemixOnlyMissedPoToken() {
+        assertTrue(
+            isTerminalTvFallbackOutcome(
+                clientName = "TVHTML5",
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = true
+            )
+        )
+        assertFalse(
+            shouldStopRemainingPlayerFallbackRequests(
+                clientName = "TVHTML5",
+                playabilityStatus = "UNPLAYABLE",
+                sawUndecipherableOkResponse = true,
+                sawMissingPoTokenDirectFallback = true
+            )
+        )
+    }
+
+    @Test
+    fun retriesAfterTerminalTvFallbackWhenLatePoTokenWasRecovered() {
+        assertFalse(
+            shouldAbortPlayerRetryAfterTerminalFallback(
+                sawUndecipherableOkResponse = true,
+                sawTerminalFallbackOutcome = true,
+                sawPlayerRequestFailure = false,
+                recoveredWebRemixPoToken = true
+            )
+        )
+    }
+
+    @Test
     fun skipsLocaleRetryForResponsesThatRequireAccountOrContentChecks() {
         assertFalse(shouldRetryPlayerLocaleFallback("LOGIN_REQUIRED"))
         assertFalse(shouldRetryPlayerLocaleFallback("CONTENT_CHECK_REQUIRED"))

@@ -19,6 +19,8 @@ import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableException
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableReason
 import moe.ouom.neriplayer.platform.youtube.api.playback.satisfiesYouTubePlaybackQuality
 import moe.ouom.neriplayer.platform.youtube.api.potoken.YouTubePoTokenProvider
 import moe.ouom.neriplayer.platform.youtube.api.transport.resolveAuthorizationHeader
@@ -3884,4 +3886,280 @@ class YouTubeMusicPlaybackRepositoryTest {
         }
     }
 
+    private class MissingPotFallbackFixture(
+        val repository: YouTubeMusicPlaybackRepository,
+        val playerRequestClientIds: MutableList<String>
+    )
+
+    /**
+     * 复现 #738: WEB_REMIX 回 OK 且 sig/n 已解开但缺 pot, TVHTML5 回 UNPLAYABLE
+     *
+     * @param playerResponses 以 X-YouTube-Client-Name 为键, 缺省的 client 一律 UNPLAYABLE
+     * @param cipherSolved false 时不注入 resolver, n 解不开, 候选被丢弃 (真正的 sig/n 失败)
+     * @param onPlayerRequest 每次 player 请求发出前回调, 参数是 client id
+     */
+    private fun missingPotFallbackFixture(
+        poTokenProvider: FakePoTokenProvider,
+        playerResponses: Map<String, String> = emptyMap(),
+        cipherSolved: Boolean = true,
+        onPlayerRequest: (String) -> Unit = {}
+    ): MissingPotFallbackFixture {
+        val bootstrapHtml = """
+            <html>
+            <script>
+            ytcfg.set({
+              "INNERTUBE_API_KEY":"test-api-key",
+              "INNERTUBE_CLIENT_VERSION":"1.20260321.00.00",
+              "VISITOR_DATA":"visitor-data-123",
+              "jsUrl":"/s/player/test-player/base.js",
+              "SESSION_INDEX":"7",
+              "remoteHost":"13.114.209.29",
+              "STS":20529
+            });
+            </script>
+            </html>
+        """.trimIndent()
+        val webRemixDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr1---sn.googlevideo.com/videoplayback?id=audio-web-remix-direct&source=youtube&c=WEB_REMIX&n=resolved-web&sig=web-signature",
+                    "bitrate":149000,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val unplayableResponse =
+            """{"playabilityStatus":{"status":"UNPLAYABLE","reason":"reload required"}}"""
+        val playerRequestClientIds = mutableListOf<String>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                Interceptor { chain ->
+                    val request = chain.request()
+                    if (request.url.host == "rr1---sn.googlevideo.com") {
+                        fail("missing-pot fallback must not probe googlevideo: ${request.url}")
+                    }
+                    val body = when {
+                        request.url.host == "music.youtube.com" && request.url.encodedPath == "/" -> {
+                            bootstrapHtml to "text/html; charset=utf-8"
+                        }
+                        request.url.encodedPath.contains("/youtubei/v1/player") -> {
+                            val clientId = request.header("X-YouTube-Client-Name").orEmpty()
+                            synchronized(playerRequestClientIds) { playerRequestClientIds += clientId }
+                            onPlayerRequest(clientId)
+                            val json = when (clientId) {
+                                "67" -> webRemixDirectResponse
+                                else -> playerResponses[clientId] ?: unplayableResponse
+                            }
+                            json to "application/json; charset=utf-8"
+                        }
+                        else -> "{}" to "application/json; charset=utf-8"
+                    }
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(200)
+                        .message("OK")
+                        .body(body.first.toResponseBody(body.second.toMediaType()))
+                        .build()
+                }
+            )
+            .build()
+        val authBundle = YouTubeAuthBundle(
+            cookieHeader = "SAPISID=sap-value; SID=sid-value",
+            xGoogAuthUser = "7",
+            userAgent = "RepoUserAgent/1.0"
+        )
+        return MissingPotFallbackFixture(
+            repository = YouTubeMusicPlaybackRepository(
+                okHttpClient = client,
+                authProvider = { authBundle },
+                poTokenProvider = poTokenProvider,
+                streamingCipherResolverFactory = if (cipherSolved) {
+                    { _ ->
+                        object : YouTubeStreamingCipherResolver {
+                            override fun resolveSignature(encryptedSignature: String): String? =
+                                encryptedSignature
+
+                            override fun resolveStreamingUrl(url: String): String = url
+                        }
+                    }
+                } else {
+                    null
+                }
+            ),
+            playerRequestClientIds = playerRequestClientIds
+        )
+    }
+
+    @Test
+    fun getBestPlayableAudio_missingPotWebRemixKeepsFallingBackPastTerminalTv() = runBlocking {
+        val visionOsDirectResponse = """
+            {
+              "playabilityStatus":{"status":"OK"},
+              "streamingData":{
+                "adaptiveFormats":[
+                  {
+                    "mimeType":"audio/webm; codecs=\"opus\"",
+                    "url":"https://rr2---sn.googlevideo.com/videoplayback?id=audio-visionos-direct&source=youtube&c=VISIONOS",
+                    "bitrate":149000,
+                    "audioSampleRate":"48000",
+                    "contentLength":"3586688",
+                    "approxDurationMs":"223041"
+                  }
+                ]
+              },
+              "videoDetails":{"lengthSeconds":"223"}
+            }
+        """.trimIndent()
+        val fixture = missingPotFallbackFixture(
+            poTokenProvider = FakePoTokenProvider(mutableListOf()),
+            playerResponses = mapOf("101" to visionOsDirectResponse)
+        )
+
+        val playableAudio = fixture.repository.getBestPlayableAudio(
+            videoId = "demo-video",
+            forceRefresh = false
+        )
+
+        assertNotNull("player requests=${fixture.playerRequestClientIds}", playableAudio)
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("audio-visionos-direct", selectedUrl?.queryParameter("id"))
+        // TV 被拒后只跳过另一个 TV 变体, WEB_CREATOR 与 VISIONOS 仍要问到
+        assertEquals(listOf("67", "7", "62", "101"), fixture.playerRequestClientIds.distinct())
+        assertEquals(1, fixture.playerRequestClientIds.count { it == "7" })
+    }
+
+    @Test
+    fun getBestPlayableAudio_retriesWebRemixWithLatePoTokenAfterFallbacksFail() = runBlocking {
+        // TV 请求发出时 WEB_REMIX 快路径必然已经放弃, 这时才放出 token, 不靠计时
+        val lateToken = CompletableDeferred<String?>()
+        val poTokenProvider = FakePoTokenProvider(gvsTokenResultGate = lateToken)
+        val fixture = missingPotFallbackFixture(
+            poTokenProvider = poTokenProvider,
+            onPlayerRequest = { clientId ->
+                if (clientId == "7") lateToken.complete("late-po-token")
+            }
+        )
+
+        val playableAudio = withTimeout(5_000.milliseconds) {
+            fixture.repository.getBestPlayableAudio(
+                videoId = "demo-video",
+                forceRefresh = false
+            )
+        }
+
+        assertNotNull("player requests=${fixture.playerRequestClientIds}", playableAudio)
+        val selectedUrl = playableAudio?.url?.toHttpUrl()
+        assertEquals("audio-web-remix-direct", selectedUrl?.queryParameter("id"))
+        assertEquals("late-po-token", selectedUrl?.queryParameter("pot"))
+        // 复用第一轮已经铸好的 token, 不再强制重铸第二个
+        assertEquals(1, poTokenProvider.gvsTokenCalls.get())
+        assertFalse(poTokenProvider.forceRefreshCalls.any { it })
+        assertEquals("67", fixture.playerRequestClientIds.last())
+        assertEquals(2, fixture.playerRequestClientIds.count { it == "67" })
+    }
+
+    @Test
+    fun getBestPlayableAudio_emptyPoTokenStillStopsRetryAfterTerminalTv() = runBlocking {
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
+
+        val error = awaitPoTokenUnavailable(fixture)
+
+        assertEquals(YouTubePoTokenUnavailableReason.EMPTY, error.reason)
+        // token 确定拿不到时保持原来的请求预算: 每个 client 只问一轮, 不再整轮重试
+        assertEquals(1, fixture.playerRequestClientIds.count { it == "67" })
+        assertEquals(1, fixture.playerRequestClientIds.count { it == "7" })
+        assertEquals(1, poTokenProvider.gvsTokenCalls.get())
+    }
+
+    @Test
+    fun getBestPlayableAudio_cipherFailureStillStopsAtTerminalTv() = runBlocking {
+        val fixture = missingPotFallbackFixture(
+            poTokenProvider = FakePoTokenProvider(mutableListOf()),
+            cipherSolved = false
+        )
+
+        val playableAudio = withTimeout(5_000.milliseconds) {
+            fixture.repository.getBestPlayableAudio(
+                videoId = "demo-video",
+                forceRefresh = false
+            )
+        }
+
+        assertNull("player requests=${fixture.playerRequestClientIds}", playableAudio)
+        // sig/n 解不开时 TV 是最后的补救, 被拒后照旧停止, 不扩大请求面
+        assertEquals(listOf("67", "7"), fixture.playerRequestClientIds)
+    }
+
+    @Test
+    fun getBestPlayableAudio_latePoTokenRecoveryWaitIsBounded() = runBlocking {
+        // token 一直铸不出来时, 恢复等待必须在预算内放弃, 不能把解析拖到下载超时
+        val poTokenProvider = FakePoTokenProvider(gvsTokenResultGate = CompletableDeferred())
+        val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
+        val startedAtMs = System.currentTimeMillis()
+
+        val error = awaitPoTokenUnavailable(fixture)
+
+        assertEquals(YouTubePoTokenUnavailableReason.TIMEOUT, error.reason)
+        assertTrue(System.currentTimeMillis() - startedAtMs < 4_000L)
+        assertEquals(1, fixture.playerRequestClientIds.count { it == "67" })
+    }
+
+    @Test
+    fun getBestPlayableAudio_poTokenUnavailableReasonCarriesNoSessionValues() = runBlocking {
+        val fixture = missingPotFallbackFixture(poTokenProvider = FakePoTokenProvider(mutableListOf()))
+
+        val message = awaitPoTokenUnavailable(fixture).message.orEmpty()
+
+        // 原因会一路带到用户可见的提示里, 只能是固定短码
+        assertEquals("YouTube GVS PO token unavailable: empty", message)
+        listOf("visitor-data-123", "googlevideo", "SAPISID", "sid-value").forEach { secret ->
+            assertFalse("leaked $secret: $message", message.contains(secret))
+        }
+    }
+
+    @Test
+    fun getBestPlayableAudio_strictDirectMissingPoTokenReportsReasonWithoutLateWait() = runBlocking {
+        // 403 恢复已经阻塞等过 token, 不再走迟到等待; 重试轮跳过 WEB_REMIX 也不能抹掉缺 token 的结论
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
+
+        val error = awaitPoTokenUnavailable(fixture, allowUnverifiedDirectFallback = false)
+
+        assertEquals(YouTubePoTokenUnavailableReason.EMPTY, error.reason)
+        assertEquals(
+            "player requests=${fixture.playerRequestClientIds}",
+            1,
+            fixture.playerRequestClientIds.count { it == "67" }
+        )
+    }
+
+    private suspend fun awaitPoTokenUnavailable(
+        fixture: MissingPotFallbackFixture,
+        allowUnverifiedDirectFallback: Boolean = true
+    ): YouTubePoTokenUnavailableException {
+        try {
+            val playableAudio = withTimeout(5_000.milliseconds) {
+                fixture.repository.getBestPlayableAudio(
+                    videoId = "demo-video",
+                    forceRefresh = false,
+                    allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
+                )
+            }
+            fail("Expected PO token unavailable, got $playableAudio; player requests=${fixture.playerRequestClientIds}")
+            throw AssertionError()
+        } catch (error: YouTubePoTokenUnavailableException) {
+            return error
+        }
+    }
 }

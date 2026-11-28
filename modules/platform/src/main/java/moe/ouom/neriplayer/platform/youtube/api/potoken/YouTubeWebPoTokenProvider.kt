@@ -203,7 +203,7 @@ class YouTubeWebPoTokenProvider(
                 NPLogger.d(TAG, "warmSession skipped because ${webSession.foregroundLoginSkipReason}")
                 return
             }
-            try {
+            val preparedPage = try {
                 ensurePreparedPage(
                     auth = auth,
                     authFingerprint = buildAuthFingerprint(auth),
@@ -216,7 +216,9 @@ class YouTubeWebPoTokenProvider(
             }
             NPLogger.d(
                 TAG,
-                "warmSession completed elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                // 缺 WebPoClient 时也会拿到快照, 只看非空会把铸不出 token 的页面报成 ready
+                "warmSession completed ready=${preparedPage?.let { it.hasYtcfg && it.hasWebPoClient } == true} " +
+                    "elapsedMs=${System.currentTimeMillis() - startedAtMs}"
             )
         } finally {
             accessMutex.unlock()

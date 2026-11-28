@@ -65,6 +65,8 @@ import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerClientProfil
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerPlayabilityStatus
 import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePlayableAudioSelection
 import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePlaybackStreamAccessOwner
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableException
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableReason
 import moe.ouom.neriplayer.platform.youtube.api.playback.isTrustedYouTubeDirectUrlForStrictRecovery
 import moe.ouom.neriplayer.platform.youtube.api.playback.playableAudioMimePreferenceScore
 import moe.ouom.neriplayer.platform.youtube.api.playback.shouldUseAnonymousYouTubeNewPipeFallback
@@ -212,15 +214,39 @@ internal fun shouldMarkBootstrapSuspectOutcome(
 internal fun shouldAbortPlayerRetryAfterTerminalFallback(
     sawUndecipherableOkResponse: Boolean,
     sawTerminalFallbackOutcome: Boolean,
-    sawPlayerRequestFailure: Boolean
+    sawPlayerRequestFailure: Boolean,
+    recoveredWebRemixPoToken: Boolean = false
 ): Boolean {
+    // 迟到的 PoToken 能让同一份 WEB_REMIX 响应变得可播, 这一次重试不是白跑
     return sawUndecipherableOkResponse &&
         sawTerminalFallbackOutcome &&
-        !sawPlayerRequestFailure
+        !sawPlayerRequestFailure &&
+        !recoveredWebRemixPoToken
+}
+
+/**
+ * TV 拒绝后要不要连同其余 client 一起放弃
+ *
+ * sig/n 解不开时 TV 是最后的补救, TV 被拒就没必要再问; 但 WEB_REMIX 只是缺 GVS PoToken 时
+ * sig/n 已经解开, TV 被拒说明不了别的 client 也会被拒, 只跳过剩下的 TV 变体
+ */
+@VisibleForTesting
+internal fun shouldStopRemainingPlayerFallbackRequests(
+    clientName: String,
+    playabilityStatus: String,
+    sawUndecipherableOkResponse: Boolean,
+    sawMissingPoTokenDirectFallback: Boolean = false
+): Boolean {
+    return !sawMissingPoTokenDirectFallback &&
+        isTerminalTvFallbackOutcome(
+            clientName = clientName,
+            playabilityStatus = playabilityStatus,
+            sawUndecipherableOkResponse = sawUndecipherableOkResponse
+        )
 }
 
 @VisibleForTesting
-internal fun shouldStopRemainingPlayerFallbackRequests(
+internal fun isTerminalTvFallbackOutcome(
     clientName: String,
     playabilityStatus: String,
     sawUndecipherableOkResponse: Boolean
@@ -273,7 +299,9 @@ private class InFlightPlayableAudioEntry(
 
 private data class PlayerAudioResolution(
     val playableAudio: YouTubePlayableAudio? = null,
-    val metadata: YouTubeAudioMetadata? = null
+    val metadata: YouTubeAudioMetadata? = null,
+    // 没拿到流且原因是 WEB_REMIX 缺 GVS PoToken 时才有值
+    val poTokenUnavailableReason: YouTubePoTokenUnavailableReason? = null
 )
 
 class YouTubeMusicPlaybackRepository(
@@ -656,15 +684,17 @@ class YouTubeMusicPlaybackRepository(
             return playableAudio
         }
 
+        val poTokenUnavailableReason = playerResolution?.poTokenUnavailableReason
         if (!shouldUseAnonymousYouTubeNewPipeFallback(authProvider().normalized().hasLoginCookies())) {
             NPLogger.d(
                 "YouTubeMusicPlayback",
                 "skip anonymous NewPipe fallback for signed-in playback: videoId=$videoId"
             )
+            poTokenUnavailableReason?.let { throw YouTubePoTokenUnavailableException(it) }
             return null
         }
         ensureInitialized()
-        return resolvePlayableAudioViaNewPipe(
+        val newPipePlayableAudio = resolvePlayableAudioViaNewPipe(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
             logFailure = logFailure,
@@ -681,6 +711,10 @@ class YouTubeMusicPlaybackRepository(
                 cachePlayableAudio(videoId, cacheKey, playableAudio)
             }
         }
+        if (newPipePlayableAudio == null && poTokenUnavailableReason != null) {
+            throw YouTubePoTokenUnavailableException(poTokenUnavailableReason)
+        }
+        return newPipePlayableAudio
     }
 
     private suspend fun resolvePlayableAudioShared(
@@ -911,6 +945,10 @@ class YouTubeMusicPlaybackRepository(
         var abortRemainingAttempts = false
         // 同一份 bootstrap 下 EJS 结果不会因重复请求 WEB_REMIX 改变, 重试时直接交给 TV fallback
         val retrySkippedClientNames = mutableSetOf<String>()
+        // 上一轮快路径放弃、随后才铸好的 WEB_REMIX token, 下一轮直接复用, 不再强制重铸
+        var recoveredWebRemixPoTokenPrefetch: Deferred<String?>? = null
+        // 重试轮会跳过 WEB_REMIX, 没再问到它的那一轮不能抹掉前一轮缺 token 的结论; token 恢复后清空
+        var poTokenUnavailableReason: YouTubePoTokenUnavailableReason? = null
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
             if (abortRemainingAttempts) {
@@ -924,10 +962,14 @@ class YouTubeMusicPlaybackRepository(
             val requestLocaleCandidates = playerRequestLocaleCandidates()
             var bestPlayableAudio: YouTubePlayableAudio? = null
             var bestPlayableAudioClientName: String? = null
-            var webRemixPoTokenPrefetch: Deferred<String?>? = null
+            var webRemixPoTokenPrefetch: Deferred<String?>? = recoveredWebRemixPoTokenPrefetch
+            recoveredWebRemixPoTokenPrefetch = null
             var shouldRefreshBootstrapBeforeFallback = false
             // status=OK 却解不出候选流, 说明 bootstrap 本身没毛病, 问题在签名那一步
             var sawUndecipherableOkResponse = false
+            // WEB_REMIX 的 sig/n 已解开, 只差 GVS PoToken; 不能当成签名失败去截断后续 client
+            var sawMissingPoTokenDirectFallback = false
+            var skipRemainingTvProfiles = false
             var sawOkResponse = false
             var sawBootstrapSuspectOutcome = false
             var sawTerminalFallbackOutcome = false
@@ -944,6 +986,11 @@ class YouTubeMusicPlaybackRepository(
                 .filterNot { attempt > 0 && it.clientName in retrySkippedClientNames }
                 .ifEmpty { candidateProfiles }
             profileLoop@ for (profile in usableProfiles) {
+                if (skipRemainingTvProfiles &&
+                    profile.clientName.equals(YOUTUBE_PLAYER_TV_CLIENT_NAME, ignoreCase = true)
+                ) {
+                    continue@profileLoop
+                }
                 for ((localeIndex, requestLocale) in requestLocaleCandidates.withIndex()) {
                     try {
                         val root = postPlayerRequest(
@@ -958,16 +1005,24 @@ class YouTubeMusicPlaybackRepository(
                         if (playability.status.equals("OK", ignoreCase = true)) {
                             sawOkResponse = true
                         }
-                        val shouldStopRemainingFallbackRequests =
+                        val isTerminalTvOutcome =
                             allowUnverifiedDirectFallback &&
-                                shouldStopRemainingPlayerFallbackRequests(
+                                isTerminalTvFallbackOutcome(
                                     clientName = profile.clientName,
                                     playabilityStatus = playability.status,
                                     sawUndecipherableOkResponse = sawUndecipherableOkResponse
                                 )
-                        if (shouldStopRemainingFallbackRequests) {
+                        if (isTerminalTvOutcome) {
                             sawTerminalFallbackOutcome = true
                         }
+                        val shouldStopRemainingFallbackRequests =
+                            isTerminalTvOutcome &&
+                                shouldStopRemainingPlayerFallbackRequests(
+                                    clientName = profile.clientName,
+                                    playabilityStatus = playability.status,
+                                    sawUndecipherableOkResponse = sawUndecipherableOkResponse,
+                                    sawMissingPoTokenDirectFallback = sawMissingPoTokenDirectFallback
+                                )
                         NPLogger.d(
                             "YouTubeMusicPlayback",
                             "player client response: videoId=$videoId, client=${profile.clientName}, locale=${requestLocale.gl}/${requestLocale.hl}, status=${playability.status}, reason=${playability.reason.take(80)}"
@@ -979,6 +1034,15 @@ class YouTubeMusicPlaybackRepository(
                                     "status=${playability.status}, locale=${requestLocale.gl}/${requestLocale.hl}"
                             )
                             break@profileLoop
+                        }
+                        if (isTerminalTvOutcome) {
+                            skipRemainingTvProfiles = true
+                            NPLogger.d(
+                                "YouTubeMusicPlayback",
+                                "skip remaining TV fallback variants after missing PO token: videoId=$videoId, " +
+                                    "status=${playability.status}, locale=${requestLocale.gl}/${requestLocale.hl}"
+                            )
+                            continue@profileLoop
                         }
                         if (!playability.status.equals("OK", ignoreCase = true) &&
                             localeIndex < requestLocaleCandidates.lastIndex &&
@@ -999,6 +1063,7 @@ class YouTubeMusicPlaybackRepository(
                         )
                         bestMetadata = bestMetadata.mergePreferred(metadata)
                         var shouldContinueWithNextPlayerClient = false
+                        var missingPoTokenDirectFallback = false
                         val playableAudio = if (playability.status == "OK") {
                             val cipherResolver = if (profile.includeSignatureTimestamp) {
                                 createStreamingCipherResolver(
@@ -1103,6 +1168,10 @@ class YouTubeMusicPlaybackRepository(
                                     directPlayableAudio = directPlayableAudio,
                                     hlsPlayableAudio = hlsPlayableAudio
                                 )
+                            missingPoTokenDirectFallback =
+                                shouldContinueWithNextPlayerClient &&
+                                    !avoidDirect &&
+                                    isWebRemixDirectMissingPoToken(parsedDirectPlayableAudio)
                             selectPreferredPlayableAudio(
                                 current = hlsPlayableAudio,
                                 incoming = directPlayableAudio,
@@ -1151,10 +1220,13 @@ class YouTubeMusicPlaybackRepository(
                             // 原始响应已经是 OK, 只是当前 client 的签名或 n 解不开;
                             // 记录这个结论, 下一轮应复用 bootstrap, 不要再付一次首页解析
                             sawUndecipherableOkResponse = true
+                            if (missingPoTokenDirectFallback) {
+                                sawMissingPoTokenDirectFallback = true
+                            }
                             retrySkippedClientNames += profile.clientName
                             NPLogger.d(
                                 "YouTubeMusicPlayback",
-                                "skip remaining ${profile.clientName} locales after direct stream fallback: videoId=$videoId, locale=${requestLocale.gl}/${requestLocale.hl}, retrySkip=true"
+                                "skip remaining ${profile.clientName} locales after direct stream fallback: videoId=$videoId, locale=${requestLocale.gl}/${requestLocale.hl}, retrySkip=true, missingPoToken=$missingPoTokenDirectFallback"
                             )
                             continue@profileLoop
                         }
@@ -1271,11 +1343,31 @@ class YouTubeMusicPlaybackRepository(
                 )
             }
 
+            val missingWebRemixPoToken = if (sawMissingPoTokenDirectFallback) {
+                streamAccessOwner.resolveMissingWebRemixPoToken(
+                    videoId = videoId,
+                    prefetchedPoToken = webRemixPoTokenPrefetch,
+                    awaitLateToken = !allowBlockingWebRemixPoToken &&
+                        attempt < PLAYER_REQUEST_MAX_ATTEMPTS - 1
+                )
+            } else {
+                null
+            }
+            val recoveredWebRemixPoToken = missingWebRemixPoToken?.token != null
+            if (missingWebRemixPoToken != null) {
+                poTokenUnavailableReason = missingWebRemixPoToken.unavailableReason
+            }
+            if (recoveredWebRemixPoToken) {
+                recoveredWebRemixPoTokenPrefetch = webRemixPoTokenPrefetch
+                retrySkippedClientNames -= YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
+            }
+
             if (
                 shouldAbortPlayerRetryAfterTerminalFallback(
                     sawUndecipherableOkResponse = sawUndecipherableOkResponse,
                     sawTerminalFallbackOutcome = sawTerminalFallbackOutcome,
-                    sawPlayerRequestFailure = sawPlayerRequestFailure
+                    sawPlayerRequestFailure = sawPlayerRequestFailure,
+                    recoveredWebRemixPoToken = recoveredWebRemixPoToken
                 )
             ) {
                 NPLogger.d(
@@ -1288,7 +1380,7 @@ class YouTubeMusicPlaybackRepository(
 
             // 4xx 是请求本身不被接受, 换新 bootstrap 改变不了结果
             // 白付一次 fetch + parse 会把解析推过下载超时窗口
-            if (lastError.isNonRetryablePlayerClientError()) {
+            if (!recoveredWebRemixPoToken && lastError.isNonRetryablePlayerClientError()) {
                 NPLogger.w(
                     "YouTubeMusicPlayback",
                     "player resolve abort retry: videoId=$videoId, non-retryable ${lastError?.message.orEmpty().take(120)}"
@@ -1325,12 +1417,17 @@ class YouTubeMusicPlaybackRepository(
             }
         }
 
-        if (bestMetadata != null) {
+        if (bestMetadata != null || poTokenUnavailableReason != null) {
             NPLogger.w(
                 "YouTubeMusicPlayback",
-                "player resolve returned metadata only: videoId=$videoId, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
+                "player resolve returned metadata only: videoId=$videoId, " +
+                    "poTokenUnavailable=${poTokenUnavailableReason?.code}, " +
+                    "elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
             )
-            return PlayerAudioResolution(metadata = bestMetadata)
+            return PlayerAudioResolution(
+                metadata = bestMetadata,
+                poTokenUnavailableReason = poTokenUnavailableReason
+            )
         }
         throw lastError ?: IOException("YouTube Music player request failed")
     }
@@ -1344,16 +1441,20 @@ class YouTubeMusicPlaybackRepository(
     ): Boolean {
         if (profile.clientName != YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME) return false
         if (directPlayableAudio != null || hlsPlayableAudio != null) return false
-        val parsedDirect = parsedDirectPlayableAudio
-        if (parsedDirect?.streamType == YouTubePlayableStreamType.DIRECT) {
+        if (parsedDirectPlayableAudio?.streamType == YouTubePlayableStreamType.DIRECT) {
             // 解析出 direct 候选但缺 pot: 播放路径跳过阻塞校验后回退, 无需再试其他 locale
-            val streamUrl = parsedDirect.url
-            return isYouTubeGoogleVideoStream(streamUrl) &&
-                extractStreamQueryParameter(streamUrl, "pot").isNullOrBlank()
+            return isWebRemixDirectMissingPoToken(parsedDirectPlayableAudio)
         }
         // 候选因 n 解不出被 #Y4 丢弃时 parsedDirect 为 null:
         // 若原始响应本就是 googlevideo direct 音频, 换 locale 无益, 直接切下一 client 省一次 player 请求
         return YouTubeMusicPlaybackParser.hasDirectGoogleVideoAudioStream(root)
+    }
+
+    private fun isWebRemixDirectMissingPoToken(parsedDirectPlayableAudio: YouTubePlayableAudio?): Boolean {
+        val parsedDirect = parsedDirectPlayableAudio ?: return false
+        if (parsedDirect.streamType != YouTubePlayableStreamType.DIRECT) return false
+        return isYouTubeGoogleVideoStream(parsedDirect.url) &&
+            extractStreamQueryParameter(parsedDirect.url, "pot").isNullOrBlank()
     }
 
     private suspend fun maybeAttachGvsPoToken(

@@ -41,6 +41,8 @@ import okio.Buffer
 import org.json.JSONObject
 
 private const val WEB_REMIX_PO_TOKEN_PREFETCH_JOIN_TIMEOUT_MS = 150L
+// 其余 client 都问完才会走到这里, token 已经在后台跑了一段; 再等太久会把首播推过下载超时
+private const val WEB_REMIX_PO_TOKEN_RECOVERY_JOIN_TIMEOUT_MS = 1_500L
 private const val YOUTUBE_PLAYBACK_DIAG_PREFIX = "[YT-DIAG-20260530]"
 
 private enum class DirectRangeVerificationStatus {
@@ -69,6 +71,11 @@ private fun YouTubePlayableAudio.missingPoTokenDiagnosticMetadata(clientName: St
         "sourceKind=$streamType " +
         "contentLength=${contentLength.diagnosticValue()}"
 }
+
+class LateWebRemixPoTokenResult(
+    val token: String?,
+    val unavailableReason: YouTubePoTokenUnavailableReason?
+)
 
 internal fun diagnosticItag(url: String): String =
     extractStreamQueryParameter(url, "itag")
@@ -390,6 +397,64 @@ class YouTubePlaybackStreamAccessOwner(
 
     private fun cipherFormatNeedsPoToken(format: JSONObject): Boolean =
         format.optString("signatureCipher").ifBlank { format.optString("cipher") }.isNotBlank()
+
+    /**
+     * WEB_REMIX 这一轮只差 GVS PoToken 时, 判断 token 能不能补上, 补不上又是为什么
+     *
+     * 快路径放弃的 token 可能在回退期间才铸好, 还能再重试一轮时在有限预算内再看一眼;
+     * 不再重试时不额外等待, 这时才铸好的 token 也赶不上这次解析, 同样算超时
+     *
+     * @param awaitLateToken 还有下一轮可以用上迟到的 token 时为 true
+     * @return token 非空即为恢复成功; 否则 unavailableReason 给出拿不到的原因
+     */
+    suspend fun resolveMissingWebRemixPoToken(
+        videoId: String,
+        prefetchedPoToken: Deferred<String?>?,
+        awaitLateToken: Boolean
+    ): LateWebRemixPoTokenResult {
+        val deferred = prefetchedPoToken
+            ?: return LateWebRemixPoTokenResult(null, YouTubePoTokenUnavailableReason.EMPTY)
+        val startedAtMs = System.currentTimeMillis()
+        val token = awaitPrefetchedWebRemixPoToken(
+            videoId = videoId,
+            prefetchedPoToken = deferred,
+            timeoutMs = lateWebRemixPoTokenWaitBudgetMs(awaitLateToken)
+        ).orEmpty()
+        val result = lateWebRemixPoTokenResult(token, deferred.isCompleted, awaitLateToken)
+        NPLogger.d(
+            "YouTubeMusicPlayback",
+            "$YOUTUBE_PLAYBACK_DIAG_PREFIX late_gvs_po_token_recovery videoId=$videoId " +
+                "outcome=${result.diagnosticOutcome()} " +
+                "awaited=$awaitLateToken waitedMs=${playbackElapsedMs(startedAtMs)}"
+        )
+        return result
+    }
+
+    private fun lateWebRemixPoTokenWaitBudgetMs(awaitLateToken: Boolean): Long =
+        if (awaitLateToken) WEB_REMIX_PO_TOKEN_RECOVERY_JOIN_TIMEOUT_MS else 0L
+
+    private fun lateWebRemixPoTokenResult(
+        token: String,
+        completed: Boolean,
+        awaitLateToken: Boolean
+    ): LateWebRemixPoTokenResult {
+        val unavailableReason = lateWebRemixPoTokenOutcome(token, completed)
+            ?: YouTubePoTokenUnavailableReason.TIMEOUT.takeUnless { awaitLateToken }
+        return LateWebRemixPoTokenResult(token.takeIf { unavailableReason == null }, unavailableReason)
+    }
+
+    private fun LateWebRemixPoTokenResult.diagnosticOutcome(): String =
+        unavailableReason?.code ?: "recovered"
+
+    // timeout 表示还在铸, empty 表示 provider 已确定拿不到, 两者排查方向不同; null 表示已恢复
+    private fun lateWebRemixPoTokenOutcome(
+        token: String,
+        completed: Boolean
+    ): YouTubePoTokenUnavailableReason? = when {
+        token.isNotBlank() -> null
+        completed -> YouTubePoTokenUnavailableReason.EMPTY
+        else -> YouTubePoTokenUnavailableReason.TIMEOUT
+    }
 
     private suspend fun awaitPrefetchedWebRemixPoToken(
         videoId: String,
