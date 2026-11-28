@@ -86,11 +86,11 @@ kullanıcıya ait verilere odaklanan, Android 9 (API 28) ve üzeri için yerel b
 
 NeriPlayer, **Jetpack Compose + Media3** ile geliştirilmiş yerel bir Android ses oynatıcısıdır. **NetEase Cloud Music**, **Bilibili**, **YouTube Music**, **kendi barındırdığınız müzik sunucuları** ve **yerel sesleri** tek bir oynatma ve kütüphane deneyiminde birleştirir. Yerel oynatma ve herkese açık YouTube Music içerikleri misafirler için kullanılabilir. Kişisel kütüphaneler ilgili platformda oturum açmayı gerektirir.
 
-- **Kendi barındırdığınız müzik (Önizleme)**: Mevcut oynatıcı, albüm kapağı, şarkı sözleri, yerel favoriler, çalma listeleri ve orijinal dosya çevrimdışı indirmeleriyle albümlere, şarkılara ve sanatçılara göz atmak ve arama yapmak için Kütüphane → Müzik sunucuları altında Navidrome / OpenSubsonic'i bağlayın (bkz. [Müzik sunucusuna bağlanma](#müzik-sunucusuna-bağlanma)).
+- **Kendi barındırdığınız müzik (Önizleme)**: Mevcut oynatıcı, albüm kapağı, şarkı sözleri, yerel favoriler, çalma listeleri ve orijinal dosya çevrimdışı indirmeleriyle albümlere, şarkılara ve sanatçılara göz atmak ve arama yapmak için **Library → Music servers** (Kütüphane → Müzik sunucuları) altında Navidrome / OpenSubsonic'i bağlayın (bkz. [Müzik sunucusuna bağlanma](#müzik-sunucusuna-bağlanma)).
 - **Önce yerel**: Önbellek, indirmeler, çalma listeleri, geçmiş, ayarlar ve kimlik doğrulama verileri cihazda saklanır.
 - **İsteğe bağlı senkronizasyon**: Çalma listeleri, favoriler, son çalınanlar ve oynatma istatistikleri kendi GitHub deponuza (uygulama içinden oluşturulduğunda varsayılan olarak gizlidir) veya bir WebDAV uzak sunucusuna senkronize edilebilir.
 - **Kullanıcıya ait veriler**: Senkronize edilen veriler yalnızca sizin kontrol ettiğiniz depolamaya gider, asla bakımcı tarafından işletilen bir sunucudan geçmez.
-- **Hesap güvenliği**: Oynatma geçmişi ve istatistikler varsayılan olarak üçüncü taraf platformlara gönderilmez. Platform sıralamalarını veya izleme geçmişini istiyorsanız, Ayarlar → Üçüncü Taraf Oturum Açma bölümünden NetEase / Bilibili dinleme geçmişi senkronizasyonunu ayrı olarak açın.
+- **Hesap güvenliği**: Oynatma geçmişi ve istatistikler varsayılan olarak üçüncü taraf platformlara gönderilmez. Platform sıralamalarını veya izleme geçmişini istiyorsanız, **Settings → Third-party Sign-in** (Ayarlar → Üçüncü Taraf Oturum Açma) bölümünden NetEase / Bilibili dinleme geçmişi senkronizasyonunu ayrı olarak açın.
 
 > 💡 **Üç bağımsız özellik**
 >
@@ -105,14 +105,14 @@ Mimari, başlangıç akışı ve testler [docs/implementation_EN.md](./docs/impl
 > [!WARNING]
 > Sınırlı testlere sahip önizleme sürümüdür. Uyumluluk ve kararlılık sunucuya, kütüphaneye ve ağa göre değişiklik gösterir. Sunucuya geri yazma, Birlikte Dinle ve profil taşıma henüz bağlanmamıştır.
 
-1. Ayarlar → Üçüncü taraf platform oturum açma → Müzik sunucuları altında bir ad, adres, kullanıcı adı ve parola girin, ardından bağlantı kontrolü geçtikten sonra kaydedin.
+1. **Settings → Third-party platform sign-in → Music servers** (Ayarlar → Üçüncü taraf platform oturum açma → Müzik sunucuları) altında bir ad, adres, kullanıcı adı ve parola girin, ardından bağlantı kontrolü geçtikten sonra kaydedin.
 2. `https://music.example.com:4533/navidrome/` gibi sunucunun temel adresini kullanın. Bağlantı noktaları ve ters proxy alt yolları sorunsuz çalışır; `/app/` ve `/rest/` kısımlarını eklemeyin.
-3. Kütüphane → Müzik sunucuları'nı açın, bir profil seçin ve albümlere, şarkılara ve sanatçılara göz atın veya arama yapın. Albümlerini görmek için bir sanatçıyı açın.
+3. **Library → Music servers** (Kütüphane → Müzik sunucuları) bölümünü açın, bir profil seçin ve albümlere, şarkılara ve sanatçılara göz atın veya arama yapın. Albümlerini görmek için bir sanatçıyı açın.
 4. Kategorileri değiştirmek arama sorgunuzu korur; bir albümün içinde arama yapmak yalnızca o albümü filtreler.
 5. Bir şarkıyı çalın veya favorilere, kuyruğa ya da yerel bir çalma listesine ekleyin.
 6. Şarkı sözleri önce sunucunun yapılandırılmış şarkı sözlerinden, ardından standart şarkı sözü uç noktasından gelir.
-7. Bir şarkıya uzun basın veya birkaç şarkı seçin, ardından Yerele indir'i seçin. Sunucu izin veriyorsa dosyalar orijinal biçimini korur; indirme yöneticisinde ilerleme ve yeniden denemeler yer alır.
-8. Tamamlanan indirmeler Yerel müzik → İndirilenler altında görünür ve çevrimdışı olarak veya profili kaldırdıktan sonra bile çalınabilir kalır.
+7. Bir şarkıya uzun basın veya birkaç şarkı seçin, ardından **Download to local** (Yerele indir) seçeneğini seçin. Sunucu izin veriyorsa dosyalar orijinal biçimini korur; indirme yöneticisinde ilerleme ve yeniden denemeler yer alır.
+8. Tamamlanan indirmeler **Local music → Downloaded** (Yerel müzik → İndirilenler) altında görünür ve çevrimdışı olarak veya profili kaldırdıktan sonra bile çalınabilir kalır.
 
 **Nasıl çalışır**
 
@@ -138,7 +138,7 @@ Protokol ve istemci davranışı için [API sözleşmesine](docs/music-server-ap
 - **YouTube Music uyumluluğu**: Geçerli kimlik çerezleri korunur ve döndürülür; önbelleğe alınmış bir `player.js` veya oynatma adayı başarısız olursa, oynatma EJS / HLS'ye geri döner.
 - **Ses efektleri**: Yerleşik ön ayarlara sahip kendi DSP'si, 10 bantlı ekolayzer, AutoEQ içe aktarma, ses yüksekliği dengeleme ve 32-bit yüksek çözünürlüklü çıktı. Kapatıldığında tümü atlanır.
 - **USB özel çıktısı**: UAC1.0 ve UAC2.0 Type I PCM DAC'lere bit-kusursuz (bit-perfect) çıktı; USB takılma olaylarına yanıt verme kapatılabilir.
-- **DLNA / UPnP yayını**: Şu An Çalınıyor çıktı sayfasından yerel ağ (LAN) oynatıcılarını tarayın veya manuel olarak ekleyin; kayıpsız FLAC doğrudan aktarımı, WAV uyumluluk yedeği ve uyarlanabilir doğrudan akış desteğiyle.
+- **DLNA / UPnP yayını**: **Now Playing** (Şu An Çalınıyor) çıktı sayfasından yerel ağ (LAN) oynatıcılarını tarayın veya manuel olarak ekleyin; kayıpsız FLAC doğrudan aktarımı, WAV uyumluluk yedeği ve uyarlanabilir doğrudan akış desteğiyle.
 - **Arka planda oynatma**: Uygulama değiştirdiğinizde veya NeriPlayer'ı Son Kullanılanlar'dan kaydırıp kapattığınızda müzik ön plan medya servisi üzerinden çalmaya devam eder.
 - **Yüzen pencere ile canlı tutma**: Sistemin arka plan oynatmayı dondurmasını zorlaştıran isteğe bağlı görünmez 1 piksellik pencere.
 - **Oynatma davranışı**: Yumuşak giriş/çıkış (fade in/out), çapraz geçiş (crossfade), Bluetooth bağlantısı kesildiğinde duraklatma, diğer uygulamalarla ses karıştırma ve ses odağı politikası. Açılışta kalınan konum ve oynatma modu geri yüklenir.
@@ -158,7 +158,7 @@ Protokol ve istemci davranışı için [API sözleşmesine](docs/music-server-ap
   - Oturum açma ve ağ bağlantısı gerektirir.
   - Oynatma Bilibili veya yerel sese düştüğünde bu seçenek gizlenir.
 - **Kategoriye göre gezinme**: Yerel, favoriler, NetEase Cloud Music, YouTube Music ve Bilibili girişleri. YouTube Music tamamen devre dışı bırakılabilir ve Bilibili müzikleri yalnızca ana sayfadan gizlenebilir.
-- **Ana sayfa keşfi**: Yerel ana sayfa listeleri, günlük seçimleri ve radar çalma listelerini gösterir. Uluslararası ana sayfada hangi tür YouTube Music önerilerinin görüneceğini seçmek için **Ana sayfa ve başlangıç → Önerileriniz** bölümünü açın ve parçaları, çalma listelerini, albümleri veya sanatçıları açıp kapatın. Her ana sayfa kendi düzenini korur.
+- **Ana sayfa keşfi**: Yerel ana sayfa listeleri, günlük seçimleri ve radar çalma listelerini gösterir. Uluslararası ana sayfada hangi tür YouTube Music önerilerinin görüneceğini seçmek için **Home & startup → Your recommendations** (Ana sayfa ve başlangıç → Önerileriniz) bölümünü açın ve parçaları, çalma listelerini, albümleri veya sanatçıları açıp kapatın. Her ana sayfa kendi düzenini korur.
 - **Arama**: NetEase Cloud Music, Bilibili ve YouTube Music'te sayfalama özellikli platform bazlı arama.
 - **Bağlantı tanıma**: NetEase Cloud Music, Bilibili ve YouTube Music içeriklerini çözümlemek için başlık veya kısa bağlantı içeren bir paylaşım metni yapıştırın.
 - **İçe aktarma ve toplu kapak görseli**: Paylaşım içe aktarma ve klasör tarama, ayrıca yerel şarkılar için tek dokunuşla toplu şarkı sözü ve kapak görseli eşleştirme ve gömme.
@@ -170,8 +170,8 @@ Protokol ve istemci davranışı için [API sözleşmesine](docs/music-server-ap
 - **Uygulama içi indirmeler**: Devam ettirme ve başlangıç kurtarma özellikli çok platformlu ses indirme, varsayılan olarak 6 eşzamanlı indirme (1–8 arası ayarlanabilir).
 - **Özel dizin**: SAF dizini ve dosya adı şablonları; değiştirdiğinizde mevcut indirmeler taşınır.
 - **Önbellek sınırı**: Ses önbelleği varsayılan olarak 1 GB ile sınırlandırılmıştır.
-- **Son çalınanları koru**: 0–1000 parça kaydırıcısı son çalınan şarkıları korur; geçerli parça her zaman korunur.
-- **Yerel içe aktarma önbelleği**: Ayarlar → Depolama ve Önbellek → Önbelleği Temizle, artık referansı kalmayan çıkarılmış kapakları ve geçici tarama dizinlerini kaldırır.
+- **Keep recent plays (Son çalınanları koru)**: 0–1000 parça kaydırıcısı son çalınan şarkıları korur; geçerli parça her zaman korunur.
+- **Yerel içe aktarma önbelleği**: **Settings → Storage & Cache → Clear Cache** (Ayarlar → Depolama ve Önbellek → Önbelleği Temizle), artık referansı kalmayan çıkarılmış kapakları ve geçici tarama dizinlerini kaldırır.
 - **Kapak saklama**: Geçmiş, istatistikler veya diğer kayıtlar tarafından hala kullanılan kapaklar saklanır; geçerli oturumda kullanılan kapaklar bir sonraki soğuk başlangıçtan sonra yeniden değerlendirilir.
 
 ### 🔄 Senkronizasyon, istatistikler ve yedekleme
@@ -192,13 +192,13 @@ Protokol ve istemci davranışı için [API sözleşmesine](docs/music-server-ap
 
 ### 👥 Birlikte Dinle
 
-- **Birleşik giriş**: Şu An Çalınıyor → Daha Fazla → Birlikte Dinle altındaki kaydırılabilir sekmeleri kullanarak Bulut ve Yerel Ağ (LAN) arasında geçiş yapın. Tablet mini oynatıcısı ve Ayarlar aynı gruplamayı kullanır.
+- **Birleşik giriş**: **Now Playing → More → Listen Together** (Şu An Çalınıyor → Daha Fazla → Birlikte Dinle) altındaki kaydırılabilir sekmeleri kullanarak **Cloud** (Bulut) ve **LAN** (Yerel Ağ) arasında geçiş yapın. Tablet mini oynatıcısı ve **Settings** (Ayarlar) aynı gruplamayı kullanır.
 - **Odalar**: Gerçek zamanlı WebSocket senkronizasyonuyla bir oda oluşturun veya katılın.
 - **Katılma**: İlk katılımda davet anahtarı gerekir; yeniden bağlanmalarda üye anahtarı kullanılır.
 - **Senkronize durum**: Sunucu / dinleyici rolleri, tekrarlama ve karıştırma modları, saat kayması düzeltmesi ve sunucu çevrimdışı kurtarma.
 - **Oynatma adayları**: Sunucu en fazla 3 aday paylaşabilir; dinleyiciler bunları önce kendi kalite politikalarıyla çözümler.
 
-- **Yerel Ağ (LAN) Birlikte Dinle**, aynı Wi-Fi ağındaki cihazların odaları keşfetmesine veya adresle katılmasına olanak tanır. Odaları oynatıcıdaki hoparlör düğmesinden, Şu An Çalınıyor → Daha Fazla bölümünden veya Ayarlar → Birlikte Dinle'den yönetin. Sunucu sesi, kapak görselini ve şarkı sözlerini paylaşabilir. Üyeler varsayılan olarak oynatabilir ve duraklatabilir. İlerleme izni hem parça atlamayı hem de sarmayı kontrol eder ve varsayılan olarak etkindir. Üyeler oda ses düzeyini görebilir ve kendi cihazlarının ses düzeyini ve zamanlama kaymasını ayarlayabilirler. Sunucu ses kontrolü izni verirse, üyeler tüm cihazları birlikte ayarlamak için oda ses düzeyi kaydırıcısını sürükleyebilir veya yalnızca sunucu cihazın ses düzeyini değiştirebilirler. İzin ayarları sunucu cihazda kaydedilir. LAN odaları bulut odalarından ayrı çalışır ve şu anda USB özel çıktısını desteklemez. Bkz. [modül dokümantasyonu](modules/ltwlan/README.md).
+- **Yerel Ağ (LAN) Birlikte Dinle**, aynı Wi-Fi ağındaki cihazların odaları keşfetmesine veya adresle katılmasına olanak tanır. Odaları oynatıcıdaki hoparlör düğmesinden, **Now Playing → More** (Şu An Çalınıyor → Daha Fazla) bölümünden veya **Settings → Listen Together** (Ayarlar → Birlikte Dinle) menüsünden yönetin. Sunucu sesi, kapak görselini ve şarkı sözlerini paylaşabilir. Üyeler varsayılan olarak oynatabilir ve duraklatabilir. **Progress** (İlerleme) izni hem parça atlamayı hem de sarmayı kontrol eder ve varsayılan olarak etkindir. Üyeler oda ses düzeyini görebilir ve kendi cihazlarının ses düzeyini ve zamanlama kaymasını ayarlayabilirler. Sunucu ses kontrolü izni verirse, üyeler tüm cihazları birlikte ayarlamak için oda ses düzeyi kaydırıcısını sürükleyebilir veya yalnızca sunucu cihazın ses düzeyini değiştirebilirler. İzin ayarları sunucu cihazda kaydedilir. LAN odaları bulut odalarından ayrı çalışır ve şu anda USB özel çıktısını desteklemez. Bkz. [modül dokümantasyonu](modules/ltwlan/README.md).
 
 ### 🛟 Kararlılık ve tanılama
 
@@ -251,7 +251,7 @@ Bir Nightly ön sürümünde sorunla karşılaşırsanız, [her zaman bildirebil
    adb install -r app/build/outputs/apk/debug/app-debug.apk
    ```
 5. İlk açılışta sorumluluk reddini okuyun ve başlangıç adımlarını tamamlayın. Bildirim ve yerel müzik izinleri yalnızca siz izin verdikten sonra istenir.
-6. Hata ayıklama araçları için Ayarlar'da **sürüm numarasına** 7 kez dokunun.
+6. Hata ayıklama araçları için **Settings** (Ayarlar) içinde **version number** (sürüm numarası) alanına 7 kez dokunun.
 
 **Debug derlemeleri hakkında**
 
@@ -288,8 +288,8 @@ Release derlemesi ve imzalama ayrıntıları için [CONTRIBUTING_EN.md](./CONTRI
 
 ### YouTube Music
 
-- Ana sayfada YouTube Music önerilerini göstermek için Ayarlar → Dil ve içerik bölümünden uluslararası modu etkinleştirin. Keşfet; şarkıları, videoları, sanatçıları, albümleri, öne çıkan çalma listelerini ve topluluk çalma listelerini destekler.
-- Uygulama dilini istediğiniz zaman değiştirebilirsiniz. Uluslararası mod açıkken aynı sayfada içerik dilinizi ve bölgenizi seçin. İçerik ve keşif altında çalma listelerinin nasıl önerileceğini ve müstehcen içeriklerin veya müzik videolarının gizlenip gizlenmeyeceğini seçin. Uluslararası ana ekrandaki dünya simgesi bu sayfayı açar. Sistem bölgesi Çin anakarasına ayarlı cihazlar, içerik dili için varsayılan olarak Basitleştirilmiş Çince ve içerik bölgesi için Japonya'yı kullanır.
+- **Home** (Ana Sayfa) üzerinde YouTube Music önerilerini göstermek için **Settings → Language and content** (Ayarlar → Dil ve içerik) bölümünden uluslararası modu etkinleştirin. **Explore** (Keşfet); şarkıları, videoları, sanatçıları, albümleri, öne çıkan çalma listelerini ve topluluk çalma listelerini destekler.
+- Uygulama dilini istediğiniz zaman değiştirebilirsiniz. Uluslararası mod açıkken aynı sayfada içerik dilinizi ve bölgenizi seçin. **Content & discovery** (İçerik ve keşif) altında çalma listelerinin nasıl önerileceğini ve müstehcen içeriklerin veya müzik videolarının gizlenip gizlenmeyeceğini seçin. Uluslararası ana ekrandaki dünya simgesi bu sayfayı açar. Sistem bölgesi Çin anakarasına ayarlı cihazlar, içerik dili için varsayılan olarak Basitleştirilmiş Çince ve içerik bölgesi için Japonya'yı kullanır.
 - Uygun oturum açılmış oturumlar otomatik olarak yenilenir. Hesap ayarları yenileme durumunu gösterir. Ağ ayarları HTTP ve SOCKS5 proxy'leri ile DNS over HTTPS (DoH) destekler.
 - İçerik erişimi platform kurallarına ve hesap izinlerine tabidir.
 
@@ -302,7 +302,7 @@ Release derlemesi ve imzalama ayrıntıları için [CONTRIBUTING_EN.md](./CONTRI
 
 ### QQ Music
 
-- Şu An Çalınıyor meta verisi ve şarkı sözü tamamlama.
+- **Now Playing** (Şu An Çalınıyor) meta verisi ve şarkı sözü tamamlama.
 - Oturum açma, oynatma veya kütüphane sayfaları yoktur.
 
 ### Yerel Sesler
@@ -310,7 +310,7 @@ Release derlemesi ve imzalama ayrıntıları için [CONTRIBUTING_EN.md](./CONTRI
 - Paylaş / aç ile içe aktarma, cihaz ve klasör tarama ve oynatma.
 - Sanatçı gruplama, paylaşım ve çalma listesi yönetimi.
 
-Çevrimiçiyken, hangi bölümün çalınacağını seçmek için Favorilerim'deki veya yerel bir çalma listesindeki masaüstünden senkronize edilmiş çok parçalı bir Bilibili videosuna dokunun.
+Çevrimiçiyken, hangi bölümün çalınacağını seçmek için **My Favorites** (Favorilerim) içindeki veya yerel bir çalma listesindeki masaüstünden senkronize edilmiş çok parçalı bir Bilibili videosuna dokunun.
 
 ---
 
@@ -336,7 +336,7 @@ Sunucu **Cloudflare Workers** ve **Durable Objects** üzerinde çalışır ve We
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/TheSmallHanCat/NeriPlayer-LTW)
 
-Uygulamanın Ayarlar bölümünde sunucu adresini belirleyebilir, kullanılabilirliği test edebilir ve yerel Birlikte Dinle kimliğini sıfırlayabilirsiniz.
+Uygulamanın **Settings** (Ayarlar) bölümünde sunucu adresini belirleyebilir, kullanılabilirliği test edebilir ve yerel Birlikte Dinle kimliğini sıfırlayabilirsiniz.
 
 - Oda kimlikleri 6 okunabilir karakterden oluşur.
 - Takma adlar 1–24 karakterdir: Çince, Latin harfleri ve rakamlar.
@@ -355,10 +355,10 @@ NeriPlayer, meta verileri **kendi** GitHub deponuza veya bir WebDAV uzak dosyas�
 
 ### Kullanım
 
-1. Ayarlar'da Yedekleme ve Senkronizasyon'u açın.
+1. **Settings** (Ayarlar) içinde **Backup & Sync** (Yedekleme ve Senkronizasyon) bölümünü açın.
 2. GitHub için `repo` kapsamına sahip bir Personal Access Token oluşturun.
 3. Belirteci doğrulayın, ardından varsayılan gizli depoyu oluşturun veya mevcut bir depoyu bağlayın.
-4. Otomatik senkronizasyonu etkinleştirin veya Şimdi senkronize et'e dokunun.
+4. Otomatik senkronizasyonu etkinleştirin veya **Sync now** (Şimdi senkronize et) seçeneğine dokunun.
 
 Yeni kurulumlar doğrudan V4 kullanır. Bir yükseltme iletişim kutusu görünürse, önce senkronizasyona katılan her cihazı güncelleyin, ardından adresi taşımak için onaylayın ve hemen senkronize edin.
 
@@ -388,7 +388,7 @@ Yayınlanan çalışmalar [Releases](https://github.com/cwuom/NeriPlayer/release
 
 ## Hata Bildirimi
 
-- Önce geliştirici modunu etkinleştirin (Ayarlar'da **sürüm numarasına** 7 kez dokunun). Bu işlem düz dosya günlüğünü açar ve çökme günlükleri ayrı olarak kaydedilir.
+- Önce geliştirici modunu etkinleştirin (**Settings** (Ayarlar) içinde **version number** (sürüm numarası) alanına 7 kez dokunun). Bu işlem düz dosya günlüğünü açar ve çökme günlükleri ayrı olarak kaydedilir.
 - İşletim sistemi sürümü, cihaz modeli, uygulama sürümü, yeniden oluşturma adımları ve ilgili günlüklerle bir [issue](https://github.com/cwuom/NeriPlayer/issues) açın.
 - Windows'ta günlükleri filtreleme: `adb logcat | findstr NeriPlayer`
 - Linux / macOS'ta günlükleri filtreleme: `adb logcat | grep NeriPlayer`
@@ -409,7 +409,7 @@ Yayınlanan çalışmalar [Releases](https://github.com/cwuom/NeriPlayer/release
 
 ### USB özel çıktısı
 
-- Uyumlu bir DAC ve ön plan servisi gerektirir. Ekran kapalıyken oynatma durursa, Ayarlar'da istendiği gibi pil ve arka plan kısıtlamalarını kaldırın.
+- Uyumlu bir DAC ve ön plan servisi gerektirir. Ekran kapalıyken oynatma durursa, **Settings** (Ayarlar) içinde istendiği gibi pil ve arka plan kısıtlamalarını kaldırın.
 - UAC2 eşzamansız modu tek bir açık geri bildirim uç noktası ve desteklenen bir saat topolojisi gerektirir; örtülü geri bildirim ve doğrulanamayan topolojiler desteklenmez.
 - Sistem ses çıktısını kullanmak için USB özel modunu kapatın.
 - Telefon ve DAC uyumluluğu gerçek cihaz kontrolleri gerektirir.
@@ -433,7 +433,7 @@ Yayınlanan çalışmalar [Releases](https://github.com/cwuom/NeriPlayer/release
 ### Platform kapsamı
 
 - Bilibili tam bir video keşif akışına değil, arama, favoriler, koleksiyonlar ve ses oynatmaya odaklanır.
-- QQ Music yalnızca Şu An Çalınıyor meta verisi ve şarkı sözü tamamlama için kullanılır.
+- QQ Music yalnızca **Now Playing** (Şu An Çalınıyor) meta verisi ve şarkı sözü tamamlama için kullanılır.
 
 ### Senkronizasyon ve dışa aktarma
 
@@ -444,7 +444,7 @@ Yayınlanan çalışmalar [Releases](https://github.com/cwuom/NeriPlayer/release
 ### Diğer
 
 - Uzun ses konum belleği hiçbir zaman sizin ayarladığınız başlangıç konumunu geçersiz kılmaz ve üçüncü taraf platform geçmişine geri yazılmaz.
-- Dinleme geçmişi senkronizasyonu (varsayılan olarak kapalıdır) Ayarlar → Üçüncü Taraf Oturum Açma bölümünden platform başına açılır. Bir NetEase şarkısı 30 saniye sonra veya bittiğinde dinleme kayıtlarına ve sıralamalara sayılır; Bilibili oynatma ilerlemesini alır ve hesapta Bilibili geçmişi duraklatılmışken hiçbir şey gönderilmez. Başarısız bildirimler oynatmayı asla etkilemez ve yeniden denenmez.
+- Dinleme geçmişi senkronizasyonu (varsayılan olarak kapalıdır) **Settings → Third-party Sign-in** (Ayarlar → Üçüncü Taraf Oturum Açma) bölümünden platform başına açılır. Bir NetEase şarkısı 30 saniye sonra veya bittiğinde dinleme kayıtlarına ve sıralamalara sayılır; Bilibili oynatma ilerlemesini alır ve hesapta Bilibili geçmişi duraklatılmışken hiçbir şey gönderilmez. Başarısız bildirimler oynatmayı asla etkilemez ve yeniden denenmez.
 - Bilibili SponsorBlock herkese açık bir API'yi sorgular ve Birlikte Dinle odalarında devre dışıdır.
 
 ---
@@ -456,7 +456,7 @@ Yayınlanan çalışmalar [Releases](https://github.com/cwuom/NeriPlayer/release
 - Önbellek, indirmeler, yerel çalma listeleri, geçmiş, oynatma istatistikleri, ayarlar ve kimlik doğrulama verileri cihazda saklanır.
 - Çalma listeleri, favoriler, geçmiş ve oynatma istatistikleri gibi meta veriler yalnızca GitHub veya WebDAV senkronizasyonunu etkinleştirdiğinizde senkronize edilir.
 - Ses önbelleği, indirilen dosyalar, çerezler ve oynatma belirteçleri asla geliştiriciye yüklenmez.
-- Oynatma geçmişi ve istatistikler varsayılan olarak üçüncü taraf platformlara gönderilmez. Yalnızca Ayarlar → Üçüncü Taraf Oturum Açma bölümünden dinleme geçmişi senkronizasyonunu etkinleştirdikten sonra şarkı / video kimlikleri, dinleme süresi ve oynatma ilerlemesi hesabınız altında NetEase Cloud Music veya Bilibili'ye gönderilir.
+- Oynatma geçmişi ve istatistikler varsayılan olarak üçüncü taraf platformlara gönderilmez. Yalnızca **Settings → Third-party Sign-in** (Ayarlar → Üçüncü Taraf Oturum Açma) bölümünden dinleme geçmişi senkronizasyonunu etkinleştirdikten sonra şarkı / video kimlikleri, dinleme süresi ve oynatma ilerlemesi hesabınız altında NetEase Cloud Music veya Bilibili'ye gönderilir.
 - Yapılandırma dışa aktarmaları varsayılan olarak oturum açma durumunu hariç tutar; dahil edilmesi kimlik doğrulama ve senkronizasyon bilgilerini dışa aktarır, bu nedenle bir parola belirleyin ve gizli tutun.
 - Android sistem bulut yedeklemesi ve cihaz aktarımı varsayılan olarak devre dışıdır.
 - Üçüncü taraf platformlardaki erişim günlükleri ve risk kontrol politikaları o platformların kendi gizlilik politikaları kapsamında ele alınır.
@@ -472,7 +472,7 @@ Yayınlanan çalışmalar [Releases](https://github.com/cwuom/NeriPlayer/release
 - [accompanist-lyrics-ui](https://github.com/6xingyv/accompanist-lyrics-ui): Bir karaoke şarkı sözü composable bileşeni
 - [LDDC](https://github.com/chenmozhijin/LDDC): Çok platformlu şarkı sözü eşleştirme aracı; manuel eşleştirme kullanıcı deneyimi için referans
 - [Metrolist](https://github.com/MetrolistGroup/Metrolist): Android için YouTube Music istemcisi
-- Şu An Çalınıyor ekranının orijinal akışkan arka plan gölgelendiricisi [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler) içindeki gölgelendiriciyi temel almıştır.
+- **Now Playing** (Şu An Çalınıyor) ekranının orijinal akışkan arka plan gölgelendiricisi [HyperCeiler](https://github.com/ReChronoRain/HyperCeiler) içindeki gölgelendiriciyi temel almıştır.
 - freeman-jiang tarafından geliştirilen [BeatSync](https://github.com/freeman-jiang/beatsync), LAN Birlikte Dinle için eşleştirilmiş prob saat senkronizasyonu algoritmasını ve Kotlin portunu test etmek için kullanılan referans uygulamayı sağlar.
 - [AndroidX Media3](https://github.com/androidx/media), LAN oda üyeleri için aşamalı ses oynatma ve perde koruyucu hız ayarlamaları sağlar.
 - [Java-WebSocket](https://github.com/TooTallNate/Java-WebSocket), oda kontrol mesajları için sunucunun WebSocket sunucusunu sağlar.
