@@ -208,11 +208,13 @@ internal fun formatSleepTimerNotificationRemaining(state: SleepTimerState): Stri
     if (totalSeconds <= 60) {
         return formatSleepTimerRemaining(state)
     }
-    val hours = totalSeconds / 3600
-    val displayMinutes = ((totalSeconds % 3600) + 59) / 60
+    // 先向上取整到分钟, 再让分钟进位到小时; 直接对余下的分钟取整再加 coerceAtMost(59)
+    // 会让整点前最后一分钟显示成 1:59:00 (比实际剩余少一分钟)
+    val totalMinutes = (totalSeconds + 59) / 60
+    val hours = totalMinutes / 60
     return when {
-        hours > 0 -> String.format(Locale.ROOT, "%d:%02d:00", hours, displayMinutes.coerceAtMost(59))
-        else -> String.format(Locale.ROOT, "%d:00", displayMinutes)
+        hours > 0 -> String.format(Locale.ROOT, "%d:%02d:00", hours, totalMinutes % 60)
+        else -> String.format(Locale.ROOT, "%d:00", totalMinutes)
     }
 }
 

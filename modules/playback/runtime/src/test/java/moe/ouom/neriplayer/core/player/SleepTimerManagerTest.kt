@@ -34,6 +34,47 @@ class SleepTimerManagerTest {
     }
 
     @Test
+    fun `notification text carries a rounded minute into the hour`() {
+        val state = SleepTimerState(isActive = true, mode = SleepTimerMode.COUNTDOWN)
+
+        // 1:59:59 向上取整应是 2:00:00, 不能因为分钟被截到 59 而退回 1:59:00
+        assertEquals("2:00:00", formatSleepTimerNotificationRemaining(state.copy(remainingMillis = 7_199_000L)))
+        assertEquals("3:00:00", formatSleepTimerNotificationRemaining(state.copy(remainingMillis = 10_799_000L)))
+        // 整分与普通情况保持原样
+        assertEquals("1:59:00", formatSleepTimerNotificationRemaining(state.copy(remainingMillis = 7_140_000L)))
+        assertEquals("1:58:00", formatSleepTimerNotificationRemaining(state.copy(remainingMillis = 7_080_000L)))
+        // 59:59 进位到 1:00:00, 与小时档格式一致
+        assertEquals("1:00:00", formatSleepTimerNotificationRemaining(state.copy(remainingMillis = 3_599_000L)))
+    }
+
+    @Test
+    fun `notification countdown never increases while remaining time decreases`() {
+        val state = SleepTimerState(isActive = true, mode = SleepTimerMode.COUNTDOWN)
+        val displayed = (7_200L downTo 0L).map { remainingSec ->
+            val text = formatSleepTimerNotificationRemaining(
+                state.copy(remainingMillis = remainingSec * 1_000L)
+            )
+            notificationDisplayedSeconds(text, remainingSec)
+        }
+
+        assertEquals(displayed.sortedDescending(), displayed)
+    }
+
+    private fun notificationDisplayedSeconds(text: String, remainingSec: Long): Long {
+        // 最后一分钟内直接显示 "m:ss"; 其余用 "m:00" / "h:mm:00" 按整分展示
+        if (remainingSec <= 60L) {
+            val parts = text.split(':')
+            return parts[0].toLong() * 60L + parts[1].toLong()
+        }
+        val parts = text.split(':').map(String::toLong)
+        return if (parts.size == 2) {
+            parts[0] * 60L
+        } else {
+            parts[0] * 3_600L + parts[1] * 60L
+        }
+    }
+
+    @Test
     fun `notification key only changes when the visible countdown or timer state changes`() {
         val countdown = SleepTimerState(isActive = true, mode = SleepTimerMode.COUNTDOWN, totalMillis = 300_000L)
         val keys = (300_000L downTo 1_000L step 1_000L).map { remaining ->
