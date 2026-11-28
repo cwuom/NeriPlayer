@@ -1,4 +1,4 @@
-[English](./README_EN.md) | [中文](./README.md)
+[English](./README_EN.md) | [中文](./README.md) | [Türkçe](./README_TR.md)
 
 <h1 align="center">NeriPlayer (音理音理!)</h1>
 
