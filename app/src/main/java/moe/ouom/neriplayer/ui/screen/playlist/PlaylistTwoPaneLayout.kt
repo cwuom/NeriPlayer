@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.util.ResizeWindowForImeEffect
 import moe.ouom.neriplayer.ui.theme.NeriDesign
 import moe.ouom.neriplayer.ui.theme.neriRoundedShape
 
@@ -61,6 +62,8 @@ internal fun PlaylistTwoPaneBody(
     pane: @Composable ColumnScope.() -> Unit,
     list: @Composable BoxScope.() -> Unit
 ) {
+    // 侧栏搜索框在屏幕下半部, 窗口平移会把顶栏和列表推出屏幕; 改为按 IME inset 布局, 导航宿主统一让出键盘高度
+    ResizeWindowForImeEffect(enabled = twoPane)
     if (!twoPane) {
         Box(modifier) { list() }
         return
