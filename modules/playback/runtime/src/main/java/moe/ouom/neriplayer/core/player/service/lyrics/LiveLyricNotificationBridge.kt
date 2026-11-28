@@ -86,6 +86,8 @@ internal class AndroidLiveUpdatePromotionPort(private val manager: NotificationM
     }.getOrNull()
 }
 
+private class LiveUpdatePublication(val sequence: Long, val postedElapsedMs: Long)
+
 /** 没有发布序号的通知（例如旧版本残留）按 -1 处理，总会被视为不是最新一次发布 */
 internal fun liveUpdatePublication(notification: Notification): Long =
     notification.extras.getLong(LiveLyricNotificationBridge.EXTRA_PUBLICATION, -1L)
@@ -184,6 +186,8 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
     private var promotionUnknownChecks = 0
     private val publicationCheck = Runnable(::verifyPublication)
     private var publication = 0L
+    // 尚未核对的发布，最新的在末尾；只保留最近一次已落定的和之后的
+    private val unconfirmedPublications = ArrayDeque<LiveUpdatePublication>()
     private var unconfirmedSinceElapsedMs: Long? = null
     private var publicationResends = 0
     private val progressTick = Runnable(::dispatchProgressTick)
@@ -428,7 +432,7 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
             publication = sequence
             lastPosted = state
             armPromotionCheck(firstPost = previous == null)
-            schedulePublicationCheck(postedElapsedMs)
+            recordPublication(LiveUpdatePublication(sequence, postedElapsedMs))
         } catch (securityException: SecurityException) {
             Log.w(TAG, "Unable to post Live Update notification", securityException)
         }
@@ -497,40 +501,71 @@ internal class LiveLyricNotificationBridge @VisibleForTesting internal construct
         }
     }
 
-    /** 新的发布会推迟核对，只核对最近一次；未确认的时间超过上限后不再推迟 */
-    private fun schedulePublicationCheck(postedElapsedMs: Long) {
-        val unconfirmedSince = unconfirmedSinceElapsedMs ?: postedElapsedMs.also { unconfirmedSinceElapsedMs = it }
-        val untilDeadlineMs = unconfirmedSince + PUBLICATION_CHECK_MAX_DEFER_MS - postedElapsedMs
+    private fun recordPublication(posted: LiveUpdatePublication) {
+        if (unconfirmedSinceElapsedMs == null) unconfirmedSinceElapsedMs = posted.postedElapsedMs
+        unconfirmedPublications.addLast(posted)
+        while (unconfirmedPublications.size > 1 &&
+            posted.postedElapsedMs - unconfirmedPublications[1].postedElapsedMs >= PUBLICATION_SETTLE_MS
+        ) {
+            unconfirmedPublications.removeFirst()
+        }
+        schedulePublicationCheck()
+    }
+
+    /** 截止前随新发布推迟；到期后不再推迟，歌词行再密也会按时核对 */
+    private fun schedulePublicationCheck() {
+        val unconfirmedSince = unconfirmedSinceElapsedMs ?: return
+        val latest = unconfirmedPublications.lastOrNull() ?: return
+        val checkAtElapsedMs = minOf(
+            latest.postedElapsedMs + PUBLICATION_CHECK_DELAY_MS,
+            unconfirmedSince + PUBLICATION_CHECK_MAX_DEFER_MS,
+        )
         mainHandler.removeCallbacks(publicationCheck)
         mainHandler.postDelayed(
             publicationCheck,
-            untilDeadlineMs.coerceIn(PUBLICATION_SETTLE_MS, PUBLICATION_CHECK_DELAY_MS),
+            (checkAtElapsedMs - SystemClock.elapsedRealtime()).coerceAtLeast(0L),
         )
     }
 
     private fun cancelPublicationCheck() {
         mainHandler.removeCallbacks(publicationCheck)
+        unconfirmedPublications.clear()
         unconfirmedSinceElapsedMs = null
         publicationResends = 0
     }
 
     private fun verifyPublication() {
         if (lastPosted == null) return cancelPublicationCheck()
-        val sincePostMs = SystemClock.elapsedRealtime() - lastDispatchElapsedMs
-        if (sincePostMs < PUBLICATION_SETTLE_MS) {
-            mainHandler.postDelayed(publicationCheck, PUBLICATION_SETTLE_MS - sincePostMs)
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        // 刚发布的还在入队，核对最近一次已落定的发布；序号递增，系统保存的不早于它即说明它已送达
+        val settled = unconfirmedPublications.lastOrNull { nowElapsedMs - it.postedElapsedMs >= PUBLICATION_SETTLE_MS }
+        if (settled == null) {
+            val oldest = unconfirmedPublications.firstOrNull() ?: return cancelPublicationCheck()
+            mainHandler.postDelayed(publicationCheck, PUBLICATION_SETTLE_MS - (nowElapsedMs - oldest.postedElapsedMs))
             return
         }
         val shown = promotion.shownPublication(NOTIFICATION_ID)
         // 通知已不在时交给 deleteIntent 判断是否被划掉，这里重发可能把用户划掉的卡片又发回来
-        if (shown == null || shown == publication) return cancelPublicationCheck()
+        if (shown == null) return cancelPublicationCheck()
+        if (shown >= settled.sequence) return confirmPublicationsUpTo(shown)
         if (publicationResends >= PUBLICATION_MAX_RESENDS) {
-            Log.w(TAG, "Live Update still shows publication $shown instead of $publication; stop re-sending")
+            Log.w(TAG, "Live Update still shows publication $shown instead of ${settled.sequence}; stop re-sending")
             return cancelPublicationCheck()
         }
         publicationResends++
-        Log.w(TAG, "System dropped Live Update publication $publication (showing $shown); re-sending")
+        Log.w(TAG, "System dropped Live Update publication ${settled.sequence} (showing $shown); re-sending")
+        // 重发带着最新内容，之前的发布都被它取代；不清掉的话下一次核对会立即拿旧发布再判一次丢失
+        unconfirmedPublications.clear()
         dispatchLatest(resend = true)
+    }
+
+    /** 之后的发布还没落定时开始新一轮核对，紧跟在密集更新后的暂停也不会漏掉 */
+    private fun confirmPublicationsUpTo(shown: Long) {
+        unconfirmedPublications.removeAll { it.sequence <= shown }
+        publicationResends = 0
+        val next = unconfirmedPublications.firstOrNull() ?: return cancelPublicationCheck()
+        unconfirmedSinceElapsedMs = next.postedElapsedMs
+        schedulePublicationCheck()
     }
 
     /** 胶囊宽度按 dp 封顶而文字随系统字号放大，大字号下可容纳的 em 数相应减少 */

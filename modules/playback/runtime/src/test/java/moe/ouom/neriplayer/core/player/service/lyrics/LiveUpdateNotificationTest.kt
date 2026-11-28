@@ -555,6 +555,50 @@ class LiveUpdateNotificationTest {
     }
 
     @Test
+    fun `lyric lines closer than the settle time still get verified by the deadline`() {
+        promotion.shown = { STALE_PUBLICATION }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+
+        // 歌词行间隔短于落定时间，每次都是新内容；到期后核对不能再被后续发布推走
+        val stepMs = LiveLyricNotificationBridge.MIN_UPDATE_INTERVAL_MS + 50L
+        val steps = (LiveLyricNotificationBridge.PUBLICATION_CHECK_MAX_DEFER_MS / stepMs).toInt() + 3
+        for (line in 1..steps) {
+            idleFor(stepMs)
+            bridge.publish(frame.copy(lyric = "第 $line 行", positionMs = frame.positionMs + line * stepMs))
+        }
+
+        assertTrue(promotion.publicationQueries > 0)
+        // 每次重发都要等自己落定后再核对，不能在同一刻连发
+        assertTrue(promotion.publicationQueries <= LiveLyricNotificationBridge.PUBLICATION_MAX_RESENDS + 1)
+    }
+
+    @Test
+    fun `a pause dropped right after dense lyric updates is still re-sent`() {
+        promotion.shown = { postedNotification()?.let(::liveUpdatePublication) }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+        val stepMs = LiveLyricNotificationBridge.MIN_UPDATE_INTERVAL_MS + 50L
+        var positionMs = frame.positionMs
+        repeat((LiveLyricNotificationBridge.PUBLICATION_CHECK_MAX_DEFER_MS / stepMs).toInt() + 1) { line ->
+            idleFor(stepMs)
+            positionMs += stepMs
+            bridge.publish(frame.copy(lyric = "第 $line 行", positionMs = positionMs))
+        }
+        val playing = checkNotNull(postedNotification())
+
+        // 截止核对确认了较早的发布，紧随其后的暂停被丢弃，也要在下一轮核对中补发
+        bridge.publish(frame.copy(playing = false, positionMs = positionMs))
+        idleFor(LiveLyricNotificationBridge.MIN_UPDATE_INTERVAL_MS)
+        manager.notify(LiveLyricNotificationBridge.NOTIFICATION_ID, playing)
+        idleFor(LiveLyricNotificationBridge.PUBLICATION_CHECK_MAX_DEFER_MS)
+
+        assertEquals(text(R.string.player_play), spokenLabel(checkNotNull(checkNotNull(postedNotification()).actions)[1].title))
+    }
+
+    @Test
     fun `re-sending stops after a bounded number of attempts`() {
         promotion.shown = { STALE_PUBLICATION }
         val bridge = enabledBridge()
