@@ -216,8 +216,9 @@ class YouTubeWebPoTokenProvider(
             }
             NPLogger.d(
                 TAG,
-                // completed 只代表跑完, ready=false 时页面没准备好, 后续铸 token 仍可能为空
-                "warmSession completed ready=${preparedPage != null} elapsedMs=${System.currentTimeMillis() - startedAtMs}"
+                // 缺 WebPoClient 时也会拿到快照, 只看非空会把铸不出 token 的页面报成 ready
+                "warmSession completed ready=${preparedPage?.let { it.hasYtcfg && it.hasWebPoClient } == true} " +
+                    "elapsedMs=${System.currentTimeMillis() - startedAtMs}"
             )
         } finally {
             accessMutex.unlock()

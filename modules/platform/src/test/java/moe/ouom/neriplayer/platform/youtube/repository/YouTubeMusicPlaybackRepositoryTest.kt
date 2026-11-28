@@ -3894,11 +3894,13 @@ class YouTubeMusicPlaybackRepositoryTest {
      *
      * @param playerResponses 以 X-YouTube-Client-Name 为键, 缺省的 client 一律 UNPLAYABLE
      * @param cipherSolved false 时不注入 resolver, n 解不开, 候选被丢弃 (真正的 sig/n 失败)
+     * @param onPlayerRequest 每次 player 请求发出前回调, 参数是 client id
      */
     private fun missingPotFallbackFixture(
         poTokenProvider: FakePoTokenProvider,
         playerResponses: Map<String, String> = emptyMap(),
-        cipherSolved: Boolean = true
+        cipherSolved: Boolean = true,
+        onPlayerRequest: (String) -> Unit = {}
     ): MissingPotFallbackFixture {
         val bootstrapHtml = """
             <html>
@@ -3950,6 +3952,7 @@ class YouTubeMusicPlaybackRepositoryTest {
                         request.url.encodedPath.contains("/youtubei/v1/player") -> {
                             val clientId = request.header("X-YouTube-Client-Name").orEmpty()
                             synchronized(playerRequestClientIds) { playerRequestClientIds += clientId }
+                            onPlayerRequest(clientId)
                             val json = when (clientId) {
                                 "67" -> webRemixDirectResponse
                                 else -> playerResponses[clientId] ?: unplayableResponse
@@ -4035,11 +4038,15 @@ class YouTubeMusicPlaybackRepositoryTest {
 
     @Test
     fun getBestPlayableAudio_retriesWebRemixWithLatePoTokenAfterFallbacksFail() = runBlocking {
-        val poTokenProvider = FakePoTokenProvider(
-            queuedTokens = mutableListOf("late-po-token"),
-            delayMs = 400L
+        // TV 请求发出时 WEB_REMIX 快路径必然已经放弃, 这时才放出 token, 不靠计时
+        val lateToken = CompletableDeferred<String?>()
+        val poTokenProvider = FakePoTokenProvider(gvsTokenResultGate = lateToken)
+        val fixture = missingPotFallbackFixture(
+            poTokenProvider = poTokenProvider,
+            onPlayerRequest = { clientId ->
+                if (clientId == "7") lateToken.complete("late-po-token")
+            }
         )
-        val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
 
         val playableAudio = withTimeout(5_000.milliseconds) {
             fixture.repository.getBestPlayableAudio(
