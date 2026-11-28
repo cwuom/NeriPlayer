@@ -22,9 +22,10 @@ class BaselineProfileGenerator {
         packageName = targetPackage,
         includeInStartupProfile = true
     ) {
-        // 首次安装后先看到引导页
+        // 首次安装后先看到引导页；fixture 广播会拉起进程，杀掉后才是冷启动
         killProcess()
         setOnboardingCompleted(false)
+        killProcess()
         pressHome()
         startActivityAndWait()
         waitForOnboarding()
