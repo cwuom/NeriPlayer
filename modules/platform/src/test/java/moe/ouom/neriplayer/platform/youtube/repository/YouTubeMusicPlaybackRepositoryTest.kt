@@ -19,6 +19,8 @@ import moe.ouom.neriplayer.data.model.youtube.auth.YOUTUBE_MUSIC_ORIGIN
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableAudio
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableException
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableReason
 import moe.ouom.neriplayer.platform.youtube.api.playback.satisfiesYouTubePlaybackQuality
 import moe.ouom.neriplayer.platform.youtube.api.potoken.YouTubePoTokenProvider
 import moe.ouom.neriplayer.platform.youtube.api.transport.resolveAuthorizationHeader
@@ -4071,14 +4073,9 @@ class YouTubeMusicPlaybackRepositoryTest {
         val poTokenProvider = FakePoTokenProvider(mutableListOf())
         val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
 
-        val playableAudio = withTimeout(5_000.milliseconds) {
-            fixture.repository.getBestPlayableAudio(
-                videoId = "demo-video",
-                forceRefresh = false
-            )
-        }
+        val error = awaitPoTokenUnavailable(fixture)
 
-        assertNull("player requests=${fixture.playerRequestClientIds}", playableAudio)
+        assertEquals(YouTubePoTokenUnavailableReason.EMPTY, error.reason)
         // token 确定拿不到时保持原来的请求预算: 每个 client 只问一轮, 不再整轮重试
         assertEquals(1, fixture.playerRequestClientIds.count { it == "67" })
         assertEquals(1, fixture.playerRequestClientIds.count { it == "7" })
@@ -4111,15 +4108,58 @@ class YouTubeMusicPlaybackRepositoryTest {
         val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
         val startedAtMs = System.currentTimeMillis()
 
-        val playableAudio = withTimeout(5_000.milliseconds) {
-            fixture.repository.getBestPlayableAudio(
-                videoId = "demo-video",
-                forceRefresh = false
-            )
-        }
+        val error = awaitPoTokenUnavailable(fixture)
 
-        assertNull("player requests=${fixture.playerRequestClientIds}", playableAudio)
+        assertEquals(YouTubePoTokenUnavailableReason.TIMEOUT, error.reason)
         assertTrue(System.currentTimeMillis() - startedAtMs < 4_000L)
         assertEquals(1, fixture.playerRequestClientIds.count { it == "67" })
+    }
+
+    @Test
+    fun getBestPlayableAudio_poTokenUnavailableReasonCarriesNoSessionValues() = runBlocking {
+        val fixture = missingPotFallbackFixture(poTokenProvider = FakePoTokenProvider(mutableListOf()))
+
+        val message = awaitPoTokenUnavailable(fixture).message.orEmpty()
+
+        // 原因会一路带到用户可见的提示里, 只能是固定短码
+        assertEquals("YouTube GVS PO token unavailable: empty", message)
+        listOf("visitor-data-123", "googlevideo", "SAPISID", "sid-value").forEach { secret ->
+            assertFalse("leaked $secret: $message", message.contains(secret))
+        }
+    }
+
+    @Test
+    fun getBestPlayableAudio_strictDirectMissingPoTokenReportsReasonWithoutLateWait() = runBlocking {
+        // 403 恢复已经阻塞等过 token, 不再走迟到等待; 重试轮跳过 WEB_REMIX 也不能抹掉缺 token 的结论
+        val poTokenProvider = FakePoTokenProvider(mutableListOf())
+        val fixture = missingPotFallbackFixture(poTokenProvider = poTokenProvider)
+
+        val error = awaitPoTokenUnavailable(fixture, allowUnverifiedDirectFallback = false)
+
+        assertEquals(YouTubePoTokenUnavailableReason.EMPTY, error.reason)
+        assertEquals(
+            "player requests=${fixture.playerRequestClientIds}",
+            1,
+            fixture.playerRequestClientIds.count { it == "67" }
+        )
+    }
+
+    private suspend fun awaitPoTokenUnavailable(
+        fixture: MissingPotFallbackFixture,
+        allowUnverifiedDirectFallback: Boolean = true
+    ): YouTubePoTokenUnavailableException {
+        try {
+            val playableAudio = withTimeout(5_000.milliseconds) {
+                fixture.repository.getBestPlayableAudio(
+                    videoId = "demo-video",
+                    forceRefresh = false,
+                    allowUnverifiedDirectFallback = allowUnverifiedDirectFallback
+                )
+            }
+            fail("Expected PO token unavailable, got $playableAudio; player requests=${fixture.playerRequestClientIds}")
+            throw AssertionError()
+        } catch (error: YouTubePoTokenUnavailableException) {
+            return error
+        }
     }
 }

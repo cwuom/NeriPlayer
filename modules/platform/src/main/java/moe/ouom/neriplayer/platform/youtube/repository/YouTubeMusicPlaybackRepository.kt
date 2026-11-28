@@ -65,6 +65,8 @@ import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerClientProfil
 import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayerPlayabilityStatus
 import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePlayableAudioSelection
 import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePlaybackStreamAccessOwner
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableException
+import moe.ouom.neriplayer.platform.youtube.api.playback.YouTubePoTokenUnavailableReason
 import moe.ouom.neriplayer.platform.youtube.api.playback.isTrustedYouTubeDirectUrlForStrictRecovery
 import moe.ouom.neriplayer.platform.youtube.api.playback.playableAudioMimePreferenceScore
 import moe.ouom.neriplayer.platform.youtube.api.playback.shouldUseAnonymousYouTubeNewPipeFallback
@@ -297,7 +299,9 @@ private class InFlightPlayableAudioEntry(
 
 private data class PlayerAudioResolution(
     val playableAudio: YouTubePlayableAudio? = null,
-    val metadata: YouTubeAudioMetadata? = null
+    val metadata: YouTubeAudioMetadata? = null,
+    // 没拿到流且原因是 WEB_REMIX 缺 GVS PoToken 时才有值
+    val poTokenUnavailableReason: YouTubePoTokenUnavailableReason? = null
 )
 
 class YouTubeMusicPlaybackRepository(
@@ -680,15 +684,17 @@ class YouTubeMusicPlaybackRepository(
             return playableAudio
         }
 
+        val poTokenUnavailableReason = playerResolution?.poTokenUnavailableReason
         if (!shouldUseAnonymousYouTubeNewPipeFallback(authProvider().normalized().hasLoginCookies())) {
             NPLogger.d(
                 "YouTubeMusicPlayback",
                 "skip anonymous NewPipe fallback for signed-in playback: videoId=$videoId"
             )
+            poTokenUnavailableReason?.let { throw YouTubePoTokenUnavailableException(it) }
             return null
         }
         ensureInitialized()
-        return resolvePlayableAudioViaNewPipe(
+        val newPipePlayableAudio = resolvePlayableAudioViaNewPipe(
             videoId = videoId,
             preferredQualityKey = preferredQualityKey,
             logFailure = logFailure,
@@ -705,6 +711,10 @@ class YouTubeMusicPlaybackRepository(
                 cachePlayableAudio(videoId, cacheKey, playableAudio)
             }
         }
+        if (newPipePlayableAudio == null && poTokenUnavailableReason != null) {
+            throw YouTubePoTokenUnavailableException(poTokenUnavailableReason)
+        }
+        return newPipePlayableAudio
     }
 
     private suspend fun resolvePlayableAudioShared(
@@ -937,6 +947,8 @@ class YouTubeMusicPlaybackRepository(
         val retrySkippedClientNames = mutableSetOf<String>()
         // 上一轮快路径放弃、随后才铸好的 WEB_REMIX token, 下一轮直接复用, 不再强制重铸
         var recoveredWebRemixPoTokenPrefetch: Deferred<String?>? = null
+        // 重试轮会跳过 WEB_REMIX, 没再问到它的那一轮不能抹掉前一轮缺 token 的结论; token 恢复后清空
+        var poTokenUnavailableReason: YouTubePoTokenUnavailableReason? = null
 
         repeat(PLAYER_REQUEST_MAX_ATTEMPTS) { attempt ->
             if (abortRemainingAttempts) {
@@ -1331,14 +1343,20 @@ class YouTubeMusicPlaybackRepository(
                 )
             }
 
-            val recoveredWebRemixPoToken =
-                sawMissingPoTokenDirectFallback &&
-                    !allowBlockingWebRemixPoToken &&
-                    attempt < PLAYER_REQUEST_MAX_ATTEMPTS - 1 &&
-                    streamAccessOwner.awaitLateWebRemixPoToken(
-                        videoId = videoId,
-                        prefetchedPoToken = webRemixPoTokenPrefetch
-                    ) != null
+            val missingWebRemixPoToken = if (sawMissingPoTokenDirectFallback) {
+                streamAccessOwner.resolveMissingWebRemixPoToken(
+                    videoId = videoId,
+                    prefetchedPoToken = webRemixPoTokenPrefetch,
+                    awaitLateToken = !allowBlockingWebRemixPoToken &&
+                        attempt < PLAYER_REQUEST_MAX_ATTEMPTS - 1
+                )
+            } else {
+                null
+            }
+            val recoveredWebRemixPoToken = missingWebRemixPoToken?.token != null
+            if (missingWebRemixPoToken != null) {
+                poTokenUnavailableReason = missingWebRemixPoToken.unavailableReason
+            }
             if (recoveredWebRemixPoToken) {
                 recoveredWebRemixPoTokenPrefetch = webRemixPoTokenPrefetch
                 retrySkippedClientNames -= YOUTUBE_PLAYER_WEB_REMIX_CLIENT_NAME
@@ -1399,12 +1417,17 @@ class YouTubeMusicPlaybackRepository(
             }
         }
 
-        if (bestMetadata != null) {
+        if (bestMetadata != null || poTokenUnavailableReason != null) {
             NPLogger.w(
                 "YouTubeMusicPlayback",
-                "player resolve returned metadata only: videoId=$videoId, elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
+                "player resolve returned metadata only: videoId=$videoId, " +
+                    "poTokenUnavailable=${poTokenUnavailableReason?.code}, " +
+                    "elapsedMs=${playbackElapsedMs(resolveStartedAtMs)}"
             )
-            return PlayerAudioResolution(metadata = bestMetadata)
+            return PlayerAudioResolution(
+                metadata = bestMetadata,
+                poTokenUnavailableReason = poTokenUnavailableReason
+            )
         }
         throw lastError ?: IOException("YouTube Music player request failed")
     }
