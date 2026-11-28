@@ -72,7 +72,12 @@ internal fun StoragePermissionLostDialogHost(state: StoragePermissionPromptState
     val launcher = rememberLauncherForActivityResult(remember { PersistableOpenDocumentTree() }) { picked ->
         val prompt = pendingRequest ?: state.current
         pendingRequest = null
-        if (picked == null || prompt == null) return@rememberLauncherForActivityResult
+        if (prompt == null) return@rememberLauncherForActivityResult
+        if (picked == null) {
+            // 取消选择时授权仍未恢复，重建后丢失的弹窗要重新给出
+            if (state.current == null) state.offer(prompt)
+            return@rememberLauncherForActivityResult
+        }
         verifying = true
         scope.launch {
             val outcome = reauthorizeStorageTree(context, prompt, picked)
