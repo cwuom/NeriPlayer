@@ -83,6 +83,26 @@ class NeteaseHomeRecommendationsTest {
     }
 
     @Test
+    fun parseHomePlaylists_dropsDuplicateIdsBeforeApplyingLimit() {
+        val raw = """
+            {
+              "code": 200,
+              "result": [
+                {"id": 14068844619, "name": "歌单 A", "picUrl": "https://p1.music.126.net/a.jpg"},
+                {"id": 14068844619, "name": "歌单 A 重复", "picUrl": "https://p1.music.126.net/a.jpg"},
+                {"id": 4004, "name": "歌单 B", "picUrl": "https://p1.music.126.net/b.jpg"},
+                {"id": 5005, "name": "歌单 C", "picUrl": "https://p1.music.126.net/c.jpg"}
+              ]
+            }
+        """.trimIndent()
+
+        val playlists = parseNeteaseHomePlaylists(raw, limit = 2)
+
+        assertEquals(listOf(14068844619L, 4004L), playlists.map { it.id })
+        assertEquals("歌单 A", playlists.first().name)
+    }
+
+    @Test
     fun parsePlaylistSources_readsRecommendAndPlaylistDetailShapes() {
         val dailyRaw = """
             {
