@@ -62,34 +62,58 @@ class NeteaseInputFormatTest {
     }
 
     @Test
-    fun `a late format callback cannot change the next stream's label`() {
+    fun `a late format callback cannot change the next stream's label`() = withCurrentStream { manager, report ->
+        report(MediaPeriodId("previous"))
+        assertEquals(info, manager._currentPlaybackAudioInfo.value)
+        report(MediaPeriodId("current"))
+        assertEquals("24 bit · 96 kHz · 3129 kbps", manager._currentPlaybackAudioInfo.value?.specLabel)
+    }
+
+    @Test
+    fun `pausing before the first format callback keeps the current stream's specs`() =
+        withCurrentStream { manager, report ->
+            // 缓冲期间暂停只递增请求令牌，不会重载媒体。
+            manager.playbackRequestToken += 1
+            manager.pendingMediaLoadActive = true
+            report(MediaPeriodId("current"))
+            assertEquals(info, manager._currentPlaybackAudioInfo.value)
+            manager.pendingMediaLoadActive = false
+            report(MediaPeriodId("current"))
+            assertEquals("24 bit · 96 kHz · 3129 kbps", manager._currentPlaybackAudioInfo.value?.specLabel)
+        }
+
+    private fun withCurrentStream(block: (PlayerManager, report: (MediaPeriodId) -> Unit) -> Unit) {
         val manager = PlayerManager
         val url = "https://example.org/current.flac"
         val fake = FakeExoPlayer().apply { mediaItem = MediaItem.fromUri(url) }
         val timeline = mock(Timeline::class.java)
-        val current = MediaPeriodId("current")
-        val previous = MediaPeriodId("previous")
         `when`(fake.player.currentTimeline).thenReturn(timeline)
-        `when`(timeline.getUidOfPeriod(0)).thenReturn(current.periodUid)
-        fun event(period: MediaPeriodId) = EventTime(0, timeline, 0, period, 0, timeline, 0, period, 0, 0)
+        `when`(timeline.getUidOfPeriod(0)).thenReturn(MediaPeriodId("current").periodUid)
         val input = Format.Builder().setSampleMimeType(MimeTypes.AUDIO_FLAC)
             .setPcmEncoding(C.ENCODING_PCM_24BIT).setSampleRate(96000).build()
         val savedInfo = manager._currentPlaybackAudioInfo.value
         val savedUrl = manager._currentMediaUrl.value
         val savedToken = manager.loadedMediaRequestToken
+        val savedRequestToken = manager.playbackRequestToken
+        val savedPending = manager.pendingMediaLoadActive
         fake.installInto(manager) {
             try {
                 manager.loadedMediaRequestToken = manager.playbackRequestToken
+                manager.pendingMediaLoadActive = false
                 manager._currentMediaUrl.value = url
                 manager._currentPlaybackAudioInfo.value = info
-                manager.updateNeteaseInputFormat(event(previous), input)
-                assertEquals(info, manager._currentPlaybackAudioInfo.value)
-                manager.updateNeteaseInputFormat(event(current), input)
-                assertEquals("24 bit · 96 kHz · 3129 kbps", manager._currentPlaybackAudioInfo.value?.specLabel)
+                block(manager) { period ->
+                    manager.updateNeteaseInputFormat(
+                        EventTime(0, timeline, 0, period, 0, timeline, 0, period, 0, 0),
+                        input
+                    )
+                }
             } finally {
                 manager._currentPlaybackAudioInfo.value = savedInfo
                 manager._currentMediaUrl.value = savedUrl
                 manager.loadedMediaRequestToken = savedToken
+                manager.playbackRequestToken = savedRequestToken
+                manager.pendingMediaLoadActive = savedPending
             }
         }
     }

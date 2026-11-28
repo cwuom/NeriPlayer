@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.dlna.protocol.FlacHeaderInspector
 import moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager
+import moe.ouom.neriplayer.core.player.policy.pending.shouldAcceptPlayerCallback
 import moe.ouom.neriplayer.core.player.url.stripListenTogetherStreamQualityMetadata
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
@@ -17,7 +18,8 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 internal fun PlayerManager.updateNeteaseInputFormat(event: AnalyticsListener.EventTime, format: Format) {
     val info = _currentPlaybackAudioInfo.value ?: return
     if (info.source != PlaybackAudioSource.NETEASE || DlnaCastManager.isCastingActive()) return
-    if (loadedMediaRequestToken != playbackRequestToken) return
+    // 暂停也会递增请求令牌但不重载媒体，只有等待新媒体加载时才拒绝回调。
+    if (!shouldAcceptPlayerCallback(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) return
 
     // 切歌或切音质时，旧音轨的回调可能在新播放地址生效后才到达。
     val period = event.mediaPeriodId ?: return

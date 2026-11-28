@@ -573,7 +573,7 @@ fun NowPlayingScreen(
         .collectAsStateWithLifecycle(initialValue = true)
     val showProgressAudioSpec by settingsRepo
         .nowPlayingProgressShowAudioSpecFlow
-        .collectAsStateWithLifecycle(initialValue = false)
+        .collectAsStateWithLifecycle(initialValue = true)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
