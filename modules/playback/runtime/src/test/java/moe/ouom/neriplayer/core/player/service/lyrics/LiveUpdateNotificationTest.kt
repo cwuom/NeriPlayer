@@ -516,6 +516,108 @@ class LiveUpdateNotificationTest {
     }
 
     @Test
+    fun `a pause the system dropped is sent again so the card offers play`() {
+        promotion.shown = { postedNotification()?.let(::liveUpdatePublication) }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+        val playing = checkNotNull(postedNotification())
+
+        bridge.publish(frame.copy(playing = false))
+        idleFor(LiveLyricNotificationBridge.MIN_UPDATE_INTERVAL_MS)
+        assertEquals(text(R.string.player_play), spokenLabel(checkNotNull(checkNotNull(postedNotification()).actions)[1].title))
+        // 超出入队频率时系统丢弃这次更新，继续保存播放态；之后的暂停帧内容相同，不会再触发发布
+        manager.notify(LiveLyricNotificationBridge.NOTIFICATION_ID, playing)
+        bridge.publish(frame.copy(playing = false))
+        idleFor(LiveLyricNotificationBridge.PUBLICATION_CHECK_DELAY_MS + 100L)
+
+        val repaired = checkNotNull(postedNotification())
+        assertEquals(text(R.string.player_play), spokenLabel(checkNotNull(repaired.actions)[1].title))
+        assertFalse(repaired.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER))
+    }
+
+    @Test
+    fun `continuous playback still verifies publication once the defer limit is reached`() {
+        promotion.shown = { STALE_PUBLICATION }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+
+        // 播放器每秒推送新位置，每次发布都会推迟核对；未确认超过上限后仍要核对，更新被持续丢弃时才能补发
+        var positionMs = frame.positionMs
+        repeat((LiveLyricNotificationBridge.PUBLICATION_CHECK_MAX_DEFER_MS / 1_000L).toInt() + 1) {
+            idleFor(1_000L)
+            positionMs += 1_000L
+            bridge.publish(frame.copy(positionMs = positionMs))
+        }
+
+        assertTrue(promotion.publicationQueries > 0)
+    }
+
+    @Test
+    fun `re-sending stops after a bounded number of attempts`() {
+        promotion.shown = { STALE_PUBLICATION }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+        bridge.publish(frame.copy(playing = false))
+        idleFor(LiveLyricNotificationBridge.MIN_UPDATE_INTERVAL_MS)
+        val pausedPublication = liveUpdatePublication(checkNotNull(postedNotification()))
+
+        idleFor(20_000L)
+
+        assertEquals(
+            pausedPublication + LiveLyricNotificationBridge.PUBLICATION_MAX_RESENDS,
+            liveUpdatePublication(checkNotNull(postedNotification())),
+        )
+    }
+
+    @Test
+    fun `a confirmed publication is not sent again`() {
+        promotion.shown = { postedNotification()?.let(::liveUpdatePublication) }
+        val bridge = enabledBridge()
+        // 时长未知没有进度节拍，之后不会再有发布
+        bridge.publish(frame.copy(durationMs = 0L))
+        idle()
+        val first = checkNotNull(postedNotification())
+
+        idleFor(10_000L)
+
+        assertSame(first, postedNotification())
+    }
+
+    @Test
+    fun `a removed live update is not brought back by the publication check`() {
+        promotion.shown = { postedNotification()?.let(::liveUpdatePublication) }
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+        bridge.publish(frame.copy(playing = false))
+        idleFor(LiveLyricNotificationBridge.MIN_UPDATE_INTERVAL_MS)
+
+        // 划掉或超时后通知已不在，是否算用户划掉由 deleteIntent 决定，核对不能把它发回来
+        manager.cancel(LiveLyricNotificationBridge.NOTIFICATION_ID)
+        idleFor(LiveLyricNotificationBridge.PUBLICATION_CHECK_DELAY_MS * 3)
+
+        assertNull(postedNotification())
+    }
+
+    @Test
+    fun `the system port reads the publication the notification manager keeps`() {
+        val port = AndroidLiveUpdatePromotionPort(manager)
+        assertNull(port.shownPublication(LiveLyricNotificationBridge.NOTIFICATION_ID))
+
+        val bridge = enabledBridge()
+        bridge.publish(frame)
+        idle()
+
+        assertEquals(
+            liveUpdatePublication(checkNotNull(postedNotification())),
+            port.shownPublication(LiveLyricNotificationBridge.NOTIFICATION_ID),
+        )
+    }
+
+    @Test
     fun `controls route to the playback service actions`() {
         val actions = checkNotNull(build(playingContent, chronometerBaseWallMs = null).actions)
 
@@ -587,6 +689,7 @@ class LiveUpdateNotificationTest {
 
     private companion object {
         const val ACCENT = 0xFF3482FF.toInt()
+        const val STALE_PUBLICATION = 0L
         const val AWAIT_ATTEMPTS = 200
         const val AWAIT_STEP_MS = 10L
         const val PREVIOUS_GLYPH = "\u23EE\uFE0E"
