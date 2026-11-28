@@ -44,8 +44,8 @@
     <string name="settings_nowplaying_keep_screen_on_desc">打开播放页时保持屏幕唤醒，离开后恢复系统自动锁屏</string>
     <string name="settings_nowplaying_cover_lyrics">封面页显示歌词</string>
     <string name="settings_nowplaying_cover_lyrics_desc">在正在播放的封面页显示逐行歌词</string>
-    <string name="settings_nowplaying_progress_quality_switch">进度条上方显示当前音质</string>
-    <string name="settings_nowplaying_progress_quality_switch_desc">显示在进度条上方；音质切换入口位于更多选项</string>
+    <string name="settings_nowplaying_progress_quality_switch">进度条下方显示当前音质</string>
+    <string name="settings_nowplaying_progress_quality_switch_desc">显示在进度条下方；音质切换入口位于更多选项</string>
     <string name="settings_nowplaying_toolbar_dock">底部工具栏使用 Dock 样式</string>
     <string name="settings_nowplaying_toolbar_dock_desc">为播放页底部工具栏显示圆角 Dock 容器</string>
     <string name="settings_nowplaying_toolbar_dock_disabled_by_control_position">主播放控件已贴底，为避免与 Dock 重叠，Dock 效果暂时关闭</string>
@@ -61,10 +61,10 @@
     <string name="settings_playback_control_size_small">小</string>
     <string name="settings_playback_control_size_medium">中</string>
     <string name="settings_playback_control_size_large">大</string>
-    <string name="settings_nowplaying_progress_audio_codec">进度条上方显示解码格式</string>
-    <string name="settings_nowplaying_progress_audio_codec_desc">显示在进度条上方，如 FLAC、AAC、E-AC-3</string>
+    <string name="settings_nowplaying_progress_audio_codec">进度条下方显示解码格式</string>
+    <string name="settings_nowplaying_progress_audio_codec_desc">显示在进度条下方，如 FLAC、AAC、E-AC-3</string>
     <string name="settings_nowplaying_progress_audio_spec">进度条上方显示音源规格</string>
-    <string name="settings_nowplaying_progress_audio_spec_desc">显示在进度条上方，包括采样率、位深、码率</string>
+    <string name="settings_nowplaying_progress_audio_spec_desc">显示在进度条上方，包括位深、采样率、码率</string>
     <string name="settings_select_color">选择主题色</string>
     <string name="settings_apply_color">应用颜色</string>
     <string name="settings_add_to_palette">添加到取色盘</string>

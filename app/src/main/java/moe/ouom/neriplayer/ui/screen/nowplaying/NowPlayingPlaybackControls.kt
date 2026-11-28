@@ -76,24 +76,10 @@ internal data class NowPlayingProgressInfoSegment(
     val highlighted: Boolean = false
 )
 
+/** null 隐藏该行，空列表在音轨信息加载期间保留行高。 */
 internal data class NowPlayingProgressInfoPresentation(
-    val segments: List<NowPlayingProgressInfoSegment>,
-    val reserveRowHeight: Boolean
-)
-
-internal fun nowPlayingVisibleProgressInfoSegments(
-    segments: List<NowPlayingProgressInfoSegment>,
-    phoneLandscape: Boolean
-): List<NowPlayingProgressInfoSegment> = if (phoneLandscape) emptyList() else segments
-
-internal fun shouldReserveNowPlayingProgressInfoSpace(
-    showQualitySwitch: Boolean,
-    showAudioCodec: Boolean,
-    showAudioSpec: Boolean,
-    playbackSpeed: Float,
-    phoneLandscape: Boolean
-): Boolean = !phoneLandscape && (
-    showQualitySwitch || showAudioCodec || showAudioSpec || shouldShowPlaybackSpeedBadge(playbackSpeed)
+    val specRow: List<NowPlayingProgressInfoSegment>?,
+    val badgeRow: List<NowPlayingProgressInfoSegment>?
 )
 
 internal class NowPlayingProgressOwner(initialPositionMs: Long) {
@@ -221,14 +207,10 @@ internal fun buildNowPlayingProgressInfoPresentation(
     playbackSpeed: Float,
     phoneLandscape: Boolean
 ): NowPlayingProgressInfoPresentation {
-    val segments = buildNowPlayingProgressInfoSegments(
-        audioInfo, showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed
-    )
+    val showBadges = !phoneLandscape && (showQualitySwitch || showAudioCodec || shouldShowPlaybackSpeedBadge(playbackSpeed))
     return NowPlayingProgressInfoPresentation(
-        segments = nowPlayingVisibleProgressInfoSegments(segments, phoneLandscape),
-        reserveRowHeight = shouldReserveNowPlayingProgressInfoSpace(
-            showQualitySwitch, showAudioCodec, showAudioSpec, playbackSpeed, phoneLandscape
-        )
+        specRow = if (showAudioSpec) listOfNotNull(audioInfo?.specLabel?.let(::NowPlayingProgressInfoSegment)) else null,
+        badgeRow = if (showBadges) buildNowPlayingProgressInfoSegments(audioInfo, showQualitySwitch, showAudioCodec, playbackSpeed) else null
     )
 }
 
@@ -236,15 +218,13 @@ internal fun buildNowPlayingProgressInfoSegments(
     audioInfo: PlaybackAudioInfo?,
     showQualitySwitch: Boolean,
     showAudioCodec: Boolean,
-    showAudioSpec: Boolean,
     playbackSpeed: Float
 ): List<NowPlayingProgressInfoSegment> {
     if (audioInfo == null) return emptyList()
     return listOfNotNull(
         progressQualityBadge(audioInfo, showQualitySwitch),
         progressSpeedBadge(playbackSpeed),
-        progressCodecBadge(audioInfo, showAudioCodec),
-        progressSpecBadge(audioInfo, showAudioSpec)
+        progressCodecBadge(audioInfo, showAudioCodec)
     )
 }
 
@@ -259,10 +239,6 @@ private fun progressSpeedBadge(speed: Float): NowPlayingProgressInfoSegment? =
 
 private fun progressCodecBadge(info: PlaybackAudioInfo, enabled: Boolean): NowPlayingProgressInfoSegment? =
     info.codecLabel?.takeIf { enabled && it.isNotBlank() }
-        ?.let(::NowPlayingProgressInfoSegment)
-
-private fun progressSpecBadge(info: PlaybackAudioInfo, enabled: Boolean): NowPlayingProgressInfoSegment? =
-    info.specLabel?.takeIf { enabled && it.isNotBlank() }
         ?.let(::NowPlayingProgressInfoSegment)
 
 private fun shouldShowPlaybackSpeedBadge(playbackSpeed: Float): Boolean {
@@ -282,7 +258,7 @@ private fun NowPlayingProgressInfoRow(
     val lineHeight = with(LocalDensity.current) { MaterialTheme.typography.labelSmall.lineHeight.toDp() }
     Box(
         // 固定槽高让信息加载和字体回退不再改变封面的可用高度
-        modifier = modifier.height(lineHeight).testTag("nowPlayingProgressInfoRow"),
+        modifier = modifier.height(lineHeight),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -387,10 +363,8 @@ internal fun NowPlayingProgressSection(
     progressInfoPresentation: NowPlayingProgressInfoPresentation,
     seekEnabled: Boolean,
     activeContentColor: Color,
-    useWideLandscapeLayout: Boolean,
     onPreviewPositionChange: (Long?) -> Unit,
     modifier: Modifier = Modifier,
-    tabletLandscape: Boolean = false,
     progressRowModifier: Modifier = Modifier
 ) {
     val playbackSource = LocalNowPlayingPlaybackSource.current
@@ -415,6 +389,13 @@ internal fun NowPlayingProgressSection(
     }
 
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        progressInfoPresentation.specRow?.let { specs ->
+            NowPlayingProgressInfoRow(
+                segments = specs,
+                highlightedContentColor = activeContentColor,
+                modifier = Modifier.fillMaxWidth().testTag("nowPlayingProgressSpecRow")
+            )
+        }
         NowPlayingProgressRow(
             owner = owner,
             currentPosition = currentPosition,
@@ -430,17 +411,11 @@ internal fun NowPlayingProgressSection(
             lyricSeekHaptic = lyricSeekHaptic,
             modifier = Modifier.fillMaxWidth().then(progressRowModifier)
         )
-        if (progressInfoPresentation.reserveRowHeight || progressInfoPresentation.segments.isNotEmpty()) {
+        progressInfoPresentation.badgeRow?.let { badges ->
             NowPlayingProgressInfoRow(
-                segments = progressInfoPresentation.segments,
+                segments = badges,
                 highlightedContentColor = activeContentColor,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .offset(y = when {
-                        tabletLandscape -> (-1).dp
-                        useWideLandscapeLayout -> (-5).dp
-                        else -> (-6).dp
-                    })
+                modifier = Modifier.fillMaxWidth().testTag("nowPlayingProgressInfoRow")
             )
         }
     }

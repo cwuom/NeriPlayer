@@ -18,7 +18,7 @@ class PlaybackAudioInfoFormattingTest {
     @Test
     fun `spec labels list only positive values`() {
         assertEquals(
-            "44.1 kHz | 24 bit",
+            "24 bit · 44.1 kHz",
             PlaybackAudioInfo(PlaybackAudioSource.LOCAL, sampleRateHz = 44_100, bitDepth = 24, bitrateKbps = 0).specLabel
         )
         assertEquals("320 kbps", PlaybackAudioInfo(PlaybackAudioSource.NETEASE, bitrateKbps = 320).specLabel)

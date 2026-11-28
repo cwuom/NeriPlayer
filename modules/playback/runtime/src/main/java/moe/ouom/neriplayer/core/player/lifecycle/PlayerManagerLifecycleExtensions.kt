@@ -556,6 +556,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
                     "sampleRate=${format.sampleRate}, channels=${format.channelCount}, " +
                     "pcmEncoding=${format.pcmEncoding}"
             )
+            updateNeteaseInputFormat(eventTime, format)
         }
 
         override fun onAudioDecoderInitialized(

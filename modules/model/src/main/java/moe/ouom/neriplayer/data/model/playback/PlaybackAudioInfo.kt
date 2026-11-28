@@ -42,10 +42,10 @@ fun buildPlaybackSpecLabel(
     bitrateKbps: Int?
 ): String? {
     val parts = mutableListOf<String>()
-    sampleRateHz?.takeIf { it > 0 }?.let { parts += formatPlaybackSampleRate(it) }
     bitDepth?.takeIf { it > 0 }?.let { parts += "$it bit" }
+    sampleRateHz?.takeIf { it > 0 }?.let { parts += formatPlaybackSampleRate(it) }
     bitrateKbps?.takeIf { it > 0 }?.let { parts += "$it kbps" }
-    return parts.takeIf { it.isNotEmpty() }?.joinToString(separator = " | ")
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(separator = " · ")
 }
 
 fun formatPlaybackSampleRate(sampleRateHz: Int): String {

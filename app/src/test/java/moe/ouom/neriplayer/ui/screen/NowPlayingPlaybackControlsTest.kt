@@ -12,8 +12,6 @@ import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoPrese
 import moe.ouom.neriplayer.ui.screen.nowplaying.buildNowPlayingProgressInfoSegments
 import moe.ouom.neriplayer.ui.screen.nowplaying.isNowPlayingPhoneLandscape
 import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingProgressFraction
-import moe.ouom.neriplayer.ui.screen.nowplaying.nowPlayingVisibleProgressInfoSegments
-import moe.ouom.neriplayer.ui.screen.nowplaying.shouldReserveNowPlayingProgressInfoSpace
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -33,94 +31,62 @@ class NowPlayingPlaybackControlsTest {
         )
         val loaded = buildNowPlayingProgressInfoPresentation(info, true, true, true, 1f, false)
         val loading = buildNowPlayingProgressInfoPresentation(null, true, true, true, 1f, false)
-        assertEquals(listOf("Hi-Res", "FLAC", "96 kHz | 24 bit"), loaded.segments.map { it.label })
-        assertTrue(loaded.reserveRowHeight)
-        assertTrue(loading.segments.isEmpty())
-        assertTrue(loading.reserveRowHeight)
-
-        val disabled = buildNowPlayingProgressInfoPresentation(info, false, false, false, 1f, false)
-        assertTrue(disabled.segments.isEmpty())
-        assertFalse(disabled.reserveRowHeight)
-        val speedOnly = buildNowPlayingProgressInfoPresentation(null, false, false, false, 1.25f, false)
-        assertTrue(speedOnly.segments.isEmpty())
-        assertTrue(speedOnly.reserveRowHeight)
-        val phoneLandscape = buildNowPlayingProgressInfoPresentation(info, true, true, true, 1.25f, true)
-        assertTrue(phoneLandscape.segments.isEmpty())
-        assertFalse(phoneLandscape.reserveRowHeight)
+        assertEquals(listOf("24 bit · 96 kHz"), loaded.specRow?.map { it.label })
+        assertEquals(listOf("Hi-Res", "FLAC"), loaded.badgeRow?.map { it.label })
+        assertEquals(emptyList<NowPlayingProgressInfoSegment>(), loading.specRow)
+        assertEquals(emptyList<NowPlayingProgressInfoSegment>(), loading.badgeRow)
     }
 
     @Test
-    fun `information space follows display settings rather than transient audio data`() {
-        listOf(
-            Triple(true, false, false),
-            Triple(false, true, false),
-            Triple(false, false, true)
-        ).forEach { (quality, codec, spec) ->
-            assertTrue(shouldReserveNowPlayingProgressInfoSpace(quality, codec, spec, 1f, false))
-            assertFalse(shouldReserveNowPlayingProgressInfoSpace(quality, codec, spec, 1f, true))
+    fun `row space follows each setting while metadata is loading`() {
+        fun checkRows(quality: Boolean, codec: Boolean, spec: Boolean, speed: Float, phone: Boolean) {
+            val layout = buildNowPlayingProgressInfoPresentation(null, quality, codec, spec, speed, phone)
+            assertEquals(spec, layout.specRow != null)
+            assertEquals(!phone && (quality || codec || speed == 1.25f), layout.badgeRow != null)
         }
-        assertFalse(shouldReserveNowPlayingProgressInfoSpace(false, false, false, 1f, false))
-        assertTrue(shouldReserveNowPlayingProgressInfoSpace(false, false, false, 1.25f, false))
-        assertFalse(shouldReserveNowPlayingProgressInfoSpace(false, false, false, 1.004f, false))
-        assertFalse(shouldReserveNowPlayingProgressInfoSpace(true, true, true, 1.25f, true))
-    }
-
-    @Test
-    fun `only phone landscape hides audio badges and rotating back restores the original information`() {
-        val segments = listOf(
-            NowPlayingProgressInfoSegment("高清环绕声", highlighted = true),
-            NowPlayingProgressInfoSegment("FLAC"),
-            NowPlayingProgressInfoSegment("96 kHz | 24 bit")
-        )
-
-        assertTrue(nowPlayingVisibleProgressInfoSegments(
-            segments, phoneLandscape = isNowPlayingPhoneLandscape(true, 599)
-        ).isEmpty())
-        assertSame(segments, nowPlayingVisibleProgressInfoSegments(
-            segments, phoneLandscape = isNowPlayingPhoneLandscape(false, 599)
-        ))
-        listOf(600, 800).forEach { tabletWidth ->
-            listOf(true, false).forEach { landscape ->
-                assertSame(segments, nowPlayingVisibleProgressInfoSegments(
-                    segments, phoneLandscape = isNowPlayingPhoneLandscape(landscape, tabletWidth)
-                ))
-            }
+        for (phone in listOf(false, true)) {
+            checkRows(false, false, false, 1f, phone)
+            checkRows(true, false, false, 1f, phone)
+            checkRows(false, true, false, 1f, phone)
+            checkRows(false, false, true, 1f, phone)
+            checkRows(true, true, true, 1.25f, phone)
+            checkRows(false, false, false, 1.25f, phone)
+            checkRows(false, false, false, 1.004f, phone)
         }
-        assertEquals(3, segments.size)
-        assertTrue(segments.first().highlighted)
     }
 
     @Test
-    fun `tablet audio badges still respect individual display settings`() {
+    fun `phone landscape follows the spec setting and rotation restores the lower badges`() {
         val info = PlaybackAudioInfo(
-            source = PlaybackAudioSource.NETEASE,
-            qualityLabel = "Hi-Res",
-            codecLabel = "FLAC",
-            sampleRateHz = 96000,
-            bitDepth = 24
+            PlaybackAudioSource.NETEASE, qualityLabel = "高清环绕声", codecLabel = "FLAC",
+            bitDepth = 24, sampleRateHz = 96_000, bitrateKbps = 3129
         )
-        val tabletLandscape = isNowPlayingPhoneLandscape(true, 800)
-        assertEquals(
-            listOf(NowPlayingProgressInfoSegment("Hi-Res", highlighted = true)),
-            nowPlayingVisibleProgressInfoSegments(
-                buildNowPlayingProgressInfoSegments(info, true, false, false, 1f), tabletLandscape
-            )
-        )
-        assertEquals(
-            listOf(NowPlayingProgressInfoSegment("FLAC")),
-            nowPlayingVisibleProgressInfoSegments(
-                buildNowPlayingProgressInfoSegments(info, false, true, false, 1f), tabletLandscape
-            )
-        )
-        assertEquals(
-            listOf(NowPlayingProgressInfoSegment("96 kHz | 24 bit")),
-            nowPlayingVisibleProgressInfoSegments(
-                buildNowPlayingProgressInfoSegments(info, false, false, true, 1f), tabletLandscape
-            )
-        )
-        assertTrue(nowPlayingVisibleProgressInfoSegments(
-            buildNowPlayingProgressInfoSegments(info, false, false, false, 1f), tabletLandscape
-        ).isEmpty())
+        fun layout(landscape: Boolean, width: Int, showSpec: Boolean) =
+            buildNowPlayingProgressInfoPresentation(info, true, true, showSpec, 1.25f,
+                isNowPlayingPhoneLandscape(landscape, width))
+
+        val spec = listOf(NowPlayingProgressInfoSegment("24 bit · 96 kHz · 3129 kbps"))
+        assertEquals(spec, layout(true, 599, true).specRow)
+        assertNull(layout(true, 599, false).specRow)
+        assertNull(layout(true, 599, true).badgeRow)
+        val badges = listOf("高清环绕声", "1.25x", "FLAC")
+        assertEquals(badges, layout(false, 599, true).badgeRow?.map { it.label })
+        assertEquals(badges, layout(false, 599, false).badgeRow?.map { it.label })
+        for (width in listOf(600, 800)) {
+            assertEquals(spec, layout(true, width, true).specRow)
+            assertEquals(badges, layout(true, width, true).badgeRow?.map { it.label })
+        }
+    }
+
+    @Test
+    fun `tablet quality and codec settings affect only the lower row`() {
+        val info = PlaybackAudioInfo(PlaybackAudioSource.NETEASE, qualityLabel = "Hi-Res", codecLabel = "FLAC")
+        fun badges(quality: Boolean, codec: Boolean) =
+            buildNowPlayingProgressInfoPresentation(info, quality, codec, true, 1f, false).badgeRow
+
+        assertEquals(listOf(NowPlayingProgressInfoSegment("Hi-Res", highlighted = true)), badges(true, false))
+        assertEquals(listOf(NowPlayingProgressInfoSegment("FLAC")), badges(false, true))
+        assertNull(badges(false, false))
     }
 
     @Test
@@ -321,18 +287,17 @@ class NowPlayingPlaybackControlsTest {
             listOf(
                 NowPlayingProgressInfoSegment("Hi-Res", highlighted = true),
                 NowPlayingProgressInfoSegment("1.25x"),
-                NowPlayingProgressInfoSegment("FLAC"),
-                NowPlayingProgressInfoSegment("96 kHz | 24 bit")
+                NowPlayingProgressInfoSegment("FLAC")
             ),
-            buildNowPlayingProgressInfoSegments(info, true, true, true, 1.25f)
+            buildNowPlayingProgressInfoSegments(info, true, true, 1.25f)
         )
         assertEquals(
             listOf(NowPlayingProgressInfoSegment("FLAC")),
-            buildNowPlayingProgressInfoSegments(info, false, true, false, 1f)
+            buildNowPlayingProgressInfoSegments(info, false, true, 1f)
         )
         assertEquals(
             emptyList<NowPlayingProgressInfoSegment>(),
-            buildNowPlayingProgressInfoSegments(null, true, true, true, 1.25f)
+            buildNowPlayingProgressInfoSegments(null, true, true, 1.25f)
         )
         assertEquals(
             emptyList<NowPlayingProgressInfoSegment>(),
@@ -343,7 +308,7 @@ class NowPlayingPlaybackControlsTest {
                     sampleRateHz = null,
                     bitDepth = null
                 ),
-                true, true, true, 1f
+                true, true, 1f
             )
         )
     }

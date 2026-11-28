@@ -573,7 +573,7 @@ fun NowPlayingScreen(
         .collectAsStateWithLifecycle(initialValue = true)
     val showProgressAudioSpec by settingsRepo
         .nowPlayingProgressShowAudioSpecFlow
-        .collectAsStateWithLifecycle(initialValue = true)
+        .collectAsStateWithLifecycle(initialValue = false)
     val lyricTranslationUsePhonetic by settingsRepo
         .lyricTranslationUsePhoneticFlow
         .collectAsStateWithLifecycle(initialValue = false)
@@ -1419,9 +1419,7 @@ fun NowPlayingScreen(
                                     progressInfoPresentation = progressInfoPresentation,
                                     seekEnabled = playbackProgressSeekEnabled,
                                     activeContentColor = targetNowPlayingActiveIconColor,
-                                    useWideLandscapeLayout = useWideLandscapeLayout,
                                     onPreviewPositionChange = { previewPositionOverrideMs = it },
-                                    tabletLandscape = useWideLandscapeLayout && !phoneLandscape,
                                     progressRowModifier = Modifier
                                         .sharedBounds(
                                             rememberSharedContentState(

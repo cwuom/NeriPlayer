@@ -13,7 +13,7 @@ class PlaybackAudioInfoTest {
     @Test
     fun buildPlaybackSpecLabel_formatsAvailableFields() {
         assertEquals(
-            "96 kHz | 24 bit | 3129 kbps",
+            "24 bit · 96 kHz · 3129 kbps",
             buildPlaybackSpecLabel(
                 sampleRateHz = 96_000,
                 bitDepth = 24,
@@ -21,7 +21,7 @@ class PlaybackAudioInfoTest {
             )
         )
         assertEquals(
-            "44.1 kHz | 320 kbps",
+            "44.1 kHz · 320 kbps",
             buildPlaybackSpecLabel(
                 sampleRateHz = 44_100,
                 bitDepth = null,

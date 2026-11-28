@@ -635,21 +635,21 @@ class NowPlayingLandscapeFlowTest {
         assertEquals("返回应只关闭歌词调整", pageBounds, page.assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
     }
 
-    private fun assertPlaybackInformationVisible(visible: Boolean, pageTag: String? = null) {
+    private fun assertPlaybackInformationVisible(codecVisible: Boolean, pageTag: String? = null, specVisible: Boolean = true) {
         // 本地歌曲不一定有音质标签，使用播放器实际探测出的编码和规格
-        var labels: List<String>? = null
+        var labels: List<Pair<String, Boolean>>? = null
         composeRule.waitUntil(PLAYER_TIMEOUT_MS) {
             composeRule.mainClock.advanceTimeBy(64L)
             val audioInfo = PlayerManager.currentPlaybackAudioInfoFlow.value
             val codec = audioInfo?.codecLabel?.takeIf { it.isNotBlank() }
             val spec = audioInfo?.specLabel?.takeIf { it.isNotBlank() }
             if (codec != null && spec != null) {
-                labels = listOf(codec, spec)
+                labels = listOf(codec to codecVisible, spec to specVisible)
                 true
             } else false
         }
         val expectedLabels = checkNotNull(labels)
-        expectedLabels.forEach { label ->
+        expectedLabels.forEach { (label, visible) ->
             val matcher = if (visible && pageTag != null) {
                 hasText(label) and hasAnyAncestor(hasTestTag(pageTag))
             } else hasText(label)
@@ -867,7 +867,13 @@ class NowPlayingLandscapeFlowTest {
         }
         assertRequestedOrientation(scenario, ActivityInfo.SCREEN_ORIENTATION_FULL_USER)
         waitForLandscapeCoverReady(songName)
-        assertPlaybackInformationVisible(false, "nowPlayingLandscapeCoverPage")
+        assertPlaybackInformationVisible(codecVisible = false, pageTag = "nowPlayingLandscapeCoverPage")
+        val settings = SettingsRepository(context)
+        runBlocking { settings.setNowPlayingProgressShowAudioSpec(false) }
+        assertPlaybackInformationVisible(codecVisible = false, pageTag = "nowPlayingLandscapeCoverPage", specVisible = false)
+        composeRule.onNodeWithTag("nowPlayingProgressSpecRow", useUnmergedTree = true).assertDoesNotExist()
+        runBlocking { settings.setNowPlayingProgressShowAudioSpec(true) }
+        assertPlaybackInformationVisible(codecVisible = false, pageTag = "nowPlayingLandscapeCoverPage")
         capture(context, "player-reopened")
     }
 
