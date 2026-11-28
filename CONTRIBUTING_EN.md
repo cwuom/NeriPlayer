@@ -150,6 +150,23 @@ Security requirements:
 - Config exports exclude login state by default (`includeLoginState=false`).
 - With login state included, the export carries platform authorization and GitHub / WebDAV sync credentials. Never upload it publicly or attach it to tests.
 
+#### Baseline Profile
+
+Release builds ship the baseline / startup profiles in `app/src/release/generated/baselineProfiles/`. ART precompiles cold start and the main-screen hot paths at install time, and R8 uses the startup profile for dex layout.
+
+- The generator and the startup benchmark live in `:baselineprofile` and run against the plugin-derived `nonMinifiedRelease` / `benchmarkRelease` variants.
+  - Both variants use the `.benchmark` application ID and debug signing, so they can sit next to the regular app.
+  - Only these variants contain `BaselineProfileFixtureReceiver`, callable only from `adb shell`, which toggles the first-launch onboarding state.
+- Regenerate and commit the profiles after larger changes to startup, main navigation, or the first screen. This needs an API 33+ emulator or device; set `ANDROID_SERIAL` when more than one is connected:
+  ```bash
+  ANDROID_SERIAL=emulator-5554 ./gradlew :app:generateBaselineProfile
+  ```
+- Compare cold start without precompilation against the profile:
+  ```bash
+  ANDROID_SERIAL=emulator-5554 ./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest
+  ```
+- CI does not run generation or benchmarks; release builds use the committed profiles.
+
 ---
 
 ### Project Layout
@@ -200,6 +217,7 @@ Library responsibilities:
 - **App and tooling**: `:app` owns Android entry points, Compose screens, and dependency assembly.
   - KSP tools, the upstream lyrics submodule, `build-logic`, and the Listen Together server are outside the 15-library count.
   - The vendored Miuix source and docs tree is outside the app build.
+  - `:baselineprofile`, the test module for Baseline Profile generation and startup benchmarks, is outside the count as well.
 
 Dependency rules:
 

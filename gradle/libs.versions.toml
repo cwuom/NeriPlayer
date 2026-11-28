@@ -61,6 +61,8 @@ zxingCore = "3.5.4"
 shizuku = "13.1.5"
 focusApi = "1.4"
 hiddenApiBypass = "6.1"
+benchmark = "1.5.0"
+profileinstaller = "1.4.1"
 
 [libraries]
 nanohttpd = { module = "org.nanohttpd:nanohttpd", version.ref = "nanoHttpd" }
@@ -145,12 +147,16 @@ eclipse-jgit = { module = "org.eclipse.jgit:org.eclipse.jgit", version = "6.9.0.
 reorderable = { module = "org.burnoutcrew.composereorderable:reorderable", version.ref = "reorderable" }
 sh-calvin-reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "shCalvinReorderable" }
 androidx-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
+androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
 
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-jvm          = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose      = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp                 = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }

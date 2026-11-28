@@ -150,6 +150,23 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
 - 配置导出默认不含登录态（`includeLoginState=false`）。
 - 勾选登录态后，导出文件携带平台授权与 GitHub / WebDAV 同步凭据，禁止公开上传或作为测试附件。
 
+#### Baseline Profile
+
+Release 包内置 `app/src/release/generated/baselineProfiles/` 下的 baseline / startup profile，安装后由 ART 预编译冷启动和主界面热路径，并用于 R8 dex 重排。
+
+- 生成器与启动基准位于 `:baselineprofile`，跑在插件派生的 `nonMinifiedRelease` / `benchmarkRelease` 上。
+  - 这两个变体使用 `.benchmark` 包名和 debug 签名，可与正式版共存。
+  - 只有这两个变体带 `BaselineProfileFixtureReceiver`，仅 `adb shell` 可调用，用来切换首启引导状态。
+- 启动流程、主导航或首屏有较大改动后重新生成并提交 profile。需要一台 API 33+ 的模拟器或设备，连接多台时用 `ANDROID_SERIAL` 指定：
+  ```bash
+  ANDROID_SERIAL=emulator-5554 ./gradlew :app:generateBaselineProfile
+  ```
+- 对比无预编译与使用 profile 的冷启动耗时：
+  ```bash
+  ANDROID_SERIAL=emulator-5554 ./gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest
+  ```
+- CI 不运行生成和基准，Release 构建直接使用已提交的 profile。
+
 ---
 
 ### 项目结构与当前实现 / Project Layout
@@ -200,6 +217,7 @@ NeriPlayer 功能面较宽，提交前优先保护以下链路。
 - **应用与工具**：`:app` 维护 Android 入口、Compose 页面和依赖组装。
   - KSP 工具、上游歌词子模块、`build-logic` 和一起听服务端不计入 15 个库。
   - Miuix 的上游源码与文档树不参与主应用构建。
+  - `:baselineprofile` 是 Baseline Profile 生成与启动基准的测试模块，同样不计入。
 
 依赖规则：
 

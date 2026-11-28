@@ -39,6 +39,7 @@ include(":ksp-processor")
 include(":accompanist-lyrics-core")
 include(":accompanist-lyrics-ui")
 include(":hidden-api")
+include(":baselineprofile")
 includeBuild("build-logic")
 
 project(":accompanist-lyrics-core").projectDir = file("np-submodule/accompanist-lyrics-core")

@@ -52,3 +52,4 @@ AGENTS.md
 /app/src/androidTest/assets/metadata/synthetic-fixture-provenance.txt
 /app/src/androidTest/assets/metadata/synthetic-free-first-8-provenance.json
 /hidden-api/build/
+/baselineprofile/build/

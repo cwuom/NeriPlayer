@@ -1,5 +1,7 @@
 @file:Suppress("UnstableApiUsage")
 
+import com.android.build.api.dsl.ApplicationBuildType
+import com.android.build.api.dsl.ApkSigningConfig
 import com.android.build.api.variant.FilterConfiguration
 import com.android.build.api.artifact.ScopedArtifact
 import com.android.build.api.variant.ScopedArtifacts
@@ -14,6 +16,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     id("kotlin-parcelize")
     id("jacoco")
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 val ownedLibraryPaths = rootProject.file("gradle/owned-modules.txt")
@@ -54,6 +57,18 @@ val releaseSigningReady = releaseKeystoreFile.exists() &&
     !releaseStorePassword.isNullOrBlank() &&
     releaseKeyAlias.isNotBlank() &&
     !releaseKeyPassword.isNullOrBlank()
+
+// Baseline Profile 插件派生的 release 变体只用于本地采集和基准测试，不进发布产物
+val baselineProfileBuildTypes = listOf("nonMinifiedRelease", "benchmarkRelease")
+
+// 性能测量包与正式版共存：独立包名、debug 签名，不覆盖正式版的数据
+fun ApplicationBuildType.useBenchmarkIdentity(debugSigning: ApkSigningConfig) {
+    applicationIdSuffix = ".benchmark"
+    signingConfig = debugSigning
+    val inviteScheme = "neriplayer-benchmark"
+    manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
+    buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
+}
 
 android {
     namespace = "moe.ouom.neriplayer"
@@ -147,12 +162,8 @@ android {
         if (providers.gradleProperty("enablePerformanceBenchmark").orNull == "true") {
             create("benchmark") {
                 initWith(getByName("release"))
-                applicationIdSuffix = ".benchmark"
-                signingConfig = signingConfigs.getByName("debug")
                 matchingFallbacks += "release"
-                val inviteScheme = "neriplayer-benchmark"
-                manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
-                buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
+                useBenchmarkIdentity(signingConfigs.getByName("debug"))
             }
         }
     }
@@ -219,6 +230,7 @@ gradle.taskGraph.whenReady {
             task.name == "assemble" ||
                 task.name == "bundle" ||
                 task.name.contains("Release", ignoreCase = false) &&
+                baselineProfileBuildTypes.none { task.name.contains(it, ignoreCase = true) } &&
                 listOf("assemble", "bundle", "package", "sign").any(task.name::startsWith)
             )
     }
@@ -417,7 +429,25 @@ tasks.named("check") {
     dependsOn(verifyCrap, verifyDomainDependencies)
 }
 
+baselineProfile {
+    // 用启动 profile 重排 dex，首屏需要的类集中在主 dex 前部
+    dexLayoutOptimization = true
+}
+
 androidComponents {
+    finalizeDsl { extension ->
+        val debugSigning = extension.signingConfigs.getByName("debug")
+        baselineProfileBuildTypes.forEach { name ->
+            extension.buildTypes.getByName(name).useBenchmarkIdentity(debugSigning)
+        }
+    }
+    onVariants(selector().all()) { variant ->
+        if (variant.buildType !in baselineProfileBuildTypes) return@onVariants
+        // 复用 benchmark 源集：profileable、独立快捷方式包名和首启 fixture
+        variant.sources.manifests.addStaticManifestFile("src/benchmark/AndroidManifest.xml")
+        variant.sources.res?.addStaticSourceDirectory("src/benchmark/res")
+        variant.sources.kotlin?.addStaticSourceDirectory("src/benchmark/java")
+    }
     onVariants(selector().all()) { variant ->
         if (variant.buildType == "debug") return@onVariants
 
@@ -447,6 +477,8 @@ dependencies {
         }
     }
     implementation(project(":ksp-annotations"))
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)

@@ -3,6 +3,7 @@
 import com.android.build.api.dsl.CommonExtension
 import com.android.build.api.dsl.ApplicationExtension
 import com.android.build.api.dsl.LibraryExtension
+import com.android.build.api.dsl.TestExtension
 
 plugins {
     id("com.android.base")
@@ -24,3 +25,8 @@ extensions.findByType(ApplicationExtension::class)?.run {
 }
 
 extensions.findByType(LibraryExtension::class)?.configureAndroidBase()
+
+extensions.findByType(TestExtension::class)?.run {
+    configureAndroidBase()
+    defaultConfig.targetSdk = Version.targetSdk
+}
