@@ -1,9 +1,13 @@
 package moe.ouom.neriplayer.core.download.execution
 
 import moe.ouom.neriplayer.core.download.execution.uidt.UidtJobRunSteps
+import moe.ouom.neriplayer.core.download.execution.uidt.UidtNotificationOwners
 import moe.ouom.neriplayer.core.download.execution.uidt.runUidtJob
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -82,6 +86,64 @@ class UidtJobRunTest {
     }
 
     @Test
+    fun `background release racing an acquisition never leaves a controller owner`() {
+        val controllerOwners = Collections.synchronizedSet(mutableSetOf<String>())
+        val acquiring = CountDownLatch(1)
+        val finishAcquire = CountDownLatch(1)
+        val owners = UidtNotificationOwners(
+            acquireOwner = { owner ->
+                acquiring.countDown()
+                assertTrue(finishAcquire.await(5, TimeUnit.SECONDS))
+                controllerOwners += owner
+            },
+            releaseOwner = { owner -> controllerOwners -= owner }
+        )
+        val acquirer = thread { owners.acquire(OWNER) }
+        assertTrue(acquiring.await(5, TimeUnit.SECONDS))
+        val releaser = thread { owners.release(OWNER) }
+        releaser.join(200)
+        assertTrue("release must wait for the in-flight acquisition", releaser.isAlive)
+
+        finishAcquire.countDown()
+        acquirer.join(5_000)
+        releaser.join(5_000)
+
+        assertTrue(controllerOwners.isEmpty())
+    }
+
+    @Test
+    fun `release before acquisition leaves the owner to the run cleanup`() {
+        val controllerOwners = mutableSetOf<String>()
+        val owners = UidtNotificationOwners(
+            acquireOwner = { owner -> controllerOwners += owner },
+            releaseOwner = { owner -> controllerOwners -= owner }
+        )
+
+        owners.release(OWNER)
+        owners.acquire(OWNER)
+        assertEquals(setOf(OWNER), controllerOwners)
+
+        owners.release(OWNER)
+        assertTrue(controllerOwners.isEmpty())
+    }
+
+    @Test
+    fun `service destruction releases every registered owner`() {
+        val controllerOwners = mutableSetOf<String>()
+        val owners = UidtNotificationOwners(
+            acquireOwner = { owner -> controllerOwners += owner },
+            releaseOwner = { owner -> controllerOwners -= owner }
+        )
+        owners.acquire("uidt:1:1")
+        owners.acquire("uidt:2:2")
+
+        owners.releaseAll()
+        owners.release("uidt:1:1")
+
+        assertTrue(controllerOwners.isEmpty())
+    }
+
+    @Test
     fun `main thread job callbacks never touch the schedule lock or notification binder`() {
         val source = projectFile(
             "modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/execution/uidt/" +
@@ -110,6 +172,16 @@ class UidtJobRunTest {
         val onStopOutsideBookkeeping = onStopJob.replace(stopBookkeeping, "")
         MAIN_THREAD_BLOCKERS.forEach { blocker ->
             assertFalse("onStopJob calls $blocker on the main thread", onStopOutsideBookkeeping.contains(blocker))
+        }
+
+        val onDestroy = methodBody(source, "override fun onDestroy(")
+        val destroyBookkeeping = methodBody(onDestroy, "bookkeepingScope.launch")
+        val onDestroyOutsideBookkeeping = onDestroy.replace(destroyBookkeeping, "")
+        MAIN_THREAD_BLOCKERS.forEach { blocker ->
+            assertFalse(
+                "onDestroy calls $blocker on the main thread",
+                onDestroyOutsideBookkeeping.contains(blocker)
+            )
         }
     }
 
@@ -166,10 +238,11 @@ class UidtJobRunTest {
 
     private companion object {
         const val OPERATION_ID = "operation-uidt-run"
+        const val OWNER = "uidt:7:1"
         val MAIN_THREAD_BLOCKERS = listOf(
             "markJobStarted(",
             "markJobFinished(",
-            "releaseNotification(",
+            "notificationOwners.",
             "DownloadExecutionNotificationController.",
             "setNotification(",
             "buildNotification("

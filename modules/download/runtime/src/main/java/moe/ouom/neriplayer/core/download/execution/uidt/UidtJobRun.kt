@@ -67,4 +67,39 @@ internal suspend fun runUidtJob(
     }
 }
 
+/**
+ * 本地登记和控制器登记必须同锁串行
+ * 后台收尾若插在两者之间，会先释放一个控制器尚未登记的持有者，之后的登记再也无人释放，通知常驻
+ * 只在后台线程调用，锁内的通知 Binder 不会拖住主线程
+ */
+internal class UidtNotificationOwners(
+    private val acquireOwner: (String) -> Unit,
+    private val releaseOwner: (String) -> Unit
+) {
+    private val lock = Any()
+    private val owners = linkedSetOf<String>()
+
+    fun acquire(owner: String) {
+        synchronized(lock) {
+            owners += owner
+            acquireOwner(owner)
+        }
+    }
+
+    fun release(owner: String) {
+        synchronized(lock) {
+            if (!owners.remove(owner)) return
+            releaseOwner(owner)
+        }
+    }
+
+    fun releaseAll() {
+        synchronized(lock) {
+            val released = owners.toList()
+            owners.clear()
+            released.forEach(releaseOwner)
+        }
+    }
+}
+
 private const val UIDT_RUN_TAG = "NERI-DownloadUidt"

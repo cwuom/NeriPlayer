@@ -45,7 +45,14 @@ class UidtDownloadJobService : JobService() {
     private val runningJobs = ConcurrentHashMap<Int, Job>()
     private val completionGates = ConcurrentHashMap<Int, UidtJobCompletionGate>()
     private val jobNotificationOwners = ConcurrentHashMap<Int, String>()
-    private val notificationOwners = ConcurrentHashMap.newKeySet<String>()
+    private val notificationOwners = UidtNotificationOwners(
+        acquireOwner = { owner ->
+            DownloadExecutionNotificationController.acquire(applicationContext, owner)
+        },
+        releaseOwner = { owner ->
+            DownloadExecutionNotificationController.release(applicationContext, owner)
+        }
+    )
 
     override fun onStartJob(params: JobParameters): Boolean {
         val operationId = params.extras
@@ -65,13 +72,7 @@ class UidtDownloadJobService : JobService() {
             runUidtJob(
                 operationId = operationId,
                 steps = UidtJobRunSteps(
-                    acquireNotification = {
-                        notificationOwners += owner
-                        DownloadExecutionNotificationController.acquire(
-                            context = applicationContext,
-                            owner = owner
-                        )
-                    },
+                    acquireNotification = { notificationOwners.acquire(owner) },
                     postNotification = {
                         setNotification(
                             params,
@@ -90,7 +91,7 @@ class UidtDownloadJobService : JobService() {
                     },
                     cleanup = {
                         markJobFinished(operationId, jobId)
-                        releaseNotification(owner)
+                        notificationOwners.release(owner)
                     },
                     reportCompletion = { wantsReschedule ->
                         withContext(Dispatchers.Main) {
@@ -164,7 +165,7 @@ class UidtDownloadJobService : JobService() {
         // 调度锁和通知刷新会阻塞主线程，进而拖住排队中的 onStartJob
         bookkeepingScope.launch {
             operationId?.let { markJobFinished(it, params.jobId) }
-            owner?.let(::releaseNotification)
+            owner?.let(notificationOwners::release)
         }
         if (operationId != null) {
             if (stopAction == UidtStopAction.STOP_AND_CANCEL_BACKENDS) {
@@ -190,8 +191,7 @@ class UidtDownloadJobService : JobService() {
 
     override fun onDestroy() {
         sealUidtCompletionGates(completionGates.values)
-        val owners = notificationOwners.toList()
-        bookkeepingScope.launch { owners.forEach(::releaseNotification) }
+        bookkeepingScope.launch { notificationOwners.releaseAll() }
         serviceScope.cancel()
         runningJobs.clear()
         completionGates.clear()
@@ -201,14 +201,6 @@ class UidtDownloadJobService : JobService() {
 
     private fun buildNotification(): Notification =
         buildDownloadExecutionNotification(this)
-
-    private fun releaseNotification(owner: String) {
-        if (!notificationOwners.remove(owner)) return
-        DownloadExecutionNotificationController.release(
-            context = applicationContext,
-            owner = owner
-        )
-    }
 
     private fun notificationOwner(jobId: Int): String =
         "uidt:$jobId:${notificationOwnerSerial.incrementAndGet()}"
