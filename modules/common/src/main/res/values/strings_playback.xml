@@ -111,6 +111,8 @@
     <string name="player_netease_no_permission_switch_platform">你访问的是该平台的受限资源，可能因版权、会员权限或当前音质限制而无法播放。可尝试降低音质，或在其他平台搜索这首歌畅听</string>
     <string name="player_playback_video_info_unavailable">暂时无法获取视频音频信息</string>
     <string name="player_playback_url_error_detail">获取播放地址失败：%1$s</string>
+    <string name="player_youtube_po_token_unavailable_empty">PO Token 不可用（%1$s）：未能生成 YouTube 播放凭证，可尝试更换网络节点后重试</string>
+    <string name="player_youtube_po_token_unavailable_timeout">PO Token 不可用（%1$s）：生成 YouTube 播放凭证超时，请稍后重试</string>
     <string name="mini_player_volume">音量</string>
     <string name="mini_player_progress">播放进度</string>
 </resources>
