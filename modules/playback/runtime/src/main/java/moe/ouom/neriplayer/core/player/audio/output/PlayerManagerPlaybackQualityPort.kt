@@ -6,10 +6,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.core.player.host.settingsRepo
 import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.SongItem
 
 internal object PlayerManagerPlaybackQualityPort : PlaybackQualityPort {
+    // 投送中由渲染器播放，音质刷新要重新投送；单测替换它来验证路由
+    internal var activeCastRefresher: (SongItem) -> Boolean = PlayerManagerDlnaAdapter::tryRefreshActiveCast
+
     override fun currentAudioSource(): PlaybackAudioSource? =
         PlayerManager.currentPlaybackAudioInfoFlow.value?.source
 
@@ -31,7 +35,8 @@ internal object PlayerManagerPlaybackQualityPort : PlaybackQualityPort {
     override suspend fun refreshCurrentSong(source: PlaybackAudioSource, reason: String) {
         withContext(Dispatchers.Main) {
             val manager = PlayerManager
-            if (currentRefreshSongIfSource(source) == null) return@withContext
+            val song = currentRefreshSongIfSource(source) ?: return@withContext
+            if (activeCastRefresher(song)) return@withContext
             val positionMs = manager.player.currentPosition.coerceAtLeast(0L)
             manager.refreshCurrentSongUrl(
                 resumePositionMs = positionMs,

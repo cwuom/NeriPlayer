@@ -202,7 +202,7 @@ internal fun resolveAudioRouteMuteRestoreVolume(
 }
 
 internal fun PlayerManager.suppressPlaybackForAudioRouteLoss(reason: String) {
-    if (!isPlayerInitialized()) return
+    if (!isPlayerInitialized() || moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return
     runPlayerActionOnMainThread {
         if (!isPlayerInitialized()) return@runPlayerActionOnMainThread
         val requiresExplicitRestore = shouldMuteListenTogetherListenerForAudioRouteLoss()
@@ -294,6 +294,7 @@ internal fun PlayerManager.restorePlaybackAfterTransientAudioRouteLoss(reason: S
 }
 
 internal fun PlayerManager.pauseForAudioRouteLoss(reason: String) {
+    if (moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return
     if (shouldMuteListenTogetherListenerForAudioRouteLoss()) {
         NPLogger.d(
             "NERI-PlayerManager",
@@ -648,6 +649,10 @@ internal fun PlayerManager.playAtIndex(
         commandSource = commandSource
     )
     clearPendingSeekPosition()
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptPlayAtIndex(
+            song, resolvedResumePositionMs, startPaused, requestToken
+        )
+    ) return
     enterPendingMediaLoad(resolvedResumePositionMs)
     playJob = ioScope.launch {
         try {
@@ -1110,6 +1115,7 @@ internal fun PlayerManager.playImpl(
     if (!usbExclusivePlaybackEnabled) {
         clearUsbExclusiveInterruptedPlaybackIntent("manual_play")
     }
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptPlay(commandSource)) return
     val song = _currentSongFlow.value
     val preparedInPlayer = isPreparedInPlayer()
     NPLogger.d(
@@ -1270,6 +1276,7 @@ internal fun PlayerManager.pauseImpl(
     val internalUsbTransition = debugReason.startsWith("usb_toggle_")
     if (!internalUsbTransition && shouldBlockLocalRoomControl(commandSource)) return
     clearRestoredPlayback()
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptPause(commandSource, debugReason)) return
     if (isPendingMediaLoadActive()) {
         val action = resolvePendingPauseAction(
             pendingLoadActive = true,
@@ -1511,6 +1518,7 @@ internal fun PlayerManager.togglePlayPauseImpl(allowFade: Boolean = true) {
     if (LanPlaybackBinding.toggle()) return
     ensureInitialized()
     if (!initialized) return
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptTogglePlayPause()) return
     if (isAudioRouteMuteSuppressed()) {
         restoreAudioRouteMuteImpl()
         return
@@ -1752,6 +1760,7 @@ internal fun PlayerManager.stopPlaybackPreservingQueueImpl(clearMediaUrl: Boolea
         reason = "stop_playback_preserving_queue"
     )
     stopPlayerForQueuePreservation()
+    moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.onQueueStopRequested()
     restoreQueueAfterStop(clearMediaUrl)
     consecutivePlayFailures = 0
     logQueueStopComplete()

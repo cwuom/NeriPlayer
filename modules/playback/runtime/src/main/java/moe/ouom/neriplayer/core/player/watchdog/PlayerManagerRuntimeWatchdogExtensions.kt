@@ -153,6 +153,7 @@ internal fun PlayerManager.schedulePlaybackRuntimeWatchdog(reason: String) {
 
 private fun PlayerManager.shouldWatchRuntimePlayback(): Boolean {
     if (!initialized || !isPlayerInitialized() || isPendingMediaLoadActive()) return false
+    if (moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return false
     if (_currentSongFlow.value == null || player.currentMediaItem == null) return false
     if (urlRefreshController.currentSemantics() != null) return false
     if (!resumePlaybackRequested || !player.playWhenReady) return false

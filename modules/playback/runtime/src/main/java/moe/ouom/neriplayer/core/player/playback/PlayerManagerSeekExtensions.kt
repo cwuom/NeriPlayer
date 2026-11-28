@@ -25,6 +25,28 @@ internal fun PlayerManager.seekToImpl(
     val resolvedPositionMs = positionMs.coerceAtLeast(0L)
     playbackPositionGeneration += 1L
     logSeekRequested(resolvedPositionMs, commandSource)
+    if (moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter.tryInterceptSeek(
+            resolvedPositionMs, commandSource, ::syncSeekOutputs
+        )
+    ) {
+        val currentSong = _currentSongFlow.value
+        if (currentSong != null) {
+            val durationMs = maxOf(
+                knownSeekDuration(currentSong),
+                playbackProgressOwner.duration.value
+            )
+            persistLongFormPlaybackProgress(
+                song = currentSong,
+                positionMs = resolvedPositionMs,
+                durationMs = durationMs
+            )
+            scheduleStatePersist(
+                positionMs = resolvedPositionMs,
+                shouldResumePlayback = shouldResumePlaybackSnapshot()
+            )
+        }
+        return
+    }
     val preparedSeek = preparePlaybackSeek(resolvedPositionMs)
     applyPlaybackSeek(resolvedPositionMs, commandSource, preparedSeek)
     refreshPlaybackUrlAfterSeek(resolvedPositionMs, commandSource, preparedSeek)

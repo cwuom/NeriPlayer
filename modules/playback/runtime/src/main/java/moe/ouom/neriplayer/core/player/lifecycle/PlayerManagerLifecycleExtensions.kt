@@ -335,6 +335,9 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
         "initialize(): maxCacheSize=$effectiveMaxCacheSize, app=${app.packageName}, stack=[${debugStackHint()}]"
     )
     application = app
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.ensureInitialized(app)
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.playerHost =
+        moe.ouom.neriplayer.core.player.dlna.session.PlayerManagerDlnaAdapter
     _localPlaylistsReadyFlow.value = false
     FloatingLyricsOverlayManager.initialize(app)
     currentCacheSize = effectiveMaxCacheSize
@@ -835,12 +838,8 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onPlaybackStateChanged(state: Int) {
-            if (!shouldExposePlayerCallbackState(
-                    playbackRequestToken,
-                    loadedMediaRequestToken,
-                    isPendingMediaLoadActive()
-                )
-            ) {
+            if (moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return
+            if (!shouldExposePlayerCallbackState(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) {
                 NPLogger.d(
                     "NERI-PlayerManager",
                     "Ignoring stale playback state during pending media load: requestToken=$playbackRequestToken, loadedToken=$loadedMediaRequestToken, state=${playbackStateName(state)}"
@@ -854,12 +853,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
                 schedulePlaybackRuntimeWatchdog(reason = "state_buffering")
             }
             if (state == Player.STATE_READY) {
-                val accepted = shouldAcceptPlayerCallback(
-                    playbackRequestToken,
-                    loadedMediaRequestToken,
-                    isPendingMediaLoadActive()
-                )
-                if (accepted) {
+                if (shouldAcceptPlayerCallback(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) {
                     maybeBackfillCurrentSongDurationFromPlayer()
                     prefetchNextGenericTrackUrl()
                 }
@@ -870,12 +864,7 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
                 }
             }
             if (state == Player.STATE_ENDED) {
-                if (shouldAcceptPlayerCallback(
-                        playbackRequestToken,
-                        loadedMediaRequestToken,
-                        isPendingMediaLoadActive()
-                    )
-                ) {
+                if (shouldAcceptPlayerCallback(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) {
                     cancelPlaybackStartupWatchdog(reason = "state_ended")
                     resetPlaybackRuntimeWatchdog(reason = "state_ended")
                     handleTrackEndedIfNeeded(source = "playback_state_changed")
@@ -884,13 +873,8 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
-            if (!isPlayerInitialized()) return
-            if (!shouldExposePlayerCallbackState(
-                    playbackRequestToken,
-                    loadedMediaRequestToken,
-                    isPendingMediaLoadActive()
-                )
-            ) {
+            if (!isPlayerInitialized() || moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()) return
+            if (!shouldExposePlayerCallbackState(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) {
                 NPLogger.d(
                     "NERI-PlayerManager",
                     "Ignoring stale playback suppression callback during pending media load: " +
@@ -912,15 +896,10 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.externalAudio) return
-            if (!shouldAcceptPlayerCallback(
-                    playbackRequestToken,
-                    loadedMediaRequestToken,
-                    isPendingMediaLoadActive()
-                )
-            ) {
-                return
-            }
+            if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.externalAudio ||
+                moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()
+            ) return
+            if (!shouldAcceptPlayerCallback(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) return
             logPlaybackStateTransition("is_playing_changed:$isPlaying")
             _isPlayingFlow.value = isPlaying
             LyriconManager.setPlaybackState(isPlaying)
@@ -944,13 +923,10 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.externalAudio) return
-            if (!shouldExposePlayerCallbackState(
-                    playbackRequestToken,
-                    loadedMediaRequestToken,
-                    isPendingMediaLoadActive()
-                )
-            ) {
+            if (moe.ouom.neriplayer.core.player.lan.LanPlaybackBinding.externalAudio ||
+                moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.isCastingActive()
+            ) return
+            if (!shouldExposePlayerCallbackState(playbackRequestToken, loadedMediaRequestToken, isPendingMediaLoadActive())) {
                 NPLogger.d(
                     "NERI-PlayerManager",
                     "Ignoring stale playWhenReady during pending media load: requestToken=$playbackRequestToken, loadedToken=$loadedMediaRequestToken, playWhenReady=$playWhenReady, reason=${playWhenReadyChangeReasonName(reason)}"
@@ -1906,6 +1882,7 @@ private fun PlayerManager.stopPlaybackForRelease() {
 private fun PlayerManager.releaseUsbSessionsAndJobs() {
     playbackSoundOwner.cancelPersistenceForRelease()
     usbPlaybackRouteOwner.release()
+    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.release()
 }
 
 private fun PlayerManager.releaseMediaJobsAndLyrics(): Unit = synchronized(this) {

@@ -25,6 +25,7 @@ package moe.ouom.neriplayer.core.player
  * Updated: 2025/8/16
  */
 
+import moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsTracker
 import moe.ouom.neriplayer.core.player.presentation.command.errorResId
 import moe.ouom.neriplayer.data.identity.sameIdentityAs
@@ -796,9 +797,8 @@ object PlayerManager {
                 sleepTimerManager.cancel()
             },
             onTimerStateChanged = {
-                if (isPlayerInitialized()) {
-                    syncExoRepeatMode()
-                }
+                if (isPlayerInitialized()) syncExoRepeatMode()
+                DlnaCastManager.invalidateQueuedNext()
             }
         )
     }
@@ -906,18 +906,17 @@ object PlayerManager {
         resumePlaybackRequested = requested
     }
 
-    fun isTransportActive(): Boolean = playbackTransportOwner.isTransportActive()
+    fun isTransportActive(): Boolean = playbackTransportOwner.isTransportActive() || DlnaCastManager.isCastingActive()
 
-    internal fun isTransportActiveWithoutInitialization(): Boolean =
-        playbackTransportOwner.isTransportActiveWithoutInitialization()
+    internal fun isTransportActiveWithoutInitialization(): Boolean = playbackTransportOwner.isTransportActiveWithoutInitialization() || DlnaCastManager.isCastingActive()
 
     fun shouldRunPlaybackServiceInForeground(): Boolean =
-        playbackTransportOwner.shouldRunForegroundService()
+        playbackTransportOwner.shouldRunForegroundService() || DlnaCastManager.isCastingActive()
 
     fun shouldBootstrapPlaybackServiceOnAppLaunch(): Boolean =
         playbackTransportOwner.shouldBootstrapService()
 
-    fun isTransportBuffering(): Boolean = playbackTransportOwner.isBuffering()
+    fun isTransportBuffering(): Boolean = playbackTransportOwner.isBuffering() || DlnaCastManager.isRemoteBuffering()
 
     fun shouldIgnoreExternalPauseCommand(source: String): Boolean =
         playbackTransportOwner.shouldIgnoreExternalPause(source)
@@ -1325,6 +1324,7 @@ object PlayerManager {
 
     internal fun bumpCurrentQueueDisplayRevision() {
         _currentQueueDisplayRevisionFlow.update { it + 1 }
+        DlnaCastManager.invalidateQueuedNext()
     }
 
     internal fun localMediaSource(song: SongItem): String? {
