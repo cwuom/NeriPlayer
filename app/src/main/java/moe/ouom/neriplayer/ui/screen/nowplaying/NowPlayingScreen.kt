@@ -1419,9 +1419,7 @@ fun NowPlayingScreen(
                                     progressInfoPresentation = progressInfoPresentation,
                                     seekEnabled = playbackProgressSeekEnabled,
                                     activeContentColor = targetNowPlayingActiveIconColor,
-                                    useWideLandscapeLayout = useWideLandscapeLayout,
                                     onPreviewPositionChange = { previewPositionOverrideMs = it },
-                                    tabletLandscape = useWideLandscapeLayout && !phoneLandscape,
                                     progressRowModifier = Modifier
                                         .sharedBounds(
                                             rememberSharedContentState(
