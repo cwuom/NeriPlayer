@@ -47,6 +47,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsSectionCard
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboard
@@ -167,7 +168,7 @@ fun LogViewerScreen(
                         Icon(Icons.Outlined.ContentCopy, contentDescription = stringResource(AppR.string.debug_copy_all))
                     }
                     IconButton(onClick = {
-                        exportLogLauncher.launch(File(decodedFilePath).name)
+                        exportLogLauncher.launchOrShowUnavailable(context, File(decodedFilePath).name)
                     }) {
                         Icon(Icons.Outlined.Share, contentDescription = stringResource(AppR.string.log_export))
                     }

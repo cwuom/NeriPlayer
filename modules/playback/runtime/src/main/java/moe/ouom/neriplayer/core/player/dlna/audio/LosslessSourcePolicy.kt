@@ -1,0 +1,272 @@
+package moe.ouom.neriplayer.core.player.dlna.audio
+
+import moe.ouom.neriplayer.core.player.dlna.protocol.DlnaProtocolInfo
+import moe.ouom.neriplayer.core.player.dlna.protocol.FlacHeaderInspector
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioInfo
+import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
+import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice
+import moe.ouom.neriplayer.data.model.playback.dlna.DlnaDeviceOptions
+import moe.ouom.neriplayer.data.model.playback.dlna.DlnaStreamMode
+
+/**
+ * Pure policy governing lossless-first priority, adaptive direct streaming
+ * across all platforms (Netease, Bilibili, YouTube Music, Local), optional
+ * strict lossless blocking, and lossless WAV/ID3 fallback selection.
+ */
+object LosslessSourcePolicy {
+
+    enum class BlockReasonKind {
+        PREVIEW_CLIP,
+        LOSSY_SOURCE,
+        WAV_UNSUPPORTED,
+        FLAC_UNSUPPORTED_WAV_DISABLED,
+        ALAC_REQUIRES_WAV_FALLBACK,
+        HTTP_TRANSPORT_UNSUPPORTED
+    }
+
+    enum class DegradationKind {
+        LOSSY_SOURCE,
+        DOWNGRADED_TIER
+    }
+
+    sealed class DeliveryDecision {
+        data class Deliver(
+            val mode: DlnaStreamMode,
+            val degraded: Boolean,
+            val degradationKind: DegradationKind?,
+            val degradationReason: String?,
+            val sourceSummary: String,
+            val resolvedFormat: String,
+            val mimeType: String,
+            val sampleRateHz: Int,
+            val bitDepth: Int,
+            val channelCount: Int
+        ) : DeliveryDecision()
+
+        data class Blocked(
+            val kind: BlockReasonKind,
+            val reason: String,
+            val sourceSummary: String,
+            val resolvedFormat: String,
+            val mimeType: String,
+            val sampleRateHz: Int?,
+            val bitDepth: Int?
+        ) : DeliveryDecision()
+    }
+
+    fun evaluate(
+        inspected: FlacHeaderInspector.InspectedAudio,
+        audioInfo: PlaybackAudioInfo?,
+        isPreviewClip: Boolean,
+        requestedLosslessQuality: Boolean,
+        device: DlnaDevice,
+        options: DlnaDeviceOptions
+    ): DeliveryDecision {
+        val resolvedFormat = resolveDisplayFormat(inspected, audioInfo)
+        val sourceSummary = buildSourceSummary(resolvedFormat, audioInfo, inspected)
+        val effectiveMime = inspected.mimeType.takeIf {
+            inspected.format != FlacHeaderInspector.ContainerFormat.UNKNOWN
+        } ?: normalizeAudioMime(audioInfo?.mimeType) ?: "application/octet-stream"
+        val knownSampleRate = (inspected.sampleRateHz ?: audioInfo?.sampleRateHz)?.takeIf { it > 0 } ?: 0
+        val knownBitDepth = (inspected.bitDepth ?: audioInfo?.bitDepth)?.takeIf { it > 0 } ?: 0
+        val channels = inspected.channelCount ?: audioInfo?.channelCount ?: 2
+
+        if (!DlnaProtocolInfo.supportsHttpTransport(device.sinkProtocolInfo)) {
+            return DeliveryDecision.Blocked(
+                kind = BlockReasonKind.HTTP_TRANSPORT_UNSUPPORTED,
+                reason = "Renderer protocol list does not advertise HTTP transport support.",
+                sourceSummary = sourceSummary,
+                resolvedFormat = resolvedFormat,
+                mimeType = effectiveMime,
+                sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                bitDepth = knownBitDepth.takeIf { it > 0 }
+            )
+        }
+
+        if (isPreviewClip && options.strictLosslessMode) {
+            return DeliveryDecision.Blocked(
+                kind = BlockReasonKind.PREVIEW_CLIP,
+                reason = "Preview clip only ($sourceSummary); full lossless source unavailable.",
+                sourceSummary = sourceSummary,
+                resolvedFormat = resolvedFormat,
+                mimeType = effectiveMime,
+                sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                bitDepth = knownBitDepth.takeIf { it > 0 }
+            )
+        }
+
+        // Only binary-verified lossless containers (FLAC, PCM WAV, ALAC MP4) qualify as lossless;
+        // unverified UNKNOWN containers must not be mislabeled or served as ORIGINAL_FLAC.
+        val isLosslessContainer = inspected.format != FlacHeaderInspector.ContainerFormat.UNKNOWN &&
+            inspected.isLossless
+
+        if (!isLosslessContainer) {
+            if (options.strictLosslessMode) {
+                return DeliveryDecision.Blocked(
+                    kind = BlockReasonKind.LOSSY_SOURCE,
+                    reason = "Strict lossless mode blocked lossy or unverified source ($sourceSummary).",
+                    sourceSummary = sourceSummary,
+                    resolvedFormat = resolvedFormat,
+                    mimeType = effectiveMime,
+                    sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                    bitDepth = knownBitDepth.takeIf { it > 0 }
+                )
+            }
+            // Adaptive direct streaming: NEVER transcode lossy MP3/AAC/M4A/OGG/WebM into WAV or MP3,
+            // and NEVER upsample or fabricate bit depth. Serve original bytes directly.
+            return DeliveryDecision.Deliver(
+                mode = DlnaStreamMode.ADAPTIVE_DIRECT,
+                degraded = true,
+                degradationKind = DegradationKind.LOSSY_SOURCE,
+                degradationReason = "Actual source is $sourceSummary (adaptive original direct stream)",
+                sourceSummary = sourceSummary,
+                resolvedFormat = resolvedFormat,
+                mimeType = effectiveMime,
+                sampleRateHz = knownSampleRate,
+                bitDepth = 0,
+                channelCount = channels
+            )
+        }
+
+        val wavMode = if (options.wavEmbedId3Enabled) {
+            DlnaStreamMode.LOSSLESS_WAV_ID3
+        } else {
+            DlnaStreamMode.LOSSLESS_WAV
+        }
+
+        val mode = when (inspected.format) {
+            FlacHeaderInspector.ContainerFormat.WAV -> {
+                if (!device.supportsWav) {
+                    return DeliveryDecision.Blocked(
+                        kind = BlockReasonKind.WAV_UNSUPPORTED,
+                        reason = "Renderer does not advertise WAV support.",
+                        sourceSummary = sourceSummary,
+                        resolvedFormat = resolvedFormat,
+                        mimeType = effectiveMime,
+                        sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                        bitDepth = knownBitDepth.takeIf { it > 0 }
+                    )
+                }
+                wavMode
+            }
+            FlacHeaderInspector.ContainerFormat.FLAC -> {
+                val canWav = options.wavFallbackEnabled && device.supportsWav
+                when {
+                    options.preferOriginalFlac && device.supportsFlac -> DlnaStreamMode.ORIGINAL_FLAC
+                    canWav -> wavMode
+                    device.supportsFlac -> DlnaStreamMode.ORIGINAL_FLAC
+                    else -> return DeliveryDecision.Blocked(
+                        kind = BlockReasonKind.FLAC_UNSUPPORTED_WAV_DISABLED,
+                        reason = "Renderer does not support FLAC and WAV fallback is disabled.",
+                        sourceSummary = sourceSummary,
+                        resolvedFormat = resolvedFormat,
+                        mimeType = effectiveMime,
+                        sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                        bitDepth = knownBitDepth.takeIf { it > 0 }
+                    )
+                }
+            }
+            FlacHeaderInspector.ContainerFormat.ALAC_MP4 -> {
+                if (options.wavFallbackEnabled && device.supportsWav) {
+                    wavMode
+                } else if (!options.strictLosslessMode) {
+                    DlnaStreamMode.ADAPTIVE_DIRECT
+                } else {
+                    return DeliveryDecision.Blocked(
+                        kind = BlockReasonKind.ALAC_REQUIRES_WAV_FALLBACK,
+                        reason = "ALAC source requires WAV fallback enabled for DLNA delivery.",
+                        sourceSummary = sourceSummary,
+                        resolvedFormat = resolvedFormat,
+                        mimeType = effectiveMime,
+                        sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                        bitDepth = knownBitDepth.takeIf { it > 0 }
+                    )
+                }
+            }
+            else -> return DeliveryDecision.Blocked(
+                kind = BlockReasonKind.LOSSY_SOURCE,
+                reason = "Unverified audio container ($sourceSummary).",
+                sourceSummary = sourceSummary,
+                resolvedFormat = resolvedFormat,
+                mimeType = effectiveMime,
+                sampleRateHz = knownSampleRate.takeIf { it > 0 },
+                bitDepth = knownBitDepth.takeIf { it > 0 }
+            )
+        }
+
+        val isWavDelivery = mode == DlnaStreamMode.LOSSLESS_WAV || mode == DlnaStreamMode.LOSSLESS_WAV_ID3
+        val reportedSampleRate = if (isWavDelivery) {
+            knownSampleRate.takeIf { it > 0 } ?: 44_100
+        } else {
+            knownSampleRate
+        }
+        val reportedBitDepth = if (isWavDelivery) {
+            knownBitDepth.takeIf { it > 0 } ?: 16
+        } else {
+            knownBitDepth
+        }
+
+        val downgradedFromRequested = requestedLosslessQuality &&
+            audioInfo?.source == PlaybackAudioSource.NETEASE &&
+            audioInfo.qualityKey in setOf("standard", "higher", "exhigh")
+
+        return DeliveryDecision.Deliver(
+            mode = mode,
+            degraded = downgradedFromRequested,
+            degradationKind = if (downgradedFromRequested) DegradationKind.DOWNGRADED_TIER else null,
+            degradationReason = if (downgradedFromRequested) {
+                "Platform downgraded quality to ${audioInfo.qualityLabel ?: audioInfo.qualityKey}"
+            } else {
+                null
+            },
+            sourceSummary = sourceSummary,
+            resolvedFormat = resolvedFormat,
+            mimeType = if (isWavDelivery) "audio/wav" else effectiveMime,
+            sampleRateHz = reportedSampleRate,
+            bitDepth = reportedBitDepth,
+            channelCount = channels
+        )
+    }
+
+    fun buildSourceSummary(
+        resolvedFormat: String,
+        audioInfo: PlaybackAudioInfo?,
+        inspected: FlacHeaderInspector.InspectedAudio
+    ): String {
+        val parts = mutableListOf(resolvedFormat)
+        audioInfo?.qualityLabel?.takeIf { it.isNotBlank() }?.let { parts += it }
+        audioInfo?.bitrateKbps?.takeIf { it > 0 }?.let { parts += "$it kbps" }
+        (inspected.sampleRateHz ?: audioInfo?.sampleRateHz)?.takeIf { it > 0 }?.let { hz ->
+            val khz = if (hz % 1000 == 0) "${hz / 1000} kHz" else "${hz / 1000.0} kHz"
+            parts += khz
+        }
+        if (inspected.isLossless) {
+            (inspected.bitDepth ?: audioInfo?.bitDepth)?.takeIf { it > 0 }?.let { parts += "$it bit" }
+        }
+        return parts.distinct().joinToString(" · ")
+    }
+
+    private fun resolveDisplayFormat(
+        inspected: FlacHeaderInspector.InspectedAudio,
+        audioInfo: PlaybackAudioInfo?
+    ): String = when (inspected.format) {
+        FlacHeaderInspector.ContainerFormat.FLAC -> "FLAC"
+        FlacHeaderInspector.ContainerFormat.WAV -> "WAV"
+        FlacHeaderInspector.ContainerFormat.ALAC_MP4 -> "ALAC"
+        FlacHeaderInspector.ContainerFormat.MP3 -> "MP3"
+        FlacHeaderInspector.ContainerFormat.AAC_ADTS -> "AAC"
+        FlacHeaderInspector.ContainerFormat.AAC_OR_MP4 -> audioInfo?.codecLabel?.takeIf { it.isNotBlank() } ?: "M4A/AAC"
+        FlacHeaderInspector.ContainerFormat.OGG -> "OGG"
+        FlacHeaderInspector.ContainerFormat.WEBM -> "WebM/OPUS"
+        FlacHeaderInspector.ContainerFormat.UNKNOWN -> audioInfo?.codecLabel ?: "UNKNOWN"
+    }
+
+    private fun normalizeAudioMime(mimeType: String?): String? {
+        val clean = mimeType?.substringBefore(';')?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+        return when (clean) {
+            "audio/m4a" -> "audio/mp4"
+            "audio/mp3" -> "audio/mpeg"
+            else -> clean
+        }
+    }
+}

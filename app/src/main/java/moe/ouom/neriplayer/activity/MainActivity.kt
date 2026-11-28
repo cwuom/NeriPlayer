@@ -165,6 +165,7 @@ import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlayNavigationBarHidden
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
@@ -829,6 +830,15 @@ class MainActivity : ComponentActivity() {
                                                     shouldOfferListenTogetherLeaveAction(
                                                         dialogMessage
                                                     )
+                                        val dlnaCastState by moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.castStateFlow
+                                            .collectAsStateWithLifecycle()
+                                        val blockedReport = dlnaCastState.qualityReport
+                                        val blockedDeviceUdn = dlnaCastState.activeDevice?.udn
+                                        val showAllowDlnaLossyAction =
+                                            dlnaCastState.isCastingActive &&
+                                                    blockedReport?.strictLosslessBlocked == true &&
+                                                    blockedDeviceUdn != null &&
+                                                    dialogMessage == blockedReport.blockReason
 
                                         // 初始化异常处理器事件监听
                                         LaunchedEffect(Unit) {
@@ -1025,19 +1035,38 @@ class MainActivity : ComponentActivity() {
                                                         Text(stringResource(CoreCommonR.string.action_confirm))
                                                     }
                                                 },
-                                                dismissButton = if (showLeaveListenTogetherAction) {
-                                                    {
-                                                        HapticTextButton(
-                                                            onClick = {
-                                                                AppContainer.listenTogetherSessionManager.leaveRoom()
-                                                                showDialog = false
+                                                dismissButton = when {
+                                                    showLeaveListenTogetherAction -> {
+                                                        {
+                                                            HapticTextButton(
+                                                                onClick = {
+                                                                    AppContainer.listenTogetherSessionManager.leaveRoom()
+                                                                    showDialog = false
+                                                                }
+                                                            ) {
+                                                                Text(stringResource(CoreCommonR.string.listen_together_leave_room))
                                                             }
-                                                        ) {
-                                                            Text(stringResource(CoreCommonR.string.listen_together_leave_room))
                                                         }
                                                     }
-                                                } else {
-                                                    null
+                                                    showAllowDlnaLossyAction -> {
+                                                        val targetDeviceUdn = blockedDeviceUdn
+                                                        val targetSongKey = blockedReport.songKey
+                                                        {
+                                                            HapticTextButton(
+                                                                onClick = {
+                                                                    moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager
+                                                                        .disableStrictLosslessAndRetryCurrent(
+                                                                            expectedDeviceUdn = targetDeviceUdn,
+                                                                            expectedSongKey = targetSongKey
+                                                                        )
+                                                                    showDialog = false
+                                                                }
+                                                            ) {
+                                                                Text(stringResource(CoreCommonR.string.dlna_allow_lossy_and_retry))
+                                                            }
+                                                        }
+                                                    }
+                                                    else -> null
                                                 }
                                             )
                                         }
@@ -1302,7 +1331,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onExport = {
-                                    exportCrashReportLauncher.launch(report.file.name)
+                                    exportCrashReportLauncher.launchOrShowUnavailable(this@MainActivity, report.file.name)
                                 },
                                 onClose = {
                                     startupCrashReportManager.clearPendingReport()

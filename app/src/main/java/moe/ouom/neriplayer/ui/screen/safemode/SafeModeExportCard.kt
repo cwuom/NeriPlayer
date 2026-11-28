@@ -30,10 +30,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
 import moe.ouom.neriplayer.data.config.ConfigExportOptions
 import moe.ouom.neriplayer.ui.screen.tab.settings.backup.SettingsConfigExportOptionsDialog
 import moe.ouom.neriplayer.R as AppR
+import moe.ouom.neriplayer.util.platform.tryLaunch
 
 @Composable
 internal fun SafeModeExportCard(
@@ -190,7 +192,9 @@ internal fun SafeModeExportCard(
                 }
                 Button(
                     onClick = {
-                        playlistExportLauncher.launch(SafeModeManager.generatePlaylistBackupFileName(context))
+                        if (!playlistExportLauncher.tryLaunch(SafeModeManager.generatePlaylistBackupFileName(context))) {
+                            onShowMessage(composeResources.getString(CoreCommonR.string.error_no_app_for_action), SnackbarDuration.Short)
+                        }
                     },
                     enabled = !busy && !isExporting && configExportOptions == null,
                     modifier = Modifier.weight(1f)

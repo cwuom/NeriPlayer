@@ -102,7 +102,9 @@ internal suspend fun PlayerManager.resolveSongUrl(
     allowGenericPrefetchCache: Boolean = true,
     playbackRequestTokenOverride: Long? = null,
     deferNeteaseAutoBiliAlternates: Boolean = false,
-    shouldApplyCacheMutation: () -> Boolean = { true }
+    shouldApplyCacheMutation: () -> Boolean = { true },
+    preferYouTubeM4a: Boolean = false,
+    requireYouTubeDirect: Boolean = false
 ): SongUrlResult {
     val serverSong = song.isServerSong()
     logSongUrlResolutionRequest(
@@ -194,82 +196,46 @@ internal suspend fun PlayerManager.resolveSongUrl(
         return SongUrlResult.Success(song.streamUrl.orEmpty())
     }
     val isYouTubeTrack = isYouTubeMusicTrack(song)
+    val effectiveYouTubePreferM4a = youtubeRecoveryStrategy?.preferM4a ?: preferYouTubeM4a
     val cacheKey = computeCacheKey(
         song = song,
         youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
-        youtubePreferM4aOverride = youtubeRecoveryStrategy?.preferM4a
+        youtubePreferM4aOverride = effectiveYouTubePreferM4a
     )
-    val cacheKeyIsUnsafe = loadPlaybackCacheKeySafety(cacheKey)
-    val cacheIntegrity = if (forceRefresh) {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "resolveSongUrl: bypass complete YouTube cache for forced refresh: $cacheKey"
-        )
-        CachedResourceIntegrity(isComplete = false, requiresRepair = false, coveredLength = 0L)
-    } else {
-        inspectExoPlayerCache(cacheKey)
-    }
-    if (cacheIntegrity.requiresRepair) {
-        invalidateCachedResourceForPlaybackRecovery(
-            cacheKey = cacheKey,
-            reason = "resolve_integrity_check",
-            shouldApplyMutation = shouldApplyCacheMutation
-        )
-    }
-    var hasCachedData = !forceRefresh &&
-        cacheIntegrity.isComplete &&
-        !cacheKeyIsUnsafe
-    if (hasCachedData) {
-        val cachedDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
-        val cachedAudioInfo = cachedDescriptor?.toPlaybackAudioInfo {
-            getLocalizedString(it)
-        }
-        val cachedContentLength = cache?.let {
-            ContentMetadata.getContentLength(it.getContentMetadata(cacheKey))
-        } ?: 0L
-        if (
-            cachedAudioInfo == null ||
-            !cachedDescriptor.matchesCachedContentLength(cachedContentLength)
-        ) {
-            NPLogger.w(
-                "NERI-PlayerManager",
-                "完整缓存描述符缺失或长度不匹配，淘汰旧资源并重新解析: key=$cacheKey"
-            )
-            val removed = invalidateCachedResourceForPlaybackRecovery(
-                cacheKey = cacheKey,
-                reason = "missing_playback_descriptor",
-                shouldApplyMutation = shouldApplyCacheMutation
-            )
-            hasCachedData = false
-            if (!removed) {
-                NPLogger.w(
-                    "NERI-PlayerManager",
-                    "无法移除缺少描述符的缓存，跳过离线复用: key=$cacheKey"
-                )
-            }
-        }
-    }
-    if (hasCachedData) {
-        NPLogger.d(
-            "NERI-PlayerManager",
-            "命中完整缓存，直接走离线缓存地址: $cacheKey"
-        )
-        val cachedDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
-        val cachedAudioInfo = cachedDescriptor?.toPlaybackAudioInfo {
-            getLocalizedString(it)
-        } ?: return SongUrlResult.Failure
+    val primaryCachedResult = tryReadVerifiedOfflineCacheResult(
+        cacheKey = cacheKey,
+        song = song,
+        forceRefresh = forceRefresh,
+        shouldApplyCacheMutation = shouldApplyCacheMutation
+    )
+    if (primaryCachedResult != null) {
+        NPLogger.d("NERI-PlayerManager", "命中完整缓存，直接走离线缓存地址: $cacheKey")
         prepareBiliPlaybackSkipsForResolvedPlayback(song, playbackRequestTokenOverride)
-        val cachedResult = SongUrlResult.Success(
-            url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
-            durationMs = song.durationMs.takeIf { it > 0L },
-            audioInfo = cachedAudioInfo,
-            mimeType = cachedAudioInfo.mimeType,
-            expectedContentLength = cachedDescriptor.expectedContentLength,
-            representationIdentity = cachedDescriptor.representationIdentity,
-            cacheKeyOverride = cacheKey
-        )
         return mergeListenTogetherFallbackResult(
-            localResult = cachedResult,
+            localResult = primaryCachedResult,
+            listenTogetherFallback = initialListenTogetherFallback,
+            preferredQualityKey = listenTogetherPreferredQualityKey(song)
+        )
+    }
+    val fallbackNormalYouTubeCached = if (isYouTubeTrack && effectiveYouTubePreferM4a && !forceRefresh) {
+        val normalKey = computeCacheKey(
+            song = song,
+            youtubeQualityOverride = youtubeRecoveryStrategy?.preferredQualityOverride,
+            youtubePreferM4aOverride = false
+        )
+        if (normalKey != cacheKey) {
+            tryReadVerifiedOfflineCacheResult(
+                cacheKey = normalKey,
+                song = song,
+                forceRefresh = false,
+                shouldApplyCacheMutation = shouldApplyCacheMutation
+            )
+        } else null
+    } else null
+    if (fallbackNormalYouTubeCached != null && isMp4CompatibleMime(fallbackNormalYouTubeCached.mimeType)) {
+        NPLogger.d("NERI-PlayerManager", "命中完整普通 YouTube M4A 缓存，直接复用: ${fallbackNormalYouTubeCached.cacheKeyOverride}")
+        return mergeListenTogetherFallbackResult(
+            localResult = fallbackNormalYouTubeCached,
             listenTogetherFallback = initialListenTogetherFallback,
             preferredQualityKey = listenTogetherPreferredQualityKey(song)
         )
@@ -303,7 +269,7 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 "resolveSongUrl: retry=$retryAttempt/$SONG_URL_RESOLUTION_RETRY_COUNT, song=${song.name}, source=${song.album}"
             )
         }
-        val suppressError = hasCachedData ||
+        val suppressError = fallbackNormalYouTubeCached != null ||
             !isFinalAttempt ||
             initialListenTogetherFallback != null ||
             suppressListenTogetherResolverErrors
@@ -313,7 +279,9 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 suppressError = suppressError,
                 forceRefresh = forceRefresh,
                 youtubeRecoveryStrategy = youtubeRecoveryStrategy,
-                sideEffects = resolverSideEffects
+                sideEffects = resolverSideEffects,
+                preferM4aOverride = preferYouTubeM4a,
+                requireDirectOverride = requireYouTubeDirect
             )
             isBiliTrack(song) -> getBiliAudioUrl(
                 song = song,
@@ -353,24 +321,78 @@ internal suspend fun PlayerManager.resolveSongUrl(
         )
     }
 
-    return if (resolvedResult is SongUrlResult.Failure && hasCachedData) {
-        NPLogger.d("NERI-PlayerManager", "远端解析失败但缓存完整，回退到离线缓存地址: $cacheKey")
-        val fallbackDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
-        val fallbackAudioInfo = fallbackDescriptor?.toPlaybackAudioInfo {
-            getLocalizedString(it)
-        }
-        SongUrlResult.Success(
-            url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
-            audioInfo = fallbackAudioInfo,
-            mimeType = fallbackAudioInfo?.mimeType,
-            expectedContentLength = fallbackDescriptor?.expectedContentLength,
-            representationIdentity = fallbackDescriptor?.representationIdentity,
-            cacheKeyOverride = cacheKey,
-            durationMs = song.durationMs.takeIf { it > 0L }
+    return if (resolvedResult is SongUrlResult.Failure && fallbackNormalYouTubeCached != null) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "远端 M4A 解析失败，回退到已完整的普通 YouTube 缓存: ${fallbackNormalYouTubeCached.cacheKeyOverride}"
         )
+        fallbackNormalYouTubeCached
     } else {
         resolvedResult
     }
+}
+
+internal fun resolveYouTubeRequireDirect(
+    strategy: YouTubePlaybackRecoveryStrategy?,
+    requireDirectOverride: Boolean
+): Boolean = (strategy?.requireDirect ?: false) || requireDirectOverride
+
+private fun isMp4CompatibleMime(mimeType: String?): Boolean {
+    val clean = mimeType?.substringBefore(';')?.trim()?.lowercase() ?: return false
+    return clean == "audio/mp4" || clean == "audio/m4a" || clean == "audio/x-m4a"
+}
+
+internal suspend fun PlayerManager.tryReadVerifiedOfflineCacheResult(
+    cacheKey: String,
+    song: SongItem,
+    forceRefresh: Boolean = false,
+    shouldApplyCacheMutation: () -> Boolean = { true }
+): SongUrlResult.Success? {
+    if (cacheKey.isBlank()) return null
+    val cacheKeyIsUnsafe = loadPlaybackCacheKeySafety(cacheKey)
+    val cacheIntegrity = if (forceRefresh) {
+        NPLogger.d(
+            "NERI-PlayerManager",
+            "resolveSongUrl: bypass complete cache for forced refresh: $cacheKey"
+        )
+        CachedResourceIntegrity(isComplete = false, requiresRepair = false, coveredLength = 0L)
+    } else {
+        inspectExoPlayerCache(cacheKey)
+    }
+    if (cacheIntegrity.requiresRepair) {
+        invalidateCachedResourceForPlaybackRecovery(
+            cacheKey = cacheKey,
+            reason = "resolve_integrity_check",
+            shouldApplyMutation = shouldApplyCacheMutation
+        )
+    }
+    if (forceRefresh || !cacheIntegrity.isComplete || cacheKeyIsUnsafe) return null
+    val cachedDescriptor = cache?.readCachedPlaybackDescriptor(cacheKey)
+    val cachedAudioInfo = cachedDescriptor?.toPlaybackAudioInfo { getLocalizedString(it) }
+    val cachedContentLength = cache?.let {
+        ContentMetadata.getContentLength(it.getContentMetadata(cacheKey))
+    } ?: 0L
+    if (cachedAudioInfo == null || !cachedDescriptor.matchesCachedContentLength(cachedContentLength)) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "完整缓存描述符缺失或长度不匹配，淘汰旧资源并重新解析: key=$cacheKey"
+        )
+        invalidateCachedResourceForPlaybackRecovery(
+            cacheKey = cacheKey,
+            reason = "missing_playback_descriptor",
+            shouldApplyMutation = shouldApplyCacheMutation
+        )
+        return null
+    }
+    return SongUrlResult.Success(
+        url = "$OFFLINE_CACHE_URL_PREFIX$cacheKey",
+        durationMs = song.durationMs.takeIf { it > 0L },
+        audioInfo = cachedAudioInfo,
+        mimeType = cachedAudioInfo.mimeType,
+        expectedContentLength = cachedDescriptor.expectedContentLength,
+        representationIdentity = cachedDescriptor.representationIdentity,
+        cacheKeyOverride = cacheKey
+    )
 }
 
 private fun PlayerManager.prepareBiliPlaybackSkipsForResolvedPlayback(
@@ -1653,12 +1675,13 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                 song.id,
                 level = quality
             )
+            val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)
             NPLogger.d(
                 "NERI-PlayerManager",
-                "Netease playback lookup: id=${song.id}, level=$quality, elapsedMs=${SystemClock.elapsedRealtime() - startedAtMs}"
+                "${sanitizeNeteasePlaybackLogSummary(song.id, quality, parsed)}, elapsedMs=${SystemClock.elapsedRealtime() - startedAtMs}"
             )
 
-            when (val parsed = NeteasePlaybackResponseParser.parsePlayback(resp, song.durationMs)) {
+            when (parsed) {
                 is NeteasePlaybackResponseParser.PlaybackResult.RequiresLogin -> {
                     requiresLogin = true
                     if (shouldRetryNeteaseWithLowerQualityAfterLogin(
@@ -1839,7 +1862,7 @@ private suspend fun PlayerManager.getBiliAudioUrl(
         )
 
         if (audioStream?.url != null) {
-            NPLogger.d("NERI-PlayerManager-BiliAudioUrl", audioStream.url)
+            NPLogger.d("NERI-PlayerManager-BiliAudioUrl", playbackLogReference(audioStream.url))
             SongUrlResult.Success(
                 url = audioStream.url,
                 candidateUrls = audioStream.candidateUrls,
@@ -1882,7 +1905,10 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
     suppressError: Boolean = false,
     forceRefresh: Boolean = false,
     youtubeRecoveryStrategy: YouTubePlaybackRecoveryStrategy? = null,
-    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects(),
+    preferM4aOverride: Boolean = false,
+    // DLNA 只能把单个文件交给渲染器，HLS 播放列表里的分片地址无法被渲染器解析
+    requireDirectOverride: Boolean = false
 ): SongUrlResult = withContext(Dispatchers.IO) {
     val videoId = extractYouTubeMusicVideoId(song.mediaUri)
     if (videoId.isNullOrBlank()) {
@@ -1898,9 +1924,9 @@ private suspend fun PlayerManager.getYouTubeMusicAudioUrl(
     try {
         val preferredQuality = youtubeRecoveryStrategy?.preferredQualityOverride
             ?: effectiveYouTubeQuality()
-        val requireDirect = youtubeRecoveryStrategy?.requireDirect ?: false
-        // 首播保留用户选择; 出错恢复时才切到更稳的 m4a 直链
-        val preferM4a = youtubeRecoveryStrategy?.preferM4a ?: false
+        val requireDirect = resolveYouTubeRequireDirect(youtubeRecoveryStrategy, requireDirectOverride)
+        // 首播保留用户选择; 出错恢复或 DLNA 投送时切到兼容性更高的 m4a 直链
+        val preferM4a = youtubeRecoveryStrategy?.preferM4a ?: preferM4aOverride
         val resolvedPlayableAudio = youtubeMusicPlaybackRepository.getBestPlayableAudio(
             videoId = videoId,
             preferredQualityOverride = preferredQuality,

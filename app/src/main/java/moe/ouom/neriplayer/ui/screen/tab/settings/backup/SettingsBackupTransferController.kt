@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import moe.ouom.neriplayer.data.settings.generated.AutoSettingsRepository
+import moe.ouom.neriplayer.ui.feedback.launchOrShowUnavailable
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.backup.SettingsBackupRestoreSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.SettingsPage
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
@@ -157,8 +158,11 @@ internal fun rememberSettingsBackupTransferController(
     if (configState.showExportOptions) {
         SettingsConfigExportOptionsDialog(
             onConfirm = { includeLoginState, password ->
-                if (config.prepareExport(includeLoginState, password)) {
-                    exportConfig.launch(config.generateConfigFileName())
+                if (config.prepareExport(includeLoginState, password) &&
+                    !exportConfig.launchOrShowUnavailable(context, config.generateConfigFileName())
+                ) {
+                    // 选择器打不开时不会回调 onResult，需要在这里清掉已暂存的导出密码
+                    config.cancelExportSelection()
                 }
             },
             onDismiss = config::cancelExportSelection
@@ -170,9 +174,9 @@ internal fun rememberSettingsBackupTransferController(
         context = context,
         playlists = playlists,
         config = config,
-        launchPlaylistExport = { exportPlaylist.launch(it) },
-        launchPlaylistImport = { importPlaylist.launch(arrayOf("*/*")) },
-        launchConfigImport = { importConfig.launch(arrayOf("*/*")) }
+        launchPlaylistExport = { exportPlaylist.launchOrShowUnavailable(context, it) },
+        launchPlaylistImport = { importPlaylist.launchOrShowUnavailable(context, arrayOf("*/*")) },
+        launchConfigImport = { importConfig.launchOrShowUnavailable(context, arrayOf("*/*")) }
     )
     val recreateAction = BackupImportRecreateAction(
         required = configState.importRequiresActivityRecreate,

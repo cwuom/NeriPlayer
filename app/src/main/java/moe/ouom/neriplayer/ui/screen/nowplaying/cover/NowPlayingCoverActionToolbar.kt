@@ -32,6 +32,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -281,7 +283,14 @@ private fun NowPlayingCoverToolbarRow(
             onClick = actions.onVolume,
             modifier = buttonModifier.coverToolbarBounds("btn_volume", sharedTransitionScope, animatedVisibilityScope)
         ) {
-            PlaybackOutputIcon(rememberPlaybackRoomActive(), rememberAudioDeviceInfo(), Modifier.size(layout.iconSize))
+            val isDlnaActive = moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.castStateFlow
+                .collectAsStateWithLifecycle().value.isCastingActive
+            PlaybackOutputIcon(
+                roomActive = rememberPlaybackRoomActive(),
+                device = rememberAudioDeviceInfo(),
+                modifier = Modifier.size(layout.iconSize),
+                tint = toolbarActiveTint(isDlnaActive, status.activeColor, LocalContentColor.current)
+            )
         }
         NowPlayingCoverLyricsButton(
             status, layout.iconSize, buttonModifier, sharedTransitionScope,

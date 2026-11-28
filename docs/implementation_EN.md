@@ -42,7 +42,7 @@ The project owns 15 Android libraries, organized by business domain and register
 | [`:database`](../modules/database/README.md) | Room database, entities, DAOs, historical schemas, and upgrades. |
 | [`:native`](../modules/native/README.md) | Native crash handling, DSP effects, USB protocols and PCM calculations, exclusive transport, and third-party libusb; builds and packages `lib_neri.so`. |
 | [`:playback:logic`](../modules/playback/logic/README.md) | Policy decisions, runtime coordinators, PCM/audio processing, and queue rules, with package-level isolation. |
-| [`:playback:runtime`](../modules/playback/runtime/README.md) | Media3 engine, service, source resolution, USB output, effects, floating/Bluetooth lyrics, and host integration. |
+| [`:playback:runtime`](../modules/playback/runtime/README.md) | Media3 engine, service, source resolution, USB output, DLNA / UPnP casting, effects, floating/Bluetooth lyrics, and host integration. |
 | [`:download:logic`](../modules/download/logic/README.md) | Admission, state transitions, retries, scheduling, permits, ownership, commit rules, and metadata codecs. |
 | [`:download:runtime`](../modules/download/runtime/README.md) | Execution, Room queues, managed files, migration/recovery, Workers, and JobService. |
 | [`:lyrics`](../modules/lyrics/README.md) | LRC/YRC/TTML parsing, transforms, timelines, translation alignment, time offsets, and Lyricon/SuperLyric output coordination. |
@@ -215,7 +215,7 @@ If the previous launch ended with a JVM/native crash or system ANR, the app ente
 
 - Playback is based on Media3 ExoPlayer and managed by `PlayerManager`.
 - `AudioPlayerService` provides foreground playback, media notifications, MediaSession and basic transport controls.
-- Player code is split by responsibility across `playback/`, `url/`, `resolver/`, `service/`, `effects/`, `lifecycle/`, `watchdog/` and `usb/`.
+- Player code is split by responsibility across `playback/`, `url/`, `resolver/`, `service/`, `effects/`, `lifecycle/`, `watchdog/`, `usb/` and `dlna/`.
 - Shared song and playback state contracts are maintained in `:model`.
 - Playback state is persisted periodically, restoring the queue and state after a process restart.
 - The player layer handles the sleep timer, fade-in/fade-out, crossfade-next and playback mode recovery.
@@ -266,6 +266,12 @@ Safeguards in the player layer:
 - USB exclusive playback restored after foreground/background switches.
 
 USB attach handling is controlled by a setting. When it is off, both the Activity alias and the playback service ignore the `USB_DEVICE_ATTACHED` wake path.
+
+### DLNA / UPnP casting
+
+- Split across `protocol/`, `server/`, `audio/`, and `session/` for SSDP discovery, UPnP SOAP / GENA control, a LAN-scoped HTTP Range media server, staged container metadata normalization, and player session bridging.
+- Supports lossless FLAC direct streaming, lossless WAV (optional RIFF ID3v2.3) compatibility fallback, adaptive direct streaming for lossy online tracks, and per-device strict lossless blocking.
+- Supports `SetNextAVTransportURI` next-track pre-queuing and natural track-end continuation across `STOPPED` and `PAUSED_PLAYBACK` renderer transitions.
 
 ## Search and data sources
 

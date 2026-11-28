@@ -84,7 +84,14 @@ internal fun rememberMiniPlayerTabletActions(
                 onDismissRequest = { sheet = null },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 sheetGesturesEnabled = false
-            ) { VolumeControlSheetContent() }
+            ) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .bottomSheetScrollGuard()
+                        .verticalScroll(rememberScrollState())
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                ) { VolumeControlSheetContent() }
+            }
             MiniPlayerSheet.ListenTogether -> DensityScaledModalBottomSheet(
                 onDismissRequest = { sheet = null },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),

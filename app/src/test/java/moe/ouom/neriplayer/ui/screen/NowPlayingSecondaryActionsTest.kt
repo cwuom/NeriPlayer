@@ -1,5 +1,8 @@
 package moe.ouom.neriplayer.ui.screen
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.outlined.CastConnected
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -277,5 +280,43 @@ class NowPlayingSecondaryActionsTest {
         assertFalse(isNeteaseExclusiveFeatureAvailable(song.copy(channelId = "bilibili")))
         assertFalse(isNeteaseExclusiveFeatureAvailable(song.copy(album = "Bilibili|123")))
         assertFalse(isNeteaseExclusiveFeatureAvailable(song.copy(channelId = "youtubeMusic")))
+    }
+
+    @Test
+    fun `displayed audio device prefers active dlna renderer and falls back to local output`() {
+        val local = "Local Speaker" to Icons.Default.SpeakerGroup
+        val em7 = moe.ouom.neriplayer.data.model.playback.dlna.DlnaDevice(
+            udn = "uuid:em7",
+            friendlyName = "Shanling EM7",
+            location = "http://192.168.1.50:49152/desc.xml",
+            host = "192.168.1.50"
+        )
+        assertEquals(
+            local,
+            moe.ouom.neriplayer.ui.screen.nowplaying.resolveDisplayedAudioDeviceInfo(
+                local,
+                moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState()
+            )
+        )
+        assertEquals(
+            local,
+            moe.ouom.neriplayer.ui.screen.nowplaying.resolveDisplayedAudioDeviceInfo(
+                local,
+                moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState(
+                    activeDevice = null,
+                    connectionStatus = moe.ouom.neriplayer.data.model.playback.dlna.DlnaConnectionStatus.CONNECTED
+                )
+            )
+        )
+        assertEquals(
+            "Shanling EM7" to Icons.Outlined.CastConnected,
+            moe.ouom.neriplayer.ui.screen.nowplaying.resolveDisplayedAudioDeviceInfo(
+                local,
+                moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState(
+                    activeDevice = em7,
+                    connectionStatus = moe.ouom.neriplayer.data.model.playback.dlna.DlnaConnectionStatus.CONNECTED
+                )
+            )
+        )
     }
 }

@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.ui.screen.tab.settings.backup
 
 import android.app.Application
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -28,6 +29,7 @@ import moe.ouom.neriplayer.data.model.config.AppConfigBackup
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthBundle
 import moe.ouom.neriplayer.platform.youtube.auth.YouTubeAuthRepository
+import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.theme.NeriTheme
 import moe.ouom.neriplayer.ui.viewmodel.BackupRestoreViewModel
 import moe.ouom.neriplayer.ui.viewmodel.ConfigTransferViewModel
@@ -47,6 +49,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowToast
 import moe.ouom.neriplayer.R as AppR
 
 @RunWith(AndroidJUnit4::class)
@@ -59,6 +62,8 @@ class SettingsBackupTransferDialogsFlowTest {
     private val config = ConfigTransferViewModel()
     private lateinit var controller: SettingsBackupTransferController
     private val documentNames = mutableListOf<String>()
+    private val openedMimeTypes = mutableListOf<List<String>>()
+    private var pickerFailure: RuntimeException? = null
     private val storeOwner = object : ViewModelStoreOwner {
         override val viewModelStore = store
     }
@@ -69,8 +74,15 @@ class SettingsBackupTransferDialogsFlowTest {
             input: I,
             options: ActivityOptionsCompat?
         ) {
-            check(contract is ActivityResultContracts.CreateDocument)
-            documentNames += input as String
+            pickerFailure?.let { throw it }
+            when (contract) {
+                is ActivityResultContracts.CreateDocument -> documentNames += input as String
+                is ActivityResultContracts.OpenDocument -> {
+                    @Suppress("UNCHECKED_CAST")
+                    openedMimeTypes += (input as Array<String>).toList()
+                }
+                else -> error("unexpected contract $contract")
+            }
         }
     }
     private val registryOwner = object : ActivityResultRegistryOwner {
@@ -89,6 +101,48 @@ class SettingsBackupTransferDialogsFlowTest {
     @Test
     fun `material settings opens the export picker only after confirming the current options`() =
         verifyExportSelection(UiStyle.Material)
+
+    @Test
+    fun `import pickers report unavailable instead of crashing without DocumentsUI`() {
+        installManager(ConfigFileManager(context, ioDispatcher = Dispatchers.Main.immediate))
+        pickerFailure = ActivityNotFoundException("no DocumentsUI")
+        render(UiStyle.Clean)
+
+        listOf(controller::importConfig, controller::importPlaylists).forEach { importAction ->
+            expectFreshFeedback()
+            composeRule.runOnIdle { importAction() }
+            composeRule.runOnIdle {
+                assertEquals(string(CoreCommonR.string.error_no_app_for_action), ShadowToast.getTextOfLatestToast())
+            }
+        }
+        composeRule.runOnIdle {
+            assertFalse(config.uiState.value.isImporting)
+            assertEquals(emptyList<List<String>>(), openedMimeTypes)
+        }
+
+        pickerFailure = null
+        composeRule.runOnIdle { controller.importConfig() }
+        composeRule.runOnIdle { assertEquals(listOf(listOf("*/*")), openedMimeTypes) }
+    }
+
+    @Test
+    fun `export picker failure clears the pending export selection and reports unavailable`() {
+        installManager(ConfigFileManager(context, ioDispatcher = Dispatchers.Main.immediate))
+        pickerFailure = ActivityNotFoundException("no DocumentsUI")
+        render(UiStyle.Material)
+        expectFreshFeedback()
+        composeRule.runOnIdle { controller.exportConfig() }
+
+        composeRule.onNodeWithText(string(CoreCommonR.string.settings_backup_action_export)).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(string(CoreCommonR.string.error_no_app_for_action), ShadowToast.getTextOfLatestToast())
+            assertEquals(emptyList<String>(), documentNames)
+            assertFalse(config.uiState.value.showExportOptions)
+            assertNull(privateField("exportOptions"))
+            assertNull(privateField("exportPassword"))
+        }
+    }
 
     @Test
     fun `encrypted import presents a cancellable password request through the settings host`() {
@@ -199,6 +253,21 @@ class SettingsBackupTransferDialogsFlowTest {
             }
         }
     }
+
+    // AppFeedback 按时间全局去重同一文案，而 Robolectric 每个用例都会重置时钟，需要清掉上一次的去重记录
+    private fun expectFreshFeedback() {
+        AppFeedback::class.java.getDeclaredField("lastToastDedupState").apply {
+            isAccessible = true
+            set(AppFeedback, null)
+        }
+        ShadowToast.reset()
+    }
+
+    private fun privateField(name: String): Any? =
+        ConfigTransferViewModel::class.java.getDeclaredField(name).run {
+            isAccessible = true
+            get(config)
+        }
 
     private fun defaultKey(type: Class<*>) = "androidx.lifecycle.ViewModelProvider.DefaultKey:${type.canonicalName}"
 

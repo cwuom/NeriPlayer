@@ -35,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.SpeakerGroup
+import androidx.compose.material.icons.outlined.CastConnected
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -141,11 +142,24 @@ fun rememberAudioDeviceInfo(): Pair<String, ImageVector> {
     val context = LocalContext.current
     val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val owner = remember(context, audioManager) { NowPlayingAudioDeviceOwner(audioManager, context) }
+    val castState by moe.ouom.neriplayer.core.player.dlna.session.DlnaCastManager.castStateFlow
+        .collectAsStateWithLifecycle()
     DisposableEffect(owner) {
         owner.register()
         onDispose(owner::unregister)
     }
-    return owner.deviceInfo
+    return resolveDisplayedAudioDeviceInfo(owner.deviceInfo, castState)
+}
+
+internal fun resolveDisplayedAudioDeviceInfo(
+    localDeviceInfo: Pair<String, ImageVector>,
+    castState: moe.ouom.neriplayer.data.model.playback.dlna.DlnaCastState
+): Pair<String, ImageVector> {
+    val activeDlnaDevice = castState.activeDevice
+    if (castState.isCastingActive && activeDlnaDevice != null) {
+        return Pair(activeDlnaDevice.friendlyName, Icons.Outlined.CastConnected)
+    }
+    return localDeviceInfo
 }
 
 fun getCurrentAudioDevice(audioManager: AudioManager, context: Context): Pair<String, ImageVector> {

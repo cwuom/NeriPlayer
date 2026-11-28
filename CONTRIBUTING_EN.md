@@ -71,7 +71,7 @@ Environment notes:
 
 NeriPlayer covers a broad feature surface. Protect these paths first before submitting.
 
-- **Playback**: `PlayerManager`, playback resolution, cache, URL refresh and fallback, long-audio progress memory, BilibiliSponsorBlock skipping, state recovery, loudness normalization, channel balance, high-resolution output, the USB exclusive native path, startup watchdogs, foreground / background health audits.
+- **Playback**: `PlayerManager`, playback resolution, cache, URL refresh and fallback, long-audio progress memory, BilibiliSponsorBlock skipping, state recovery, loudness normalization, channel balance, high-resolution output, the USB exclusive native path, DLNA / UPnP casting, startup watchdogs, foreground / background health audits.
 - **Downloads**: `AudioDownloadManager`, `GlobalDownloadManager`, `DownloadTaskStore`, `DownloadLifecyclePolicies`, `ManagedDownloadStorage`, resume checkpoints, sidecar files, queue recovery, cancellation cleanup, SAF migration.
 - **Sync**: GitHub / WebDAV three-way merge, deletion records, playback stats, missing-field snapshot cleanup, JSON / ProtoBuf / Base64 compatibility, WebDAV concurrency protection.
 - **Local data**: playlist Room transactions, legacy JSON upgrade and atomic fallback, local metadata hydration, config import / export, encrypted auth storage, DataStore settings.
@@ -413,6 +413,10 @@ Package-level calculation domains are isolated by the compiled-bytecode gate.
 - Supports **UAC1.0** and compatible **UAC2.0 Type I PCM** devices.
 - Covers 32-bit PCM, software PCM-float conversion, UAC2 explicit feedback, coordinated AudioSink reconfiguration, dynamic transfer scaling, and backpressure stall recovery.
 
+**DLNA / UPnP casting (`dlna/`)**
+
+- Split into `protocol/`, `server/`, `audio/`, and `session/` for SSDP discovery, SOAP / GENA control, the LAN HTTP Range media server, staged audio / embedded-tag preparation, and `PlayerManager` bridging. Shared contracts live in `playback/dlna` of `:model`, and the output sheet lives in `ui/screen/nowplaying/dlna/` of app.
+
 **`modules/download/runtime/src/main/java/moe/ouom/neriplayer/core/download/`**
 
 - `GlobalDownloadManager.kt` maintains global download tasks and the downloaded song list.
@@ -615,6 +619,12 @@ Package-level calculation domains are isolated by the compiled-bytecode gate.
 - Volume follows regular media volume (`STREAM_MUSIC`), not MediaSession remote volume. The background anchor cannot set an output device, and Android 12+ then switches the media volume device to the speaker.
 - USB attach response is a separate setting. When off, both the Activity alias and the playback-service broadcast entry skip `USB_DEVICE_ATTACHED`.
 - When a foreground / background USB runtime report returns `native_refresh_deferred`, the player retries with a bounded delay. Other invalid reports stay fail-closed.
+
+#### DLNA / UPnP casting
+
+- Needs a UPnP `AVTransport:1` renderer on the same LAN, the foreground service, `WifiLock` / `MulticastLock` / `WakeLock`, and connectivity callbacks.
+- Online streams are resolved and staged locally first, exposing only randomized one-time HTTP paths to private-LAN clients without forwarding platform cookies or signed URL tokens.
+- Remote volume is read from the renderer on connect and changed only on explicit user input; switching back to local stops the remote renderer and resumes from the current position.
 
 #### Listen Together
 
