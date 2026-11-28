@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_sort_action">Sort</string>
+    <string name="playlist_sort_sheet_title">Sort playlist</string>
+    <string name="playlist_sort_header_subtitle">%1$d songs</string>
+    <string name="playlist_sort_section_mode">Sort by</string>
+    <string name="playlist_sort_mode_title">Title</string>
+    <string name="playlist_sort_mode_file_name">File name</string>
+    <string name="playlist_sort_mode_desc">Title ignores case; file name only applies to local files.</string>
+    <string name="playlist_sort_section_order">Order</string>
+    <string name="playlist_sort_ascending">Ascending</string>
+    <string name="playlist_sort_descending">Descending</string>
+    <string name="playlist_sort_section_import">Custom order</string>
+    <string name="playlist_sort_import_action">Choose TXT / CSV file</string>
+    <string name="playlist_sort_import_busy">Reading…</string>
+    <string name="playlist_sort_import_hint">One song per line: title, title - artist, or title,artist.</string>
+    <string name="playlist_sort_import_empty">No usable song entries were found in this file.</string>
+    <string name="playlist_sort_import_summary">%1$d matched · %2$d unmatched</string>
+    <string name="playlist_sort_import_unmatched">Unmatched: %1$s</string>
+    <string name="playlist_sort_import_unmatched_more">%1$d more unmatched</string>
+    <string name="playlist_sort_import_clear">Clear import</string>
+    <string name="playlist_sort_section_preview">Preview</string>
+    <string name="playlist_sort_apply">Apply sort</string>
+    <string name="playlist_sort_applied">Reordered %1$d songs</string>
+    <string name="playlist_sort_stale">The playlist changed, please sort again</string>
+    <string name="playlist_sort_failed">Sorting failed, please try again</string>
+</resources>

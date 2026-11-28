@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.Delete
@@ -111,6 +112,7 @@ import moe.ouom.neriplayer.platform.youtube.settings.YouTubeContentSettings
 import moe.ouom.neriplayer.platform.youtube.settings.visiblePlaylistSongs
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertDialog
 import moe.ouom.neriplayer.ui.screen.playlist.insert.PlaylistInsertPreview
+import moe.ouom.neriplayer.ui.screen.playlist.sort.PlaylistSortSheet
 import moe.ouom.neriplayer.ui.screen.playlist.insert.isPlaylistInsertPreviewCurrent
 import moe.ouom.neriplayer.ui.screen.playlist.reorder.LocalPlaylistReorderableItem
 import moe.ouom.neriplayer.ui.screen.playlist.reorder.localPlaylistDetectReorder
@@ -161,6 +163,7 @@ internal fun LocalPlaylistDetailModernContent(
         var showInsertDialog by remember(playlistId) { mutableStateOf(false) }
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
         var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
+        var sortSheetSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
         val selectedDownloadableSongs = remember(selectedSongsForAction) {
             playlistDownloadCandidates(selectedSongsForAction)
@@ -347,6 +350,18 @@ internal fun LocalPlaylistDetailModernContent(
                     }
                 }
 
+                // 排序与拖拽排序共用同一套提交语义：能拖拽的页面才提供排序
+                if (canReorderCurrentSongs) {
+                    HapticIconButton(
+                        onClick = { sortSheetSongs = tabSongs },
+                        enabled = tabSongs.size >= 2
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Sort,
+                            contentDescription = stringResource(AppR.string.playlist_sort_action)
+                        )
+                    }
+                }
                 if (!isSystemPlaylist) {
                     HapticIconButton(onClick = {
                         renameText =
@@ -944,6 +959,50 @@ internal fun LocalPlaylistDetailModernContent(
                     LocalCurationSheet(
                         songs = songs,
                         onDismissRequest = { curationSongs = null }
+                    )
+                }
+
+                sortSheetSongs?.let { sortTargets ->
+                    PlaylistSortSheet(
+                        songs = sortTargets,
+                        onDismissRequest = { sortSheetSongs = null },
+                        onApplyOrder = { orderedSongs ->
+                            sortSheetSongs = null
+                            val expectedOrder = sortTargets.map { it.identity() }
+                            val newOrder = orderedSongs.map { it.identity() }
+                            scope.launchLocalPlaylistMutation(
+                                operation = "sortPlaylistSongs",
+                                onResult = { result ->
+                                    // reorderSongs 返回 false 表示歌单在预览期间被改过
+                                    val message = when {
+                                        result.isFailure -> AppR.string.playlist_sort_failed
+                                        result.getOrNull() != true ->
+                                            AppR.string.playlist_sort_stale
+                                        else -> null
+                                    }
+                                    scope.launch {
+                                        if (message != null) {
+                                            snackbarHostState.showNeriSnackbar(
+                                                composeResources.getString(message)
+                                            )
+                                        } else {
+                                            snackbarHostState.showNeriSnackbar(
+                                                composeResources.getString(
+                                                    AppR.string.playlist_sort_applied,
+                                                    newOrder.size
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            ) {
+                                repo.reorderSongs(
+                                    playlistId = playlistId,
+                                    newOrder = newOrder,
+                                    expectedOrder = expectedOrder
+                                )
+                            }
+                        }
                     )
                 }
 
