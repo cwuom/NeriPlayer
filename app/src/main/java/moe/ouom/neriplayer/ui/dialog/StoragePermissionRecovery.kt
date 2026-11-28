@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import moe.ouom.neriplayer.R as AppR
 import moe.ouom.neriplayer.common.storage.directory.ManagedDownloadDirectoryIdentity
@@ -21,6 +22,28 @@ internal data class StoragePermissionPrompt(
 ) {
     val key: String = "${event.scope}:${targetTreeUri ?: event.reference.orEmpty()}"
 }
+
+internal fun StoragePermissionPrompt.toSavedState(): ArrayList<String> = arrayListOf(
+    event.scope.name,
+    event.fallback.name,
+    event.reference.orEmpty(),
+    targetTreeUri.orEmpty()
+)
+
+internal fun restoreStoragePermissionPrompt(saved: List<String>): StoragePermissionPrompt? {
+    if (saved.size != 4) return null
+    val scope = StoragePermissionScope.entries.firstOrNull { it.name == saved[0] } ?: return null
+    val fallback = StoragePermissionFallback.entries.firstOrNull { it.name == saved[1] } ?: return null
+    return StoragePermissionPrompt(
+        event = PlayerEvent.StoragePermissionLost(scope, fallback, saved[2].ifBlank { null }),
+        targetTreeUri = saved[3].ifBlank { null }
+    )
+}
+
+internal val StoragePermissionPromptSaver = Saver<StoragePermissionPrompt?, ArrayList<String>>(
+    save = { it?.toSavedState() },
+    restore = ::restoreStoragePermissionPrompt
+)
 
 internal fun storagePermissionPrompt(
     event: PlayerEvent.StoragePermissionLost,

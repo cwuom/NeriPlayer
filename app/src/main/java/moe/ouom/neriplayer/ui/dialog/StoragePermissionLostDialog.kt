@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -62,9 +63,14 @@ internal fun StoragePermissionLostDialogHost(state: StoragePermissionPromptState
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     var verifying by remember { mutableStateOf(false) }
+    // 选择器打开期间 Activity 或进程可能被重建，弹窗状态不会保留，授权目标要单独存进 saved state
+    var pendingRequest by rememberSaveable(stateSaver = StoragePermissionPromptSaver) {
+        mutableStateOf<StoragePermissionPrompt?>(null)
+    }
     // 启动器需要在弹窗出现前注册，Activity 重建后才能收到选择结果
     val launcher = rememberLauncherForActivityResult(remember { PersistableOpenDocumentTree() }) { picked ->
-        val prompt = state.current
+        val prompt = pendingRequest ?: state.current
+        pendingRequest = null
         if (picked == null || prompt == null) return@rememberLauncherForActivityResult
         verifying = true
         scope.launch {
@@ -72,7 +78,11 @@ internal fun StoragePermissionLostDialogHost(state: StoragePermissionPromptState
             verifying = false
             // 授权常在播放页发起，播放页不挂主界面的 Snackbar，用 Toast 保证结果可见
             AppFeedback.showToast(context, resources.getString(outcome.messageRes))
-            if (outcome == StorageReauthorizationOutcome.RESTORED) state.resolve()
+            when {
+                outcome == StorageReauthorizationOutcome.RESTORED -> state.resolve()
+                // 重建后弹窗已丢失，未恢复时重新给出入口
+                state.current == null -> state.offer(prompt)
+            }
         }
     }
     val prompt = state.current ?: return
@@ -101,7 +111,12 @@ internal fun StoragePermissionLostDialogHost(state: StoragePermissionPromptState
             if (target != null) {
                 HapticTextButton(
                     enabled = !verifying,
-                    onClick = { launcher.launchOrShowUnavailable(context, initialPickerUri(target)) }
+                    onClick = {
+                        pendingRequest = prompt
+                        if (!launcher.launchOrShowUnavailable(context, initialPickerUri(target))) {
+                            pendingRequest = null
+                        }
+                    }
                 ) {
                     Text(stringResource(AppR.string.storage_permission_reauthorize))
                 }

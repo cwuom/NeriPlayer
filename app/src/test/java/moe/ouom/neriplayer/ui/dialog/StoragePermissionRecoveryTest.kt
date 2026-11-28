@@ -115,6 +115,26 @@ class StoragePermissionRecoveryTest {
     }
 
     @Test
+    fun `pending reauthorization survives saved state round trips`() {
+        listOf(
+            storagePermissionPrompt(localEvent(ringtoneSong), null),
+            storagePermissionPrompt(downloadEvent, ringtoneTree),
+            storagePermissionPrompt(localEvent("content://media/external/audio/media/42"), null)
+        ).forEach { prompt ->
+            val restored = restoreStoragePermissionPrompt(prompt.toSavedState())
+            assertEquals(prompt, restored)
+            assertEquals(prompt.key, restored?.key)
+        }
+    }
+
+    @Test
+    fun `corrupted saved state is ignored instead of crashing`() {
+        assertNull(restoreStoragePermissionPrompt(emptyList()))
+        assertNull(restoreStoragePermissionPrompt(listOf("UNKNOWN", "SKIPPED", "", "")))
+        assertNull(restoreStoragePermissionPrompt(listOf("LOCAL_MEDIA", "UNKNOWN", "", "")))
+    }
+
+    @Test
     fun `reauthorization outcome requires grant match and verified access`() {
         assertEquals(StorageReauthorizationOutcome.FAILED, storageReauthorizationOutcome(false, true, true))
         assertEquals(StorageReauthorizationOutcome.MISMATCH, storageReauthorizationOutcome(true, false, false))
