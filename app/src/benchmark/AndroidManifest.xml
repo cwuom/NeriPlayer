@@ -4,5 +4,15 @@
         android:label="@string/benchmark_app_name"
         tools:replace="android:label">
         <profileable android:shell="true" tools:targetApi="29" />
+
+        <!-- DUMP 只授予 shell，其他应用无法改写引导状态 -->
+        <receiver
+            android:name="moe.ouom.neriplayer.benchmark.BaselineProfileFixtureReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="moe.ouom.neriplayer.benchmark.PREPARE_STARTUP" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
