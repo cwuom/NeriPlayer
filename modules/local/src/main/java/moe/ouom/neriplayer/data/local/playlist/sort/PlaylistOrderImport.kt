@@ -48,9 +48,10 @@ data class PlaylistOrderParseResult(
  *
  * 支持的写法：
  * - 每行一首歌名；
- * - `歌名 - 歌手` / `歌手 - 歌名`（`-`、`–`、`—`、`|` 均可）；
+ * - `歌名 - 歌手` / `歌手 - 歌名`（`-` 两侧要有空格，`—`、`–`、`|` 不加空格也认）；
  * - `歌名,歌手` 的 csv，首行表头（如 `歌名,歌手`）会被跳过；
- * - 行首序号前缀，如 `1. `、`2、`、`03) `。
+ * - 行首序号前缀，如 `1. `、`2、`、`03) `；`12 - 歌名 - 歌手` 这种「序号 + 完整两字段」
+ *   也会剥掉序号，但 `1984 - David Bowie` 这类以数字开头的歌名会原样保留。
  *
  * 空行、`#` 注释行和表头行不计入 [PlaylistOrderParseResult.skippedLineCount]。
  */
@@ -141,10 +142,28 @@ data class PlaylistOrderMatch(
 fun describePlaylistOrderEntry(entry: PlaylistOrderEntry): String =
     entry.secondary?.let { "${entry.primary} - $it" } ?: entry.primary
 
-private val INDEX_PREFIX = Regex("""^\s*\d{1,4}\s*[.、．)）:：\-]\s*""")
-private val DASH_SEPARATOR = Regex("""\s*[—–\-~～|｜]\s*""")
-private val CSV_HEADER_WORDS = listOf("歌名", "歌曲", "曲名", "标题", "title", "name", "song", "track")
-private val CSV_HEADER_ARTIST_WORDS = listOf("歌手", "艺术家", "艺人", "作者", "artist", "singer", "performer")
+/** `1. `、`2、`、`03) ` 这类明确的序号前缀，`-` 不在其中，见 [DASH_INDEX_PREFIX]。 */
+private val INDEX_PREFIX = Regex("""^\s*\d{1,4}\s*[.、．)）:：]\s*""")
+
+/** `12 - 歌名 - 歌手` 的序号形式；只有剩余部分还含分隔符时才算序号。 */
+private val DASH_INDEX_PREFIX = Regex("""^\s*\d{1,4}\s*-\s*(.+)""")
+
+/**
+ * 字段分隔符。
+ *
+ * ASCII `-` 必须两侧带空格，否则 `AC-DC`、`B-52's` 这类歌名会被切开；
+ * `—`、`–`、`|` 本来就很少出现在歌名里，不加空格也按分隔符处理。
+ */
+private val DASH_SEPARATOR = Regex("""(?:\s+[-–—]\s+|\s*[—–|｜~～]\s*)""")
+
+/** 表头判定用精确匹配：`Track 2`、`My Song` 这类真实歌名不能被当成表头丢掉。 */
+private val CSV_TITLE_HEADER_LABELS = setOf(
+    "歌名", "歌曲", "曲名", "标题", "名称", "title", "name", "song", "track", "songname", "trackname"
+)
+private val CSV_ARTIST_HEADER_LABELS = setOf(
+    "歌手", "艺术家", "艺人", "作者", "artist", "singer", "performer", "artistname"
+)
+private val CSV_TITLE_ONLY_HEADER_LABELS = setOf("歌名", "歌曲", "曲名", "标题")
 
 private fun detectCsvMode(lines: List<String>): Boolean {
     val sample = lines.take(5)
@@ -152,20 +171,31 @@ private fun detectCsvMode(lines: List<String>): Boolean {
     val first = stripIndexPrefix(sample.first())
     if (isCsvHeader(first)) return true
     val commaLines = sample.count { splitCsvLine(it).size >= 2 }
-    return commaLines * 2 >= sample.size && sample.size >= 2
+    // 只有一行 `Hello,Adele` 的局部顺序也是合法 csv：未提到的歌会追加到末尾，
+    // 所以不能因为行数少于 2 就退回纯文本，否则歌手字段被丢掉、同名歌会匹配错。
+    return commaLines > 0 && commaLines * 2 >= sample.size
 }
 
 private fun isCsvHeader(line: String): Boolean {
-    val fields = splitCsvLine(line).map { normalizeMatchKey(it) }
+    val fields = splitCsvLine(line)
+        .map { normalizeMatchKey(it) }
+        .filter { it.isNotEmpty() }
     if (fields.isEmpty()) return false
-    val titleHit = CSV_HEADER_WORDS.any { word -> fields[0].contains(normalizeMatchKey(word)) }
-    val artistHit = fields.size > 1 &&
-        CSV_HEADER_ARTIST_WORDS.any { word -> fields[1].contains(normalizeMatchKey(word)) }
-    return titleHit || artistHit
+    if (fields.size == 1) return fields[0] in CSV_TITLE_ONLY_HEADER_LABELS
+    // 两列都必须是表头词，避免「歌名,歌手」以外的普通数据行被误判
+    return fields[0] in CSV_TITLE_HEADER_LABELS && fields[1] in CSV_ARTIST_HEADER_LABELS
 }
 
-private fun stripIndexPrefix(line: String): String =
-    line.replace(INDEX_PREFIX, "").trim()
+private fun stripIndexPrefix(line: String): String {
+    val trimmed = line.trim()
+    val withoutBulletIndex = trimmed.replace(INDEX_PREFIX, "").trim()
+    if (withoutBulletIndex != trimmed) return withoutBulletIndex
+    // `-` 只在后面还有分隔符时才当序号：`1984 - David Bowie` 的 1984 是歌名，
+    // 削掉就只剩 `David Bowie`，匹配不到本该命中的那首。
+    val dashIndex = DASH_INDEX_PREFIX.find(trimmed) ?: return trimmed
+    val remainder = dashIndex.groupValues[1].trim()
+    return if (DASH_SEPARATOR.containsMatchIn(remainder)) remainder else trimmed
+}
 
 private fun splitLineEntry(line: String): PlaylistOrderEntry? {
     val cleaned = line.trim().trim('"', '\'', '“', '”').trim()

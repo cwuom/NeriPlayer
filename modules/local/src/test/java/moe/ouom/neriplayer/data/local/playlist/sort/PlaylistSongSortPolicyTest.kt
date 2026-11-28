@@ -92,6 +92,20 @@ class PlaylistSongSortPolicyTest {
     }
 
     @Test
+    fun `file name sort ignores remote media uris`() {
+        val songs = listOf(
+            song(id = 1, name = "Zeta", mediaUri = "ytmusic://video/zzz"),
+            song(id = 2, name = "Alpha", mediaUri = "ytmusic://video/aaa"),
+            song(id = 3, name = "Local", localFileName = "0-local.mp3")
+        )
+
+        val sorted = sortPlaylistSongs(songs, PlaylistSongSortOrder(PlaylistSongSortMode.FILE_NAME))
+
+        // 远端歌曲按标题排序，不能被 ytmusic:// 里的视频 ID 带偏
+        assertEquals(listOf(3L, 2L, 1L), sorted.map { it.id })
+    }
+
+    @Test
     fun `sorting an empty or single song playlist keeps the input`() {
         assertEquals(emptyList<SongItem>(), sortPlaylistSongs(emptyList(), PlaylistSongSortOrder(PlaylistSongSortMode.TITLE)))
         val single = listOf(song(id = 1, name = "Only"))

@@ -83,13 +83,23 @@ internal fun playlistSongSortKey(song: SongItem, mode: PlaylistSongSortMode): St
     }
 
 /**
- * 本地文件的文件名：优先持久化的 `localFileName`，其次从路径 / URI 尾部取，
- * 非本地歌曲返回 null，由调用方回退到标题。
+ * 本地文件的文件名：优先持久化的 `localFileName`，其次从本地路径 / 本地 URI 尾部取。
+ *
+ * 只接受 `file:` / `content:` 这类本地来源；`ytmusic://`、`http(s)://` 等远端地址
+ * 不是文件名，直接返回 null，由调用方回退到标题。否则自定义歌单里的远端歌曲
+ * 会按视频 ID 排序，和界面上「仅对本地文件生效」的说明不符。
  */
-internal fun playlistSongFileName(song: SongItem): String? =
-    song.localFileName?.trim()?.takeIf { it.isNotEmpty() }
-        ?: song.localFilePath?.let(::playlistSortFileNameFromPath)
-        ?: song.mediaUri?.let(::playlistSortFileNameFromPath)
+internal fun playlistSongFileName(song: SongItem): String? {
+    song.localFileName?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+    song.localFilePath?.let(::playlistSortFileNameFromPath)?.let { return it }
+    val uri = song.mediaUri?.trim().orEmpty()
+    if (!isLocalMediaReference(uri)) return null
+    return playlistSortFileNameFromPath(uri)
+}
+
+private fun isLocalMediaReference(value: String): Boolean =
+    value.startsWith("content:", ignoreCase = true) ||
+        value.startsWith("file:", ignoreCase = true)
 
 private fun playlistSortFileNameFromPath(value: String): String? {
     val withoutQuery = value.substringBefore('?').substringBefore('#')

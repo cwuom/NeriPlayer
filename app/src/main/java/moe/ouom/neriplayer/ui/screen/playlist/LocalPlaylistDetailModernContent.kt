@@ -164,6 +164,8 @@ internal fun LocalPlaylistDetailModernContent(
         var insertInProgress by remember(playlistId) { mutableStateOf(false) }
         var curationSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         var sortSheetSongs by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
+        // 面板展示的是打开那一刻的完整顺序，应用时要拿它比对，而不是最新的 localSongs
+        var sortSheetSnapshot by remember(playlistId) { mutableStateOf<List<SongItem>?>(null) }
         val curatableTabSongs = remember(tabSongs) { tabSongs.filter { it.isLocalSong() } }
         val selectedDownloadableSongs = remember(selectedSongsForAction) {
             playlistDownloadCandidates(selectedSongsForAction)
@@ -353,7 +355,10 @@ internal fun LocalPlaylistDetailModernContent(
                 // 排序与拖拽排序共用同一套提交语义：能拖拽的页面才提供排序
                 if (canReorderCurrentSongs) {
                     HapticIconButton(
-                        onClick = { sortSheetSongs = tabSongs },
+                        onClick = {
+                            sortSheetSnapshot = localSongs.toList()
+                            sortSheetSongs = tabSongs
+                        },
                         enabled = tabSongs.size >= 2
                     ) {
                         Icon(
@@ -965,11 +970,34 @@ internal fun LocalPlaylistDetailModernContent(
                 sortSheetSongs?.let { sortTargets ->
                     PlaylistSortSheet(
                         songs = sortTargets,
-                        onDismissRequest = { sortSheetSongs = null },
-                        onApplyOrder = { orderedSongs ->
+                        onDismissRequest = {
                             sortSheetSongs = null
-                            val expectedOrder = sortTargets.map { it.identity() }
-                            val newOrder = orderedSongs.map { it.identity() }
+                            sortSheetSnapshot = null
+                        },
+                        onApplyOrder = applyOrder@{ orderedSongs ->
+                            // 按打开面板时的完整快照合并：面板预览代表的是那一刻的顺序
+                            val fullOrder = sortSheetSnapshot ?: localSongs.toList()
+                            sortSheetSongs = null
+                            sortSheetSnapshot = null
+                            // 面板拿到的是过滤后的可见歌曲（hideExplicit / hideMusicVideos 可能藏歌），
+                            // 而 reorderSongs 的 expectedOrder 要跟完整歌单比，所以先按槽位合并回完整顺序。
+                            val mergedOrder = reorderVisiblePlaylistSlots(
+                                fullOrder = fullOrder,
+                                orderedVisibleKeys = orderedSongs.map { it.stableKey() },
+                                keyOf = { it.stableKey() }
+                            )
+                            val snapshotOrder = fullOrder.map { it.identity() }
+                            // 合并失败，或面板开着期间歌单被同步 / 别处改过：这次不写，提示重排
+                            if (mergedOrder == null || localSongs.map { it.identity() } != snapshotOrder) {
+                                scope.launch {
+                                    snackbarHostState.showNeriSnackbar(
+                                        composeResources.getString(AppR.string.playlist_sort_stale)
+                                    )
+                                }
+                                return@applyOrder
+                            }
+                            val expectedOrder = snapshotOrder
+                            val newOrder = mergedOrder.map { it.identity() }
                             scope.launchLocalPlaylistMutation(
                                 operation = "sortPlaylistSongs",
                                 onResult = { result ->

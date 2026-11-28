@@ -15,6 +15,7 @@
     <string name="playlist_sort_import_busy">Reading…</string>
     <string name="playlist_sort_import_hint">One song per line: title, title - artist, or title,artist.</string>
     <string name="playlist_sort_import_empty">No usable song entries were found in this file.</string>
+    <string name="playlist_sort_import_too_large">The file is over 2 MB, please pick a smaller TXT / CSV.</string>
     <string name="playlist_sort_import_summary">%1$d matched · %2$d unmatched</string>
     <string name="playlist_sort_import_unmatched">Unmatched: %1$s</string>
     <string name="playlist_sort_import_unmatched_more">%1$d more unmatched</string>

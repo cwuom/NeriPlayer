@@ -15,6 +15,7 @@
     <string name="playlist_sort_import_busy">读取中…</string>
     <string name="playlist_sort_import_hint">每行一首：歌名、歌名 - 歌手或 歌名,歌手。</string>
     <string name="playlist_sort_import_empty">没有从文件里读到可用的歌曲条目。</string>
+    <string name="playlist_sort_import_too_large">文件超过 2 MB，请换一个更小的 txt / csv。</string>
     <string name="playlist_sort_import_summary">匹配 %1$d 首 · 未匹配 %2$d 首</string>
     <string name="playlist_sort_import_unmatched">未匹配：%1$s</string>
     <string name="playlist_sort_import_unmatched_more">还有 %1$d 首未匹配</string>

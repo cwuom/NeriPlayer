@@ -28,7 +28,6 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,9 +42,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.outlined.TextSnippet
@@ -77,9 +76,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.local.playlist.sort.PlaylistOrderMatch
@@ -105,6 +106,9 @@ private const val UNMATCHED_PREVIEW_LIMIT = 3
 private val PREVIEW_MAX_HEIGHT = 260.dp
 private const val SHEET_MAX_HEIGHT_FRACTION = 0.66f
 
+/** 自定义顺序文件的大小上限：正常歌单文件远小于 1 MB，2 MB 足够且不会撑爆堆。 */
+private const val MAX_ORDER_DOCUMENT_BYTES = 2 * 1024 * 1024
+
 /**
  * 歌单排序面板：按标题 / 文件名一次性重排，或从 txt / csv 导入自定义顺序。
  *
@@ -126,27 +130,44 @@ internal fun PlaylistSortSheet(
     var descending by remember { mutableStateOf(false) }
     var importedMatch by remember { mutableStateOf<PlaylistOrderMatch?>(null) }
     var importing by remember { mutableStateOf(false) }
-    var importFailed by remember { mutableStateOf(false) }
+    var importMessageRes by remember { mutableStateOf<Int?>(null) }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         importing = true
+        importMessageRes = null
         scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching { readPlaylistOrderDocument(context, uri) }.getOrNull()
+            val document = withContext(Dispatchers.IO) {
+                runCatching { readPlaylistOrderDocument(context, uri) }
+                    .getOrDefault(PlaylistOrderDocumentResult.Empty)
             }
-            importing = false
-            if (text.isNullOrBlank()) {
-                importFailed = true
-                importedMatch = null
-                return@launch
+            when (document) {
+                is PlaylistOrderDocumentResult.Loaded -> {
+                    // 解析与匹配都是 O(n²) 且会反复归一化字符串，不能留在主线程
+                    val match = withContext(Dispatchers.Default) {
+                        matchPlaylistOrder(songs, parsePlaylistOrderText(document.text).entries)
+                    }
+                    importing = false
+                    importedMatch = match.takeIf { it.hasMatch }
+                    importMessageRes = if (match.hasMatch) {
+                        null
+                    } else {
+                        AppR.string.playlist_sort_import_empty
+                    }
+                }
+                PlaylistOrderDocumentResult.TooLarge -> {
+                    importing = false
+                    importedMatch = null
+                    importMessageRes = AppR.string.playlist_sort_import_too_large
+                }
+                PlaylistOrderDocumentResult.Empty -> {
+                    importing = false
+                    importedMatch = null
+                    importMessageRes = AppR.string.playlist_sort_import_empty
+                }
             }
-            val parsed = parsePlaylistOrderText(text)
-            val match = matchPlaylistOrder(songs, parsed.entries)
-            importFailed = !match.hasMatch
-            importedMatch = match.takeIf { it.hasMatch }
         }
     }
 
@@ -170,6 +191,8 @@ internal fun PlaylistSortSheet(
     }
 
     fun applyOrder() {
+        // 导入还在跑时应用只会提交旧预览，把用户刚选的顺序丢掉
+        if (importing) return
         val ordered = previewSongs
         if (ordered.isEmpty()) return
         scope.launch {
@@ -206,13 +229,15 @@ internal fun PlaylistSortSheet(
                 songCount = songs.size,
                 onClose = ::dismiss
             )
-            Column(
+            // 面板内容用 LazyColumn：上千首的预览只组合可见行，滚动也不掉帧
+            LazyColumn(
                 modifier = Modifier
                     .heightIn(max = maxContentHeight)
-                    .weight(1f, fill = false)
-                    .verticalScroll(rememberScrollState()),
+                    .weight(1f, fill = false),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
+                item(key = "options") {
+                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SortSectionTitle(stringResource(AppR.string.playlist_sort_section_mode))
                     MiuixSettingsSegmentedTabs(
@@ -223,7 +248,7 @@ internal fun PlaylistSortSheet(
                         selectedIndex = if (mode == PlaylistSongSortMode.FILE_NAME) 1 else 0,
                         onSelectedIndexChange = { index ->
                             importedMatch = null
-                            importFailed = false
+                            importMessageRes = null
                             mode = if (index == 1) {
                                 PlaylistSongSortMode.FILE_NAME
                             } else {
@@ -249,10 +274,10 @@ internal fun PlaylistSortSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SortSectionTitle(stringResource(AppR.string.playlist_sort_section_import))
                     SectionDescription(stringResource(AppR.string.playlist_sort_import_hint))
-                    // 与面板背景拉开对比：主色容器 + 主色描边
+                    // 与面板背景拉开对比：主色容器，不要描边
                     HapticButton(
                         onClick = {
-                            importFailed = false
+                            importMessageRes = null
                             picker.launch(
                                 arrayOf(
                                     "text/*",
@@ -265,13 +290,7 @@ internal fun PlaylistSortSheet(
                             )
                         },
                         enabled = !importing,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                shape = ButtonDefaults.shape
-                            ),
+                        modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -300,9 +319,9 @@ internal fun PlaylistSortSheet(
                             )
                         )
                     }
-                    if (importFailed) {
+                    importMessageRes?.let { messageRes ->
                         Text(
-                            text = stringResource(AppR.string.playlist_sort_import_empty),
+                            text = stringResource(messageRes),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -312,24 +331,30 @@ internal fun PlaylistSortSheet(
                             match = match,
                             onClear = {
                                 importedMatch = null
-                                importFailed = false
+                                importMessageRes = null
                             }
                         )
                     }
                 }
+                }
+                }
 
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                item(key = "preview-title") {
                     SortSectionTitle(stringResource(AppR.string.playlist_sort_section_preview))
-                    // 预览跟随面板滚动，整份歌单都能逐行看完
-                    previewSongs.forEachIndexed { index, song ->
-                        PreviewSongRow(index = index, song = song)
-                    }
+                }
+                // 预览跟随面板滚动，整份歌单都能逐行看完
+                itemsIndexed(
+                    items = previewSongs,
+                    key = { index, song -> "preview-$index-${song.stableKey()}" }
+                ) { index, song ->
+                    PreviewSongRow(index = index, song = song)
                 }
             }
 
             MiuixSettingsButton(
                 onClick = ::applyOrder,
-                enabled = previewSongs.isNotEmpty(),
+                // 导入没完成时不能应用：此刻预览还是旧顺序
+                enabled = previewSongs.isNotEmpty() && !importing,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(AppR.string.playlist_sort_apply))
@@ -497,16 +522,48 @@ private fun playlistSortMaxContentHeight(fraction: Float): Dp {
     return with(LocalDensity.current) { (windowHeightPx * fraction).toDp() }
 }
 
+internal sealed interface PlaylistOrderDocumentResult {
+    class Loaded(val text: String) : PlaylistOrderDocumentResult
+
+    /** 文件为空、读不到，或解码后没有可用内容。 */
+    object Empty : PlaylistOrderDocumentResult
+
+    /** 超过 [MAX_ORDER_DOCUMENT_BYTES]，不读进内存。 */
+    object TooLarge : PlaylistOrderDocumentResult
+}
+
 /**
  * 读取用户选择的顺序文件。utf-8 解码失败时回退 gbk，
  * 兼容中文 Windows 下导出的 txt / csv。
+ *
+ * 边读边计数，超过 [MAX_ORDER_DOCUMENT_BYTES] 立即放弃：picker 接受
+ * `application/octet-stream`，误选大文件时 `readBytes()` 会先撑爆堆再报错。
  */
-internal fun readPlaylistOrderDocument(context: Context, uri: Uri): String {
-    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        ?: return ""
-    if (bytes.isEmpty()) return ""
+internal fun readPlaylistOrderDocument(context: Context, uri: Uri): PlaylistOrderDocumentResult {
+    val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+        val output = ByteArrayOutputStream()
+        val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0
+        while (true) {
+            val read = stream.read(chunk)
+            if (read < 0) break
+            total += read
+            if (total > MAX_ORDER_DOCUMENT_BYTES) return PlaylistOrderDocumentResult.TooLarge
+            output.write(chunk, 0, read)
+        }
+        output.toByteArray()
+    } ?: return PlaylistOrderDocumentResult.Empty
+    if (bytes.isEmpty()) return PlaylistOrderDocumentResult.Empty
     val utf8 = String(bytes, Charsets.UTF_8)
-    if (!utf8.contains('\uFFFD')) return utf8
-    val gbk = runCatching { String(bytes, charset("GBK")) }.getOrNull()
-    return if (gbk.isNullOrEmpty() || gbk.contains('\uFFFD')) utf8 else gbk
+    val text = if (!utf8.contains('\uFFFD')) {
+        utf8
+    } else {
+        val gbk = runCatching { String(bytes, charset("GBK")) }.getOrNull()
+        if (gbk.isNullOrEmpty() || gbk.contains('\uFFFD')) utf8 else gbk
+    }
+    return if (text.isBlank()) {
+        PlaylistOrderDocumentResult.Empty
+    } else {
+        PlaylistOrderDocumentResult.Loaded(text)
+    }
 }

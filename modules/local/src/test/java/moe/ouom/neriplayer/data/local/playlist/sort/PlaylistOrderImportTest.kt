@@ -57,6 +57,22 @@ class PlaylistOrderImportTest {
     }
 
     @Test
+    fun `first data line is not mistaken for a header`() {
+        val result = parsePlaylistOrderText("Track 2 - Someone\nMy Song - Other")
+
+        assertEquals(2, result.entries.size)
+        assertEquals("Track 2", result.entries[0].primary)
+    }
+
+    @Test
+    fun `headerless csv keeps its first row`() {
+        val result = parsePlaylistOrderText("晴天,周杰伦\n稻香,周杰伦")
+
+        assertEquals(2, result.entries.size)
+        assertEquals(PlaylistOrderEntry("晴天", "周杰伦"), result.entries[0])
+    }
+
+    @Test
     fun `csv with header keeps title and artist`() {
         val result = parsePlaylistOrderText(
             """
@@ -157,6 +173,51 @@ class PlaylistOrderImportTest {
         val result = parsePlaylistOrderText("   \n\n")
 
         assertTrue(result.entries.isEmpty())
+    }
+
+    @Test
+    fun `numeric title is not stripped as a row index`() {
+        val songs = listOf(song(id = 1, name = "1984", artist = "David Bowie"))
+
+        val parse = parsePlaylistOrderText("1984 - David Bowie")
+        val match = matchPlaylistOrder(songs, parse.entries)
+
+        assertEquals(PlaylistOrderEntry("1984", "David Bowie"), parse.entries.single())
+        assertEquals(1, match.matchedCount)
+        assertEquals(listOf(1L), match.orderedSongs.map { it.id })
+    }
+
+    @Test
+    fun `dash row index is stripped when both fields follow`() {
+        val parse = parsePlaylistOrderText("12 - 晴天 - 周杰伦")
+
+        assertEquals(PlaylistOrderEntry("晴天", "周杰伦"), parse.entries.single())
+    }
+
+    @Test
+    fun `unspaced hyphen stays inside the title`() {
+        val songs = listOf(song(id = 1, name = "AC"), song(id = 2, name = "AC-DC"))
+
+        val parse = parsePlaylistOrderText("AC-DC")
+        val match = matchPlaylistOrder(songs, parse.entries)
+
+        assertEquals(PlaylistOrderEntry("AC-DC"), parse.entries.single())
+        assertEquals(listOf(2L, 1L), match.orderedSongs.map { it.id })
+        assertEquals(1, match.matchedCount)
+    }
+
+    @Test
+    fun `single row headerless csv keeps title and artist`() {
+        val songs = listOf(
+            song(id = 1, name = "Hello", artist = "Someone"),
+            song(id = 2, name = "Hello", artist = "Adele")
+        )
+
+        val parse = parsePlaylistOrderText("Hello,Adele")
+        val match = matchPlaylistOrder(songs, parse.entries)
+
+        assertEquals(PlaylistOrderEntry("Hello", "Adele"), parse.entries.single())
+        assertEquals(2L, match.orderedSongs.first().id)
     }
 
     private fun song(id: Long, name: String, artist: String = "Artist $id") = SongItem(
